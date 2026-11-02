@@ -275,6 +275,72 @@ export default function App() {
   );
 
   // -------------------------------------------------------------
+  // LÓGICA DE REPARTO DE GASTOS Y DEUDAS CRUZADAS
+  // -------------------------------------------------------------
+  const calculateDebts = (members = [], expenses = []) => {
+    if (members.length === 0) return [];
+
+    const totalSpent = expenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
+    const sharePerPerson = totalSpent / members.length;
+
+    // Calcular lo que ha pagado cada miembro
+    const paidMap = {};
+    members.forEach(m => { paidMap[m] = 0; });
+    expenses.forEach(exp => {
+      if (paidMap[exp.paid_by] !== undefined) {
+        paidMap[exp.paid_by] += Number(exp.amount);
+      } else {
+        // Si pagó alguien que ya no está formalmente en miembros
+        paidMap[exp.paid_by] = Number(exp.amount);
+      }
+    });
+
+    // Balance neto: positivo = le deben (acreedor), negativo = debe (deudor)
+    const balances = [];
+    const allNames = Array.from(new Set([...members, ...Object.keys(paidMap)]));
+    
+    allNames.forEach(name => {
+      const paid = paidMap[name] || 0;
+      const shouldPay = members.includes(name) ? sharePerPerson : 0;
+      const balance = paid - shouldPay; // > 0 cobra, < 0 paga
+      balances.push({ name, balance });
+    });
+
+    // Separar deudores y acreedores
+    let debtors = balances.filter(b => b.balance < -0.01).map(d => ({ ...d, balance: Math.abs(d.balance) }));
+    let creditors = balances.filter(b => b.balance > 0.01);
+
+    const transactions = [];
+
+    // Algoritmo de liquidación de deudas
+    let dIndex = 0;
+    let cIndex = 0;
+
+    while (dIndex < debtors.length && cIndex < creditors.length) {
+      const debtor = debtors[dIndex];
+      const creditor = creditors[cIndex];
+
+      const amountToTransfer = Math.min(debtor.balance, creditor.balance);
+
+      if (amountToTransfer > 0.01) {
+        transactions.push({
+          from: debtor.name,
+          to: creditor.name,
+          amount: amountToTransfer
+        });
+      }
+
+      debtor.balance -= amountToTransfer;
+      creditor.balance -= amountToTransfer;
+
+      if (debtor.balance <= 0.01) dIndex++;
+      if (creditor.balance <= 0.01) cIndex++;
+    }
+
+    return transactions;
+  };
+
+  // -------------------------------------------------------------
   // LOGIN / REGISTRO
   // -------------------------------------------------------------
   if (!currentUser) {
@@ -374,13 +440,14 @@ export default function App() {
   }
 
   // -------------------------------------------------------------
-  // DETALLE DE UN EVENTO ACTIVO (CON ASISTENTES Y PROPUESTAS DE CADA UNO)
+  // DETALLE DE UN EVENTO ACTIVO
   // -------------------------------------------------------------
   if (activeEvent) {
     const totalSpent = (activeEvent.expenses || []).reduce((acc, c) => acc + Number(c.amount), 0);
     const perPerson = activeEvent.members.length > 0 ? (totalSpent / activeEvent.members.length) : 0;
     const currentActiveSpot = (activeEvent.spots || []).find(s => s.active_now);
     const coverImage = getPlanCover(activeEvent.title);
+    const calculatedDebts = calculateDebts(activeEvent.members, activeEvent.expenses);
 
     return (
       <div className="min-h-screen bg-slate-50 text-slate-900 pb-24">
@@ -407,7 +474,7 @@ export default function App() {
 
         <main className="max-w-md mx-auto p-4 space-y-5">
           
-          {/* SECCIÓN DE ASISTENTES / MIEMBROS DE LA SALIDA */}
+          {/* ASISTENTES */}
           <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
@@ -440,7 +507,7 @@ export default function App() {
 
           <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm" role="tablist">
             <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Sitios Propuestos</button>
-            <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Gastos</button>
+            <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Gastos y Deudas</button>
             <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Fotos</button>
           </div>
 
@@ -470,24 +537,62 @@ export default function App() {
             </div>
           )}
 
+          {/* GASTOS Y REPARTO EXACTO DE DEUDAS */}
           {eventSubTab === 'expenses' && (
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><p className="text-[10px] font-bold text-slate-500">TOTAL GRUPO</p><p className="text-xl font-black text-emerald-600">{totalSpent.toFixed(2)}€</p></div>
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><p className="text-[10px] font-bold text-slate-500">POR PERSONA</p><p className="text-xl font-black text-indigo-600">{perPerson.toFixed(2)}€</p></div>
               </div>
-              <form onSubmit={handleAddExpense} className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                <input type="text" aria-label="Concepto" placeholder="Concepto (ej. Cervezas)" value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900" />
-                <input type="number" step="0.01" aria-label="Importe" placeholder="Importe (€)" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900" />
-                <button type="submit" className="w-full bg-emerald-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-emerald-700">Añadir Gasto</button>
-              </form>
-              <div className="space-y-2">
-                {(activeEvent.expenses || []).map((exp) => (
-                  <div key={exp.id} className="bg-white p-3.5 rounded-2xl border border-slate-200 flex justify-between items-center text-xs shadow-sm">
-                    <div><p className="font-bold text-slate-900">{exp.description}</p><p className="text-[10px] text-slate-500">Pagado por {exp.paid_by}</p></div>
-                    <span className="font-black text-emerald-700 text-sm">{Number(exp.amount).toFixed(2)}€</span>
+
+              {/* MÓDULO DE LIQUIDACIÓN DE DEUDAS (QUIÉN PAGA A QUIÉN) */}
+              <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-5 rounded-3xl shadow-lg space-y-3">
+                <h3 className="text-xs font-black uppercase tracking-wider text-indigo-300 flex items-center">
+                  <DollarSign size={16} className="mr-1 text-emerald-400" /> Reparto y Liquidación de Deudas
+                </h3>
+                
+                {calculatedDebts.length === 0 ? (
+                  <p className="text-xs text-slate-300">¡Cuentas saldadas! Nadie debe dinero a nadie en este momento.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {calculatedDebts.map((debt, index) => (
+                      <div key={index} className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10 flex justify-between items-center text-xs">
+                        <div>
+                          <span className="font-bold text-white">{debt.from}</span>
+                          <span className="text-slate-300 mx-1.5">debe pagar a</span>
+                          <span className="font-bold text-emerald-300">{debt.to}</span>
+                        </div>
+                        <span className="font-black text-emerald-400 text-sm bg-emerald-950/60 px-3 py-1 rounded-xl">
+                          {debt.amount.toFixed(2)}€
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+              </div>
+
+              <form onSubmit={handleAddExpense} className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+                <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto</h4>
+                <input type="text" aria-label="Concepto" placeholder="Concepto (ej. Cervezas, Comida...)" value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" />
+                <input type="number" step="0.01" aria-label="Importe" placeholder="Importe (€)" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" />
+                <button type="submit" className="w-full bg-emerald-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-emerald-700 transition">Añadir Gasto</button>
+              </form>
+
+              <div className="space-y-2">
+                <h4 className="text-xs font-bold text-slate-700 px-1">Historial de Gastos</h4>
+                {(activeEvent.expenses || []).length === 0 ? (
+                  <p className="text-xs text-slate-400 px-1">No hay gastos registrados todavía.</p>
+                ) : (
+                  (activeEvent.expenses || []).map((exp) => (
+                    <div key={exp.id} className="bg-white p-3.5 rounded-2xl border border-slate-200 flex justify-between items-center text-xs shadow-sm">
+                      <div>
+                        <p className="font-bold text-slate-900">{exp.description}</p>
+                        <p className="text-[10px] text-slate-500">Pagado por <span className="font-bold text-indigo-600">{exp.paid_by}</span></p>
+                      </div>
+                      <span className="font-black text-emerald-700 text-sm">{Number(exp.amount).toFixed(2)}€</span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
