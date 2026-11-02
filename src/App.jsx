@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, MapPin, DollarSign, Plus, CheckCircle, 
-  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag
+  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -230,12 +230,14 @@ export default function App() {
     );
   };
 
+  // Votar un sitio propuesto
   const handleVoteSpot = async (spotId, currentVotes) => {
     await supabase.from('spots').update({ votes: currentVotes + 1 }).eq('id', spotId);
     fetchAppData();
   };
 
-  const handleActivateSpot = async (spotId) => {
+  // Confirmar explícitamente un sitio como la ubicación elegida de la quedada
+  const handleConfirmSpot = async (spotId) => {
     await supabase.from('spots').update({ active_now: false }).eq('event_id', activeEvent.id);
     await supabase.from('spots').update({ active_now: true }).eq('id', spotId);
     fetchAppData();
@@ -257,7 +259,6 @@ export default function App() {
     fetchAppData();
   };
 
-  // Subir foto con geolocalización GPS automática de donde se encuentra el usuario
   const handlePhotoUploadWithGPS = (e) => {
     const file = e.target.files[0];
     if (!file || !activeEvent) return;
@@ -294,7 +295,6 @@ export default function App() {
     fetchAppData();
   };
 
-  // Cerrar la salida (Solo el creador)
   const handleCloseEvent = async () => {
     if (!confirm('¿Estás seguro de cerrar esta salida? Pasará al modo línea temporal resumen.')) return;
 
@@ -500,7 +500,7 @@ export default function App() {
   }
 
   // -------------------------------------------------------------
-  // DETALLE DE UN EVENTO ACTIVO O LÍNEA TEMPORAL (SI ESTÁ CERRADO)
+  // DETALLE DE UN EVENTO ACTIVO O LÍNEA TEMPORAL
   // -------------------------------------------------------------
   if (activeEvent) {
     const totalSpent = (activeEvent.expenses || []).reduce((acc, c) => acc + Number(c.amount), 0);
@@ -510,6 +510,9 @@ export default function App() {
     const calculatedDebts = calculateDebts(activeEvent.members, activeEvent.expenses);
     const isCreator = activeEvent.creator_name === currentUser.name;
     const isClosed = activeEvent.status === 'closed';
+
+    // Determinar el sitio más votado para marcar mayoría
+    const maxVotes = Math.max(0, ...(activeEvent.spots || []).map(s => s.votes || 0));
 
     return (
       <div className="min-h-screen bg-slate-50 text-slate-900 pb-24">
@@ -543,7 +546,7 @@ export default function App() {
 
         <main className="max-w-md mx-auto p-4 space-y-5">
           
-          {/* BOTÓN DE CIERRE DE SALIDA (SOLO CREADOR SI ESTÁ ABIERTA) */}
+          {/* BOTÓN DE CIERRE DE SALIDA (SOLO CREADOR) */}
           {isCreator && !isClosed && (
             <button 
               onClick={handleCloseEvent}
@@ -553,7 +556,7 @@ export default function App() {
             </button>
           )}
 
-          {/* VISTA DE LÍNEA TEMPORAL SI LA SALIDA ESTÁ CERRADA */}
+          {/* VISTA DE LÍNEA TEMPORAL SI ESTÁ CERRADA */}
           {isClosed ? (
             <div className="space-y-6">
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
@@ -569,13 +572,12 @@ export default function App() {
                       <div className="absolute -left-[21px] top-1 w-3 h-3 bg-indigo-600 rounded-full border-2 border-white"></div>
                       <span className="text-[10px] font-bold text-indigo-600 uppercase">Parada {idx + 1}</span>
                       <h3 className="font-bold text-sm text-slate-900">{spot.name}</h3>
-                      <p className="text-[11px] text-slate-500">Propuesto por {spot.suggested_by}</p>
+                      <p className="text-[11px] text-slate-500">Propuesto por {spot.suggested_by} • {spot.votes} votos</p>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* GALERÍA DE MINIATURAS EN LÍNEA TEMPORAL */}
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">📸 Álbum de Fotos del Recuerdo</h3>
                 {(activeEvent.photos || []).length === 0 ? (
@@ -611,8 +613,8 @@ export default function App() {
               </div>
 
               <div className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden">
-                <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full">📍 Ubicación Activa</span>
-                <h2 className="text-xl font-black mt-2 mb-1">{currentActiveSpot ? currentActiveSpot.name : 'Ningún sitio seleccionado'}</h2>
+                <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full">📍 Sitio Confirmado Oficial</span>
+                <h2 className="text-xl font-black mt-2 mb-1">{currentActiveSpot ? currentActiveSpot.name : 'Votando sitio entre el grupo...'}</h2>
                 {currentActiveSpot && (
                   <a 
                     href={`https://maps.google.com/?q=${encodeURIComponent(currentActiveSpot.name)}`} 
@@ -626,7 +628,7 @@ export default function App() {
               </div>
 
               <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm" role="tablist">
-                <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Sitios y GPS</button>
+                <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Votaciones y Sitios</button>
                 <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Gastos y Deudas</button>
                 <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Fotos</button>
               </div>
@@ -634,7 +636,7 @@ export default function App() {
               {eventSubTab === 'spots' && (
                 <div className="space-y-4">
                   <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                    <h3 className="text-xs font-black text-slate-800">Añadir lugar al plan</h3>
+                    <h3 className="text-xs font-black text-slate-800">Proponer nuevo sitio</h3>
                     
                     <button 
                       type="button"
@@ -648,7 +650,7 @@ export default function App() {
 
                     <div className="relative pt-1">
                       <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
-                      <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400 font-bold">o escribe / selecciona un sitio</span></div>
+                      <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400 font-bold">o escribe un sitio</span></div>
                     </div>
 
                     <form onSubmit={handleAddSpot} className="space-y-2.5">
@@ -678,57 +680,75 @@ export default function App() {
                       </div>
 
                       <button type="submit" className="w-full bg-indigo-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-indigo-700 transition mt-2">
-                        🔍 Añadir sitio propuesto
+                        🔍 Añadir propuesta
                       </button>
                     </form>
                   </div>
 
+                  {/* Votación de sitios y confirmación de mayoría */}
                   <div className="space-y-2.5">
-                    <h4 className="text-xs font-bold text-slate-700 px-1">Lugares Propuestos y Enlaces a Google Maps</h4>
+                    <h4 className="text-xs font-bold text-slate-700 px-1">Votación de Sitios Propuestos</h4>
                     {(activeEvent.spots || []).length === 0 ? (
                       <p className="text-xs text-slate-400 px-1">Ningún lugar propuesto todavía.</p>
                     ) : (
-                      (activeEvent.spots || []).map((spot) => (
-                        <div key={spot.id} className={`p-4 rounded-2xl border flex flex-col space-y-2.5 ${spot.active_now ? 'bg-indigo-50 border-indigo-300 shadow-sm' : 'bg-white border-slate-200'}`}>
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <h3 className="font-bold text-slate-900 text-sm">{spot.name}</h3>
-                              <p className="text-[11px] text-slate-500 font-medium">
-                                Propuesto por <span className="font-bold text-indigo-600">{spot.suggested_by}</span> • {spot.votes} votos
-                              </p>
-                            </div>
-                            {spot.active_now && (
-                              <span className="bg-indigo-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full">Activo ahora</span>
-                            )}
-                          </div>
+                      (activeEvent.spots || []).map((spot) => {
+                        const isMajority = maxVotes > 0 && spot.votes === maxVotes;
+                        const isConfirmed = spot.active_now;
 
-                          <div className="flex gap-2 pt-1 border-t border-slate-100">
-                            <a 
-                              href={`https://maps.google.com/?q=${encodeURIComponent(spot.name)}`} 
-                              target="_blank" 
-                              rel="noreferrer" 
-                              className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-center font-bold text-xs py-2 rounded-xl flex items-center justify-center space-x-1.5 transition"
-                            >
-                              <MapPin size={14} className="text-indigo-600" />
-                              <span>Ver en Google Maps</span>
-                            </a>
-                            <button 
-                              onClick={() => handleVoteSpot(spot.id, spot.votes)} 
-                              className="bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800 transition"
-                            >
-                              👍 {spot.votes}
-                            </button>
-                            {!spot.active_now && (
+                        return (
+                          <div key={spot.id} className={`p-4 rounded-2xl border flex flex-col space-y-3 ${isConfirmed ? 'bg-indigo-50 border-indigo-400 shadow-sm' : isMajority ? 'bg-amber-50/60 border-amber-300' : 'bg-white border-slate-200'}`}>
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <div className="flex items-center space-x-2">
+                                  <h3 className="font-bold text-slate-900 text-sm">{spot.name}</h3>
+                                  {isMajority && !isConfirmed && (
+                                    <span className="bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full flex items-center space-x-1 shadow-xs">
+                                      <Trophy size={10} className="mr-0.5" /> Mayoría
+                                    </span>
+                                  )}
+                                  {isConfirmed && (
+                                    <span className="bg-indigo-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
+                                      ✓ Sitio Confirmado
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+                                  Propuesto por <span className="font-bold text-indigo-600">{spot.suggested_by}</span> • <span className="font-extrabold text-slate-800">{spot.votes} votos</span>
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex gap-2 pt-1 border-t border-slate-100/80">
                               <button 
-                                onClick={() => handleActivateSpot(spot.id)} 
-                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-xl text-xs font-bold transition shadow-sm"
+                                onClick={() => handleVoteSpot(spot.id, spot.votes)} 
+                                className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-3 py-2 rounded-xl flex items-center space-x-1.5 transition"
                               >
-                                Ir aquí
+                                <ThumbsUp size={14} className="text-indigo-600" />
+                                <span>Votar ({spot.votes})</span>
                               </button>
-                            )}
+
+                              {!isConfirmed ? (
+                                <button 
+                                  onClick={() => handleConfirmSpot(spot.id)} 
+                                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2 rounded-xl transition shadow-sm"
+                                >
+                                  ✓ Confirmar este Sitio
+                                </button>
+                              ) : (
+                                <a 
+                                  href={`https://maps.google.com/?q=${encodeURIComponent(spot.name)}`} 
+                                  target="_blank" 
+                                  rel="noreferrer" 
+                                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-center font-bold text-xs py-2 rounded-xl flex items-center justify-center space-x-1 transition shadow-sm"
+                                >
+                                  <Navigation size={14} />
+                                  <span>Abrir Maps</span>
+                                </a>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>
