@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
 Users, MapPin, DollarSign, Plus, CheckCircle,
-Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus
+Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus, ExternalLink
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -25,41 +25,52 @@ export default function App() {
 const [currentUser, setCurrentUser] = useState(null);
 const [authMode, setAuthMode] = useState('login');
 
+// Auth inputs
 const [email, setEmail] = useState('');
 const [password, setPassword] = useState('');
 const [name, setName] = useState('');
 const [passwordError, setPasswordError] = useState('');
 
+// Navegación
 const [activeTab, setActiveTab] = useState('my-events');
 const [activeEvent, setActiveEvent] = useState(null);
 const [eventSubTab, setEventSubTab] = useState('spots');
 
+// Modales y formularios
 const [showCreateModal, setShowCreateModal] = useState(false);
 const [newTitle, setNewTitle] = useState('');
 const [newDate, setNewDate] = useState('');
 const [selectedFriends, setSelectedFriends] = useState([]);
 const [searchQuery, setSearchQuery] = useState('');
 
+// Búsqueda dinámica de usuarios
 const [friendSearchInput, setFriendSearchInput] = useState('');
 const [registeredUsers, setRegisteredUsers] = useState([]);
 
+// Sitios, GPS y Mapas
 const [newSpotName, setNewSpotName] = useState('');
 const [isGettingLocation, setIsGettingLocation] = useState(false);
 const [mapSuggestions, setMapSuggestions] = useState([]);
 const [isSearchingMaps, setIsSearchingMaps] = useState(false);
 
+// Gastos, Tickets y Ubicación del Gasto
 const [expenseDesc, setExpenseDesc] = useState('');
 const [expenseAmount, setExpenseAmount] = useState('');
 const [expenseSpotId, setExpenseSpotId] = useState('');
 const [expenseReceiptUrl, setExpenseReceiptUrl] = useState('');
 const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
+const [viewingReceiptUrl, setViewingReceiptUrl] = useState(null);
 
+// Fotos y Ubicación de la Foto
 const [photoSpotId, setPhotoSpotId] = useState('');
 
+// Comentarios (General y por Ubicación)
 const [generalCommentInput, setGeneralCommentInput] = useState('');
 const [spotCommentInputs, setSpotCommentInputs] = useState({});
 
+// Línea temporal interactiva
 const [expandedTimelineSpotId, setExpandedTimelineSpotId] = useState(null);
+
 const [events, setEvents] = useState([]);
 
 useEffect(() => {
@@ -349,20 +360,32 @@ const handleAddExpense = async (e) => {
 e.preventDefault();
 if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
 
-await supabase.from('expenses').insert([{
+const parsedAmount = parseFloat(expenseAmount);
+if (isNaN(parsedAmount) || parsedAmount <= 0) {
+  alert('Por favor introduce un importe válido.');
+  return;
+}
+
+const { error } = await supabase.from('expenses').insert([{
   event_id: activeEvent.id,
-  description: expenseDesc,
-  amount: parseFloat(expenseAmount),
+  description: expenseDesc.trim(),
+  amount: parsedAmount,
   paid_by: currentUser.name,
-  spot_id: expenseSpotId || null,
-  receipt_url: expenseReceiptUrl || null
+  spot_id: expenseSpotId ? expenseSpotId : null,
+  receipt_url: expenseReceiptUrl ? expenseReceiptUrl : null
 }]);
+
+if (error) {
+  console.error('Error añadiendo gasto:', error);
+  alert('Error al guardar el gasto: ' + error.message);
+  return;
+}
 
 setExpenseDesc('');
 setExpenseAmount('');
 setExpenseSpotId('');
 setExpenseReceiptUrl('');
-fetchAppData();
+await fetchAppData();
 
 
 };
@@ -401,12 +424,18 @@ const handleAddGeneralComment = async (e) => {
 e.preventDefault();
 if (!generalCommentInput.trim() || !activeEvent) return;
 
-await supabase.from('comments').insert([{
+const { error } = await supabase.from('comments').insert([{
   event_id: activeEvent.id,
   spot_id: null,
   user_name: currentUser.name,
   content: generalCommentInput.trim()
 }]);
+
+if (error) {
+  console.error('Error al insertar comentario general:', error);
+  alert('Error al enviar comentario general: ' + error.message);
+  return;
+}
 
 setGeneralCommentInput('');
 fetchAppData();
@@ -475,6 +504,11 @@ fetchAppData();
 const handleRejectInvitation = async (eventId) => {
 await supabase.from('event_members').delete().eq('event_id', eventId).eq('user_name', currentUser.name);
 fetchAppData();
+};
+
+const openGoogleMapsDirections = (spotName) => {
+const mapUrl = https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(spotName)};
+window.open(mapUrl, '_blank', 'noopener,noreferrer');
 };
 
 const myInvitations = events.filter(e => e.pendingInvitations.includes(currentUser?.name));
@@ -594,17 +628,17 @@ return (
         {isSelected ? 'Quitar de la Ruta' : '✓ Añadir a la Ruta'}
       </button>
 
-      <a 
-        href={`https://maps.google.com/?q=${encodeURIComponent(spot.name)}`} 
-        target="_blank" 
-        rel="noreferrer" 
-        className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl flex items-center justify-center transition shadow-sm"
-        title="Abrir en Google Maps"
+      <button
+        onClick={() => openGoogleMapsDirections(spot.name)}
+        className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl flex items-center justify-center space-x-1 transition shadow-sm"
+        title="Abrir cómo llegar en Google Maps"
       >
         <Navigation size={14} />
-      </a>
+        <span className="text-[11px] font-bold">Cómo llegar</span>
+      </button>
     </div>
 
+    {/* COMENTARIOS Y RECOMENDACIONES EN EL SITIO */}
     <div className="pt-2 border-t border-sky-100 space-y-2">
       <div className="flex items-center space-x-1 text-[11px] font-bold text-slate-700">
         <MessageSquare size={12} className="text-sky-600" />
@@ -646,6 +680,9 @@ return (
 
 };
 
+// -------------------------------------------------------------
+// LOGIN / REGISTRO
+// -------------------------------------------------------------
 if (!currentUser) {
 return (
 
@@ -763,10 +800,14 @@ return (
 
 }
 
+// -------------------------------------------------------------
+// DETALLE DE UN EVENTO ACTIVO O LÍNEA TEMPORAL
+// -------------------------------------------------------------
 if (activeEvent) {
 const totalSpent = (activeEvent.expenses || []).reduce((acc, c) => acc + Number(c.amount), 0);
 const perPerson = activeEvent.members.length > 0 ? (totalSpent / activeEvent.members.length) : 0;
 
+// Clasificación de las propuestas entre SELECCIONADAS PARA LA RUTA y PENDIENTES
 const selectedSpots = (activeEvent.spots || []).filter(s => s.active_now);
 const pendingSpots = (activeEvent.spots || []).filter(s => !s.active_now);
 
@@ -776,7 +817,9 @@ const isCreator = activeEvent.creator_name === currentUser.name;
 const isClosed = activeEvent.status === 'closed';
 
 const maxVotes = Math.max(0, ...(activeEvent.spots || []).map(s => s.votes || 0));
-const generalComments = (activeEvent.comments || []).filter(c => !c.spot_id);
+
+// Filtro para comentarios generales
+const generalComments = (activeEvent.comments || []).filter(c => c.spot_id === null || c.spot_id === undefined);
 
 return (
   <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
@@ -883,9 +926,14 @@ return (
                                     <div className="flex items-center space-x-2">
                                       <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
                                       {exp.receipt_url && (
-                                        <a href={exp.receipt_url} target="_blank" rel="noreferrer" className="text-sky-600 hover:text-sky-800" title="Ver ticket">
+                                        <button 
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); setViewingReceiptUrl(exp.receipt_url); }}
+                                          className="text-sky-600 hover:text-sky-800 p-1"
+                                          title="Ver ticket"
+                                        >
                                           <Receipt size={14} />
-                                        </a>
+                                        </button>
                                       )}
                                     </div>
                                   </div>
@@ -955,6 +1003,7 @@ return (
             </div>
           </div>
 
+          {/* RUTA DEL PLAN: RESUMEN CABECERA CON BOTÓN CÓMO LLEGAR */}
           <div className="bg-gradient-to-br from-sky-600 to-indigo-600 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden border border-sky-400/30 space-y-3">
             <div className="flex justify-between items-center">
               <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full flex items-center">
@@ -974,20 +1023,20 @@ return (
                       </span>
                       <span className="font-bold text-white truncate max-w-[170px]">{spot.name}</span>
                     </div>
-                    <a 
-                      href={`https://maps.google.com/?q=${encodeURIComponent(spot.name)}`} 
-                      target="_blank" 
-                      rel="noreferrer" 
+                    <button 
+                      onClick={() => openGoogleMapsDirections(spot.name)}
                       className="bg-white text-sky-800 font-bold text-[10px] px-2.5 py-1.5 rounded-xl shadow hover:bg-sky-50 transition flex items-center space-x-1 shrink-0"
+                      title="Iniciar navegación en Google Maps"
                     >
-                      <Navigation size={12} /> <span>Maps</span>
-                    </a>
+                      <Navigation size={12} /> <span>Cómo Llegar</span>
+                    </button>
                   </div>
                 ))}
               </div>
             )}
           </div>
 
+          {/* COMENTARIOS GENERALES DEL PLAN */}
           <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
             <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
               <MessageSquare size={14} className="mr-1.5 text-sky-600" /> Comentarios Generales del Plan ({generalComments.length})
@@ -1026,6 +1075,7 @@ return (
 
           {eventSubTab === 'spots' && (
             <div className="space-y-4">
+              {/* FORMULARIO PROPONER NUEVO SITIO */}
               <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3 relative">
                 <h3 className="text-xs font-black text-slate-800">Proponer nuevo sitio</h3>
                 
@@ -1081,6 +1131,7 @@ return (
                 </form>
               </div>
 
+              {/* BLOQUE 1: SITIOS SELECCIONADOS / EN LA RUTA DEL PLAN */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center px-1">
                   <h4 className="text-xs font-black uppercase text-sky-800 flex items-center">
@@ -1097,6 +1148,7 @@ return (
                 )}
               </div>
 
+              {/* BLOQUE 2: PROPUESTAS PENDIENTES DE VOTACIÓN */}
               <div className="space-y-3 pt-2">
                 <div className="flex justify-between items-center px-1">
                   <h4 className="text-xs font-black uppercase text-slate-700 flex items-center">
@@ -1205,27 +1257,34 @@ return (
               </form>
 
               <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-700 px-1">Historial de Gastos</h4>
+                <h4 className="text-xs font-bold text-slate-700 px-1">Historial de Gastos ({(activeEvent.expenses || []).length})</h4>
                 {(activeEvent.expenses || []).length === 0 ? (
-                  <p className="text-xs text-slate-400 px-1">No hay gastos registrados todavía.</p>
+                  <p className="text-xs text-slate-400 px-1 italic">No hay gastos registrados todavía en esta salida.</p>
                 ) : (
                   (activeEvent.expenses || []).map((exp) => {
                     const spotObj = (activeEvent.spots || []).find(s => s.id === exp.spot_id);
                     return (
                       <div key={exp.id} className="bg-white/90 backdrop-blur-2xl p-3.5 rounded-2xl border border-sky-100 flex justify-between items-center text-xs shadow-sm">
-                        <div>
-                          <p className="font-bold text-slate-800">{exp.description}</p>
+                        <div className="space-y-0.5">
+                          <p className="font-bold text-slate-800 text-xs">{exp.description}</p>
                           <p className="text-[10px] text-slate-500">
                             Pagado por <span className="font-bold text-sky-600">{exp.paid_by}</span>
                             {spotObj && <span className="ml-1 text-slate-600">• 📍 {spotObj.name}</span>}
                           </p>
                         </div>
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-2 shrink-0">
                           <span className="font-black text-emerald-700 text-sm">{Number(exp.amount).toFixed(2)}€</span>
-                          {exp.receipt_url && (
-                            <a href={exp.receipt_url} target="_blank" rel="noreferrer" className="w-7 h-7 bg-sky-50 hover:bg-sky-100 rounded-xl flex items-center justify-center text-sky-700 transition border border-sky-200" title="Ver ticket">
-                              <Receipt size={14} />
-                            </a>
+                          {exp.receipt_url ? (
+                            <button 
+                              type="button"
+                              onClick={() => setViewingReceiptUrl(exp.receipt_url)} 
+                              className="w-8 h-8 bg-sky-50 hover:bg-sky-100 rounded-xl flex items-center justify-center text-sky-700 transition border border-sky-200" 
+                              title="Ver ticket adjunto"
+                            >
+                              <Receipt size={16} />
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 italic">Sin ticket</span>
                           )}
                         </div>
                       </div>
@@ -1304,6 +1363,9 @@ return (
 const filteredEvents = events.filter(e => e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase()));
 const myEvents = events.filter(e => e.members.includes(currentUser.name));
 
+// -------------------------------------------------------------
+// ÁREA PERSONAL (DASHBOARD)
+// -------------------------------------------------------------
 return (
 
 
@@ -1442,6 +1504,47 @@ return (
     )}
   </main>
 
+  {/* MODAL PARA VISUALIZAR TICKET ADJUNTO */}
+  {viewingReceiptUrl && (
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex flex-col items-center justify-center p-4">
+      <div className="bg-white max-w-sm w-full p-4 rounded-[2rem] shadow-2xl space-y-3 border border-sky-100 relative">
+        <div className="flex justify-between items-center border-b border-sky-100 pb-2">
+          <h3 className="font-bold text-slate-800 text-sm flex items-center">
+            <Receipt size={16} className="mr-1 text-sky-600" /> Ticket de Gasto
+          </h3>
+          <button 
+            onClick={() => setViewingReceiptUrl(null)} 
+            className="p-1 text-slate-400 hover:text-slate-800 bg-sky-50 rounded-full"
+          >
+            <X size={18} />
+          </button>
+        </div>
+        
+        <div className="max-h-96 overflow-auto rounded-xl border border-sky-100 bg-sky-50">
+          <img src={viewingReceiptUrl} alt="Ticket guardado" className="w-full h-auto object-contain" />
+        </div>
+
+        <div className="flex justify-between items-center pt-1">
+          <a 
+            href={viewingReceiptUrl} 
+            target="_blank" 
+            rel="noreferrer" 
+            className="text-xs font-bold text-sky-600 hover:underline flex items-center"
+          >
+            <ExternalLink size={12} className="mr-1" /> Abrir en pantalla completa
+          </a>
+          <button 
+            onClick={() => setViewingReceiptUrl(null)} 
+            className="bg-slate-800 text-white text-xs font-bold px-4 py-1.5 rounded-xl"
+          >
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  )}
+
+  {/* MODAL CREAR SALIDA */}
   {showCreateModal && (
     <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white max-w-md w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-sky-100">
