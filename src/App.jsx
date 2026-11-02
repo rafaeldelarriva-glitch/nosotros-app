@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, MapPin, DollarSign, Plus, CheckCircle, 
-  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send
+  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -67,7 +67,7 @@ export default function App() {
   const [generalCommentInput, setGeneralCommentInput] = useState('');
   const [spotCommentInputs, setSpotCommentInputs] = useState({});
 
-  // Línea temporal interactiva (Expandir parada en cerrado)
+  // Línea temporal interactiva
   const [expandedTimelineSpotId, setExpandedTimelineSpotId] = useState(null);
 
   const [events, setEvents] = useState([]);
@@ -318,9 +318,9 @@ export default function App() {
     fetchAppData();
   };
 
-  const handleConfirmSpot = async (spotId) => {
-    await supabase.from('spots').update({ active_now: false }).eq('event_id', activeEvent.id);
-    await supabase.from('spots').update({ active_now: true }).eq('id', spotId);
+  // Alternar selección de un sitio para la ruta del plan (admite múltiples seleccionados)
+  const handleToggleSelectSpot = async (spotId, currentSelectedState) => {
+    await supabase.from('spots').update({ active_now: !currentSelectedState }).eq('id', spotId);
     fetchAppData();
   };
 
@@ -530,6 +530,112 @@ export default function App() {
     return transactions;
   };
 
+  // Renderizado dinámico de tarjetas de sitios
+  const renderSpotCard = (spot, isSelected, maxVotes) => {
+    const isMajority = maxVotes > 0 && spot.votes === maxVotes;
+    const spotComments = (activeEvent?.comments || []).filter(c => c.spot_id === spot.id);
+    const currentInputText = spotCommentInputs[spot.id] || '';
+
+    return (
+      <div key={spot.id} className={`p-4 rounded-3xl border flex flex-col space-y-3 backdrop-blur-xl ${isSelected ? 'bg-sky-50/90 border-sky-300 shadow-sm' : isMajority ? 'bg-amber-50/60 border-amber-300' : 'bg-white/90 border-sky-100 shadow-sm'}`}>
+        <div className="flex justify-between items-start">
+          <div className="pr-2">
+            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+              <h3 className="font-bold text-slate-800 text-sm">{spot.name}</h3>
+              {isSelected && (
+                <span className="bg-sky-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
+                  ✓ En la Ruta
+                </span>
+              )}
+              {isMajority && !isSelected && (
+                <span className="bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full flex items-center space-x-1 shadow-xs">
+                  <Trophy size={10} className="mr-0.5" /> Más votado
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-500 font-medium mt-0.5">
+              Propuesto por <span className="font-bold text-sky-600">{spot.suggested_by}</span> • <span className="font-extrabold text-slate-800">{spot.votes} votos</span>
+            </p>
+          </div>
+
+          {activeEvent?.creator_name === currentUser?.name && (
+            <button 
+              onClick={() => handleDeleteSpot(spot.id)}
+              title="Eliminar sitio propuesto"
+              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition shrink-0"
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
+        </div>
+
+        <div className="flex gap-2 pt-1 border-t border-sky-100">
+          <button 
+            onClick={() => handleVoteSpot(spot.id, spot.votes)} 
+            className="bg-sky-50 hover:bg-sky-100 text-slate-700 text-xs font-bold px-3 py-2 rounded-xl flex items-center space-x-1.5 transition border border-sky-200"
+          >
+            <ThumbsUp size={14} className="text-sky-600" />
+            <span>Votar ({spot.votes})</span>
+          </button>
+
+          <button 
+            onClick={() => handleToggleSelectSpot(spot.id, isSelected)} 
+            className={`flex-1 font-bold text-xs py-2 rounded-xl transition shadow-sm ${isSelected ? 'bg-slate-200 hover:bg-slate-300 text-slate-700' : 'bg-sky-600 hover:bg-sky-700 text-white'}`}
+          >
+            {isSelected ? 'Quitar de la Ruta' : '✓ Añadir a la Ruta'}
+          </button>
+
+          <a 
+            href={`https://maps.google.com/?q=${encodeURIComponent(spot.name)}`} 
+            target="_blank" 
+            rel="noreferrer" 
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl flex items-center justify-center transition shadow-sm"
+            title="Abrir en Google Maps"
+          >
+            <Navigation size={14} />
+          </a>
+        </div>
+
+        {/* COMENTARIOS Y RECOMENDACIONES EN EL SITIO */}
+        <div className="pt-2 border-t border-sky-100 space-y-2">
+          <div className="flex items-center space-x-1 text-[11px] font-bold text-slate-700">
+            <MessageSquare size={12} className="text-sky-600" />
+            <span>Reseñas y Recomendaciones ({spotComments.length})</span>
+          </div>
+
+          {spotComments.length > 0 && (
+            <div className="space-y-1.5 max-h-32 overflow-y-auto">
+              {spotComments.map(c => (
+                <div key={c.id} className="bg-white p-2 rounded-xl border border-sky-100 text-xs space-y-0.5">
+                  <p className="text-slate-800">{c.content}</p>
+                  <p className="text-[10px] font-bold text-sky-600">— {c.user_name}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex gap-1.5 pt-1">
+            <input 
+              type="text" 
+              placeholder="Ej. Recomiendo el plato X..." 
+              value={currentInputText}
+              onChange={(e) => setSpotCommentInputs({ ...spotCommentInputs, [spot.id]: e.target.value })}
+              className="flex-1 bg-sky-50/50 border border-sky-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-inner"
+            />
+            <button 
+              type="button"
+              onClick={() => handleAddSpotComment(spot.id)}
+              aria-label="Enviar comentario de sitio"
+              className="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-center"
+            >
+              <Send size={12} />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // -------------------------------------------------------------
   // LOGIN / REGISTRO
   // -------------------------------------------------------------
@@ -654,7 +760,11 @@ export default function App() {
   if (activeEvent) {
     const totalSpent = (activeEvent.expenses || []).reduce((acc, c) => acc + Number(c.amount), 0);
     const perPerson = activeEvent.members.length > 0 ? (totalSpent / activeEvent.members.length) : 0;
-    const currentActiveSpot = (activeEvent.spots || []).find(s => s.active_now);
+    
+    // Clasificación de las propuestas entre SELECCIONADAS PARA LA RUTA y PENDIENTES
+    const selectedSpots = (activeEvent.spots || []).filter(s => s.active_now);
+    const pendingSpots = (activeEvent.spots || []).filter(s => !s.active_now);
+
     const coverImage = getPlanCover(activeEvent.title);
     const calculatedDebts = calculateDebts(activeEvent.members, activeEvent.expenses);
     const isCreator = activeEvent.creator_name === currentUser.name;
@@ -712,11 +822,11 @@ export default function App() {
                 <div className="text-center space-y-1">
                   <span className="text-2xl">⏳</span>
                   <h2 className="text-lg font-black text-slate-800">Línea Temporal del Día</h2>
-                  <p className="text-xs text-slate-500">Pulsa sobre cada parada para ver su información, tickets, fotos y comentarios</p>
+                  <p className="text-xs text-slate-500">Pulsa sobre cada parada realizada para ver su información, tickets, fotos y comentarios</p>
                 </div>
 
                 <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-gradient-to-b before:from-sky-500 before:via-indigo-500 before:to-sky-300">
-                  {(activeEvent.spots || []).map((spot, idx) => {
+                  {(selectedSpots.length > 0 ? selectedSpots : activeEvent.spots || []).map((spot, idx) => {
                     const spotExpenses = (activeEvent.expenses || []).filter(e => e.spot_id === spot.id);
                     const spotSpent = spotExpenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
                     const spotPhotos = (activeEvent.photos || []).filter(p => p.spot_id === spot.id);
@@ -840,18 +950,37 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="bg-gradient-to-br from-sky-600 to-indigo-600 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden border border-sky-400/30">
-                <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full">📍 Sitio Confirmado Oficial</span>
-                <h2 className="text-xl font-black mt-2 mb-1">{currentActiveSpot ? currentActiveSpot.name : 'Votando sitio entre el grupo...'}</h2>
-                {currentActiveSpot && (
-                  <a 
-                    href={`https://maps.google.com/?q=${encodeURIComponent(currentActiveSpot.name)}`} 
-                    target="_blank" 
-                    rel="noreferrer" 
-                    className="mt-3 inline-flex items-center space-x-2 bg-white text-sky-800 font-bold text-xs px-4 py-2.5 rounded-xl shadow transition hover:bg-sky-50"
-                  >
-                    <Navigation size={14} /> <span>Abrir en Google Maps</span>
-                  </a>
+              {/* RUTA DEL PLAN: RESUMEN CABECERA */}
+              <div className="bg-gradient-to-br from-sky-600 to-indigo-600 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden border border-sky-400/30 space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full flex items-center">
+                     Ruta Seleccionada ({selectedSpots.length})
+                  </span>
+                </div>
+
+                {selectedSpots.length === 0 ? (
+                  <p className="text-xs text-sky-100">Aún no hay sitios añadidos a la ruta. ¡Selecciona alguna propuesta abajo!</p>
+                ) : (
+                  <div className="space-y-2">
+                    {selectedSpots.map((spot, idx) => (
+                      <div key={spot.id} className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/20 flex justify-between items-center text-xs">
+                        <div className="flex items-center space-x-2">
+                          <span className="bg-white text-sky-800 w-5 h-5 rounded-full flex items-center justify-center font-black text-[10px]">
+                            {idx + 1}
+                          </span>
+                          <span className="font-bold text-white truncate max-w-[170px]">{spot.name}</span>
+                        </div>
+                        <a 
+                          href={`https://maps.google.com/?q=${encodeURIComponent(spot.name)}`} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="bg-white text-sky-800 font-bold text-[10px] px-2.5 py-1.5 rounded-xl shadow hover:bg-sky-50 transition flex items-center space-x-1 shrink-0"
+                        >
+                          <Navigation size={12} /> <span>Maps</span>
+                        </a>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -887,13 +1016,14 @@ export default function App() {
               </div>
 
               <div className="flex bg-white/90 backdrop-blur-xl p-1 rounded-2xl border border-sky-100 shadow-sm" role="tablist">
-                <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>Votaciones y Sitios</button>
+                <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>Sitios y Votación</button>
                 <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>Gastos y Deudas</button>
                 <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>Fotos</button>
               </div>
 
               {eventSubTab === 'spots' && (
                 <div className="space-y-4">
+                  {/* FORMULARIO PROPONER NUEVO SITIO */}
                   <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3 relative">
                     <h3 className="text-xs font-black text-slate-800">Proponer nuevo sitio</h3>
                     
@@ -949,117 +1079,35 @@ export default function App() {
                     </form>
                   </div>
 
+                  {/* BLOQUE 1: SITIOS SELECCIONADOS / EN LA RUTA DEL PLAN */}
                   <div className="space-y-3">
-                    <h4 className="text-xs font-bold text-slate-700 px-1">Votación y Comentarios de Sitios</h4>
-                    {(activeEvent.spots || []).length === 0 ? (
-                      <p className="text-xs text-slate-400 px-1">Ningún lugar propuesto todavía.</p>
+                    <div className="flex justify-between items-center px-1">
+                      <h4 className="text-xs font-black uppercase text-sky-800 flex items-center">
+                        <CheckSquare size={14} className="mr-1 text-sky-600" /> Sitios Seleccionados en la Ruta ({selectedSpots.length})
+                      </h4>
+                    </div>
+
+                    {selectedSpots.length === 0 ? (
+                      <div className="bg-white/60 p-4 rounded-3xl border border-sky-100 text-center">
+                        <p className="text-xs text-slate-400">Aún no hay sitios seleccionados para la ruta. Selecciona una propuesta abajo 👇</p>
+                      </div>
                     ) : (
-                      (activeEvent.spots || []).map((spot) => {
-                        const isMajority = maxVotes > 0 && spot.votes === maxVotes;
-                        const isConfirmed = spot.active_now;
-                        const spotComments = (activeEvent.comments || []).filter(c => c.spot_id === spot.id);
-                        const currentInputText = spotCommentInputs[spot.id] || '';
+                      selectedSpots.map((spot) => renderSpotCard(spot, true, maxVotes))
+                    )}
+                  </div>
 
-                        return (
-                          <div key={spot.id} className={`p-4 rounded-3xl border flex flex-col space-y-3 backdrop-blur-xl ${isConfirmed ? 'bg-sky-50/90 border-sky-300 shadow-sm' : isMajority ? 'bg-amber-50/60 border-amber-300' : 'bg-white/90 border-sky-100 shadow-sm'}`}>
-                            <div className="flex justify-between items-start">
-                              <div className="pr-2">
-                                <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                                  <h3 className="font-bold text-slate-800 text-sm">{spot.name}</h3>
-                                  {isMajority && !isConfirmed && (
-                                    <span className="bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full flex items-center space-x-1 shadow-xs">
-                                      <Trophy size={10} className="mr-0.5" /> Mayoría
-                                    </span>
-                                  )}
-                                  {isConfirmed && (
-                                    <span className="bg-sky-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs">
-                                      ✓ Sitio Confirmado
-                                    </span>
-                                  )}
-                                </div>
-                                <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                                  Propuesto por <span className="font-bold text-sky-600">{spot.suggested_by}</span> • <span className="font-extrabold text-slate-800">{spot.votes} votos</span>
-                                </p>
-                              </div>
+                  {/* BLOQUE 2: PROPUESTAS PENDIENTES DE VOTACIÓN */}
+                  <div className="space-y-3 pt-2">
+                    <div className="flex justify-between items-center px-1">
+                      <h4 className="text-xs font-black uppercase text-slate-700 flex items-center">
+                        <ListPlus size={14} className="mr-1 text-slate-500" /> Propuestas Pendientes ({pendingSpots.length})
+                      </h4>
+                    </div>
 
-                              {isCreator && (
-                                <button 
-                                  onClick={() => handleDeleteSpot(spot.id)}
-                                  title="Eliminar sitio propuesto"
-                                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition shrink-0"
-                                >
-                                  <Trash2 size={16} />
-                                </button>
-                              )}
-                            </div>
-
-                            <div className="flex gap-2 pt-1 border-t border-sky-100">
-                              <button 
-                                onClick={() => handleVoteSpot(spot.id, spot.votes)} 
-                                className="bg-sky-50 hover:bg-sky-100 text-slate-700 text-xs font-bold px-3 py-2 rounded-xl flex items-center space-x-1.5 transition border border-sky-200"
-                              >
-                                <ThumbsUp size={14} className="text-sky-600" />
-                                <span>Votar ({spot.votes})</span>
-                              </button>
-
-                              {!isConfirmed ? (
-                                <button 
-                                  onClick={() => handleConfirmSpot(spot.id)} 
-                                  className="flex-1 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs py-2 rounded-xl transition shadow-sm"
-                                >
-                                  ✓ Confirmar este Sitio
-                                </button>
-                              ) : (
-                                <a 
-                                  href={`https://maps.google.com/?q=${encodeURIComponent(spot.name)}`} 
-                                  target="_blank" 
-                                  rel="noreferrer" 
-                                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-center font-bold text-xs py-2 rounded-xl flex items-center justify-center space-x-1 transition shadow-sm"
-                                >
-                                  <Navigation size={14} />
-                                  <span>Abrir Maps</span>
-                                </a>
-                              )}
-                            </div>
-
-                            <div className="pt-2 border-t border-sky-100 space-y-2">
-                              <div className="flex items-center space-x-1 text-[11px] font-bold text-slate-700">
-                                <MessageSquare size={12} className="text-sky-600" />
-                                <span>Reseñas y Recomendaciones ({spotComments.length})</span>
-                              </div>
-
-                              {spotComments.length > 0 && (
-                                <div className="space-y-1.5 max-h-32 overflow-y-auto">
-                                  {spotComments.map(c => (
-                                    <div key={c.id} className="bg-white p-2 rounded-xl border border-sky-100 text-xs space-y-0.5">
-                                      <p className="text-slate-800">{c.content}</p>
-                                      <p className="text-[10px] font-bold text-sky-600">— {c.user_name}</p>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-
-                              <div className="flex gap-1.5 pt-1">
-                                <input 
-                                  type="text" 
-                                  placeholder="Ej. Recomiendo el plato X..." 
-                                  value={currentInputText}
-                                  onChange={(e) => setSpotCommentInputs({ ...spotCommentInputs, [spot.id]: e.target.value })}
-                                  className="flex-1 bg-sky-50/50 border border-sky-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-inner"
-                                />
-                                <button 
-                                  type="button"
-                                  onClick={() => handleAddSpotComment(spot.id)}
-                                  aria-label="Enviar comentario de sitio"
-                                  className="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-center"
-                                >
-                                  <Send size={12} />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })
+                    {pendingSpots.length === 0 ? (
+                      <p className="text-xs text-slate-400 px-1 italic">No hay más propuestas pendientes.</p>
+                    ) : (
+                      pendingSpots.map((spot) => renderSpotCard(spot, false, maxVotes))
                     )}
                   </div>
                 </div>
