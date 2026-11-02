@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, MapPin, DollarSign, Plus, CheckCircle, 
-  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle
+  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -59,6 +59,12 @@ export default function App() {
   const [expenseSpotId, setExpenseSpotId] = useState('');
   const [expenseReceiptUrl, setExpenseReceiptUrl] = useState('');
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
+
+  // Fotos y Ubicación de la Foto
+  const [photoSpotId, setPhotoSpotId] = useState('');
+
+  // Línea temporal interactiva (Expandir parada en cerrado)
+  const [expandedTimelineSpotId, setExpandedTimelineSpotId] = useState(null);
 
   const [events, setEvents] = useState([]);
 
@@ -343,35 +349,27 @@ export default function App() {
     const file = e.target.files[0];
     if (!file || !activeEvent) return;
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const base64Image = reader.result;
+    if (!photoSpotId) {
+      alert('Por favor, selecciona primero el sitio o ubicación donde se ha tomado la foto.');
+      return;
+    }
 
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          async (pos) => {
-            const lat = pos.coords.latitude.toFixed(3);
-            const lon = pos.coords.longitude.toFixed(3);
-            await savePhotoToSupabase(base64Image, `GPS: ${lat}, ${lon}`);
-          },
-          async () => {
-            await savePhotoToSupabase(base64Image, 'Ubicación actual');
-          },
-          { enableHighAccuracy: true }
-        );
-      } else {
-        savePhotoToSupabase(base64Image, 'Ubicación actual');
-      }
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64Image = reader.result;
+      await savePhotoToSupabase(base64Image, photoSpotId);
     };
     reader.readAsDataURL(file);
   };
 
-  const savePhotoToSupabase = async (url, locationLabel) => {
+  const savePhotoToSupabase = async (url, spotId) => {
     await supabase.from('photos').insert([{
       event_id: activeEvent.id,
       url: url,
-      user_name: `${currentUser.name} (${locationLabel})`
+      user_name: currentUser.name,
+      spot_id: spotId
     }]);
+    setPhotoSpotId('');
     fetchAppData();
   };
 
@@ -657,75 +655,110 @@ export default function App() {
 
           {isClosed ? (
             <div className="space-y-6">
-              <div className="bg-slate-900/80 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-white/10 shadow-2xl space-y-4">
+              <div className="bg-slate-900/80 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-white/10 shadow-2xl space-y-5">
                 <div className="text-center space-y-1">
-                  <span className="text-2xl">🏆</span>
-                  <h2 className="text-lg font-black text-white">Resumen de la Salida</h2>
-                  <p className="text-xs text-slate-400">Línea temporal de la ruta, paradas y gastos</p>
+                  <span className="text-2xl">⏳</span>
+                  <h2 className="text-lg font-black text-white">Línea Temporal del Día</h2>
+                  <p className="text-xs text-slate-400">Pulsa sobre cada parada para ver su información, tickets y fotos</p>
                 </div>
 
-                <div className="border-l-2 border-indigo-500 pl-4 space-y-8 ml-2 pt-2">
+                {/* LÍNEA VERTICAL TEMPORAL */}
+                <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-gradient-to-b before:from-indigo-500 before:via-purple-500 before:to-indigo-500/20">
                   {(activeEvent.spots || []).map((spot, idx) => {
                     const spotExpenses = (activeEvent.expenses || []).filter(e => e.spot_id === spot.id);
                     const spotSpent = spotExpenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
+                    const spotPhotos = (activeEvent.photos || []).filter(p => p.spot_id === spot.id);
+                    const isExpanded = expandedTimelineSpotId === spot.id;
+
+                    // Estimamos una hora orientativa para cada parada en la línea temporal (ej. 13:00, 14:30...)
+                    const estimatedTime = `${12 + idx}:30`;
 
                     return (
-                      <div key={spot.id} className="relative space-y-3">
-                        <div className="absolute -left-[21px] top-1 w-3 h-3 bg-indigo-500 rounded-full border-2 border-slate-900 shadow-glow"></div>
-                        <div>
-                          <span className="text-[10px] font-bold text-indigo-400 uppercase">Parada {idx + 1}</span>
-                          <h3 className="font-bold text-sm text-white">{spot.name}</h3>
-                          <p className="text-[11px] text-slate-400">Propuesto por {spot.suggested_by} • {spot.votes} votos</p>
-                        </div>
+                      <div key={spot.id} className="relative group">
+                        {/* Indicador de hora en la línea */}
+                        <div className="absolute -left-6 top-3.5 w-4 h-4 bg-indigo-600 rounded-full border-2 border-slate-900 flex items-center justify-center shadow-lg"></div>
 
-                        {spotExpenses.length > 0 && (
-                          <div className="bg-slate-800/80 p-3 rounded-2xl border border-white/10 space-y-2">
-                            <div className="flex justify-between items-center text-xs font-bold text-slate-300">
-                              <span>🧾 Gastos en este sitio:</span>
-                              <span className="text-emerald-400">{spotSpent.toFixed(2)}€</span>
+                        <div 
+                          onClick={() => setExpandedTimelineSpotId(isExpanded ? null : spot.id)}
+                          className={`p-4 rounded-3xl border transition cursor-pointer backdrop-blur-xl ${isExpanded ? 'bg-indigo-950/70 border-indigo-500/60 shadow-xl' : 'bg-slate-900/90 border-white/10 hover:border-indigo-500/40'}`}
+                        >
+                          <div className="flex justify-between items-center">
+                            <div className="space-y-0.5">
+                              <span className="text-[10px] font-black uppercase tracking-wider text-indigo-400 flex items-center">
+                                <Clock size={12} className="mr-1" /> Parada {idx + 1} • Aprox. {estimatedTime}
+                              </span>
+                              <h3 className="font-bold text-sm text-white">{spot.name}</h3>
                             </div>
-                            <div className="space-y-1.5">
-                              {spotExpenses.map(exp => (
-                                <div key={exp.id} className="flex justify-between items-center text-xs bg-slate-900/80 p-2.5 rounded-xl border border-white/5">
-                                  <div>
-                                    <span className="font-bold text-white">{exp.description}</span>
-                                    <span className="text-[10px] text-slate-400 ml-1.5">({exp.paid_by})</span>
-                                  </div>
-                                  <div className="flex items-center space-x-2">
-                                    <span className="font-bold text-emerald-400">{Number(exp.amount).toFixed(2)}€</span>
-                                    {exp.receipt_url && (
-                                      <a href={exp.receipt_url} target="_blank" rel="noreferrer" className="text-indigo-400 hover:text-indigo-300" title="Ver ticket">
-                                        <Receipt size={14} />
-                                      </a>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
+                            <div className="flex items-center space-x-2 text-xs font-bold text-slate-400">
+                              {(spotExpenses.length > 0 || spotPhotos.length > 0) && (
+                                <span className="bg-indigo-900/60 text-indigo-300 px-2.5 py-0.5 rounded-full text-[10px] border border-indigo-500/30">
+                                  {spotExpenses.length} gastos • {spotPhotos.length} fotos
+                                </span>
+                              )}
+                              <ChevronRight size={16} className={`transition-transform ${isExpanded ? 'rotate-90 text-indigo-400' : ''}`} />
                             </div>
                           </div>
-                        )}
+
+                          {/* INFORMACIÓN EXPANDIBLE DE LA PARADA */}
+                          {isExpanded && (
+                            <div className="mt-4 pt-4 border-t border-white/10 space-y-4 animate-fadeIn">
+                              {/* Gastos de este sitio */}
+                              <div className="space-y-2">
+                                <div className="flex justify-between items-center text-xs font-bold text-slate-300">
+                                  <span className="flex items-center"><Receipt size={14} className="mr-1 text-emerald-400" /> Gastos y Tickets</span>
+                                  <span className="text-emerald-400">{spotSpent.toFixed(2)}€</span>
+                                </div>
+                                {spotExpenses.length === 0 ? (
+                                  <p className="text-[11px] text-slate-500 italic">No hay gastos en esta parada.</p>
+                                ) : (
+                                  <div className="space-y-1.5">
+                                    {spotExpenses.map(exp => (
+                                      <div key={exp.id} className="flex justify-between items-center text-xs bg-slate-950/60 p-2.5 rounded-2xl border border-white/5">
+                                        <div>
+                                          <span className="font-bold text-white">{exp.description}</span>
+                                          <span className="text-[10px] text-slate-400 ml-1.5">({exp.paid_by})</span>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                          <span className="font-bold text-emerald-400">{Number(exp.amount).toFixed(2)}€</span>
+                                          {exp.receipt_url && (
+                                            <a href={exp.receipt_url} target="_blank" rel="noreferrer" className="text-indigo-400 hover:text-indigo-300" title="Ver ticket">
+                                              <Receipt size={14} />
+                                            </a>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Fotos de este sitio */}
+                              <div className="space-y-2">
+                                <span className="text-xs font-bold text-slate-300 flex items-center">
+                                  <Camera size={14} className="mr-1 text-purple-400" /> Álbum de este momento
+                                </span>
+                                {spotPhotos.length === 0 ? (
+                                  <p className="text-[11px] text-slate-500 italic">No hay fotos en esta parada.</p>
+                                ) : (
+                                  <div className="grid grid-cols-3 gap-2">
+                                    {spotPhotos.map(photo => (
+                                      <div key={photo.id} className="relative group aspect-square rounded-2xl overflow-hidden border border-white/10 shadow-md bg-slate-800">
+                                        <img src={photo.url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition" />
+                                        <span className="absolute bottom-1 left-1 right-1 bg-black/70 backdrop-blur-xs text-white text-[9px] font-bold px-1.5 py-0.5 rounded truncate text-center">
+                                          {photo.user_name}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
-              </div>
-
-              <div className="bg-slate-900/80 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-white/10 shadow-2xl space-y-3">
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">📸 Álbum de Fotos del Recuerdo</h3>
-                {(activeEvent.photos || []).length === 0 ? (
-                  <p className="text-xs text-slate-400">No se subieron fotos en este plan.</p>
-                ) : (
-                  <div className="grid grid-cols-3 gap-2">
-                    {(activeEvent.photos || []).map((photo) => (
-                      <div key={photo.id} className="relative group aspect-square rounded-2xl overflow-hidden border border-white/10 shadow-md bg-slate-800">
-                        <img src={photo.url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition" />
-                        <span className="absolute bottom-1 left-1 right-1 bg-black/70 backdrop-blur-xs text-white text-[9px] font-bold px-1.5 py-0.5 rounded truncate text-center">
-                          {photo.user_name}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
           ) : (
@@ -1024,22 +1057,57 @@ export default function App() {
 
               {eventSubTab === 'gallery' && (
                 <div className="space-y-4">
-                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-indigo-500/40 bg-indigo-950/40 backdrop-blur-xl rounded-3xl p-6 cursor-pointer hover:bg-indigo-950/60 transition shadow-xl">
+                  <div className="bg-slate-900/80 backdrop-blur-2xl p-4 rounded-3xl border border-white/10 shadow-xl space-y-2">
+                    <label className="block text-xs font-bold text-white">1. Selecciona el sitio de la foto</label>
+                    <select 
+                      value={photoSpotId} 
+                      onChange={(e) => setPhotoSpotId(e.target.value)}
+                      className="w-full bg-slate-800/80 border border-slate-700 rounded-2xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner"
+                      required
+                    >
+                      <option value="">Selecciona dónde se ha tomado...</option>
+                      {(activeEvent.spots || []).map((spot) => (
+                        <option key={spot.id} value={spot.id} className="bg-slate-900">{spot.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-3xl p-6 transition shadow-xl ${photoSpotId ? 'border-indigo-500/60 bg-indigo-950/40 cursor-pointer hover:bg-indigo-950/60' : 'border-slate-700 bg-slate-800/50 opacity-60 cursor-not-allowed'}`}>
                     <Camera className="w-6 h-6 text-indigo-400 mb-1" />
-                    <span className="text-xs font-bold text-indigo-200">Tomar / Subir foto con GPS actual</span>
-                    <span className="text-[10px] text-slate-400 mt-0.5">Se guardará con la ubicación exacta en miniatura</span>
-                    <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUploadWithGPS} className="hidden" />
+                    <span className="text-xs font-bold text-indigo-200">2. Tomar / Subir foto para este sitio</span>
+                    <span className="text-[10px] text-slate-400 mt-0.5">{photoSpotId ? 'Listo para capturar el momento' : 'Selecciona primero el sitio arriba 👆'}</span>
+                    <input 
+                      type="file" 
+                      accept="image/*" 
+                      capture="environment" 
+                      onChange={handlePhotoUploadWithGPS} 
+                      disabled={!photoSpotId} 
+                      className="hidden" 
+                    />
                   </label>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    {(activeEvent.photos || []).map((photo) => (
-                      <div key={photo.id} className="bg-slate-900 border border-white/10 rounded-2xl overflow-hidden shadow-xl flex flex-col">
-                        <div className="aspect-square w-full bg-slate-800">
-                          <img src={photo.url} alt="" className="w-full h-full object-cover" />
-                        </div>
-                        <p className="p-2 text-[10px] text-slate-300 text-center font-bold truncate">{photo.user_name}</p>
+                  <div className="space-y-2 pt-2">
+                    <h4 className="text-xs font-bold text-slate-300 px-1">Álbum de Fotos por Ubicación</h4>
+                    {(activeEvent.photos || []).length === 0 ? (
+                      <p className="text-xs text-slate-400 px-1">No hay fotos subidas todavía.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3">
+                        {(activeEvent.photos || []).map((photo) => {
+                          const spotObj = (activeEvent.spots || []).find(s => s.id === photo.spot_id);
+                          return (
+                            <div key={photo.id} className="bg-slate-900 border border-white/10 rounded-2xl overflow-hidden shadow-xl flex flex-col">
+                              <div className="aspect-square w-full bg-slate-800">
+                                <img src={photo.url} alt="" className="w-full h-full object-cover" />
+                              </div>
+                              <div className="p-2 text-[10px] text-slate-300 text-center space-y-0.5">
+                                <p className="font-bold truncate">{photo.user_name}</p>
+                                {spotObj && <p className="text-indigo-400 truncate">📍 {spotObj.name}</p>}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
+                    )}
                   </div>
                 </div>
               )}
