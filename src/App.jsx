@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, MapPin, DollarSign, Plus, CheckCircle, 
-  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass
+  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -42,7 +42,7 @@ export default function App() {
   const [selectedFriends, setSelectedFriends] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Búsqueda dinámica de usuarios reales
+  // Búsqueda dinámica de usuarios
   const [friendSearchInput, setFriendSearchInput] = useState('');
   const [registeredUsers, setRegisteredUsers] = useState([]);
 
@@ -143,7 +143,8 @@ export default function App() {
           title: newTitle,
           date: newDate,
           creator_id: currentUser.id,
-          creator_name: currentUser.name
+          creator_name: currentUser.name,
+          status: 'active'
         }])
         .select()
         .single();
@@ -222,7 +223,7 @@ export default function App() {
       },
       (error) => {
         console.error('Error obteniendo GPS:', error);
-        alert('No se pudo obtener tu ubicación. Revisa los permisos del navegador.');
+        alert('No se pudo obtener tu ubicación GPS.');
         setIsGettingLocation(false);
       },
       { enableHighAccuracy: true }
@@ -256,19 +257,56 @@ export default function App() {
     fetchAppData();
   };
 
-  const handlePhotoUpload = async (e) => {
+  // Subir foto con geolocalización GPS automática de donde se encuentra el usuario
+  const handlePhotoUploadWithGPS = (e) => {
     const file = e.target.files[0];
-    if (file && activeEvent) {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        await supabase.from('photos').insert([{
-          event_id: activeEvent.id,
-          url: reader.result,
-          user_name: currentUser.name
-        }]);
-        fetchAppData();
-      };
-      reader.readAsDataURL(file);
+    if (!file || !activeEvent) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64Image = reader.result;
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            const lat = pos.coords.latitude.toFixed(3);
+            const lon = pos.coords.longitude.toFixed(3);
+            await savePhotoToSupabase(base64Image, `GPS: ${lat}, ${lon}`);
+          },
+          async () => {
+            await savePhotoToSupabase(base64Image, 'Ubicación actual');
+          },
+          { enableHighAccuracy: true }
+        );
+      } else {
+        savePhotoToSupabase(base64Image, 'Ubicación actual');
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const savePhotoToSupabase = async (url, locationLabel) => {
+    await supabase.from('photos').insert([{
+      event_id: activeEvent.id,
+      url: url,
+      user_name: `${currentUser.name} (${locationLabel})`
+    }]);
+    fetchAppData();
+  };
+
+  // Cerrar la salida (Solo el creador)
+  const handleCloseEvent = async () => {
+    if (!confirm('¿Estás seguro de cerrar esta salida? Pasará al modo línea temporal resumen.')) return;
+
+    const { error } = await supabase
+      .from('events')
+      .update({ status: 'closed' })
+      .eq('id', activeEvent.id);
+
+    if (error) {
+      alert('Error al cerrar la salida: ' + error.message);
+    } else {
+      fetchAppData();
     }
   };
 
@@ -313,7 +351,6 @@ export default function App() {
 
   const calculateDebts = (members = [], expenses = []) => {
     if (members.length === 0) return [];
-
     const totalSpent = expenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
     const sharePerPerson = totalSpent / members.length;
 
@@ -463,7 +500,7 @@ export default function App() {
   }
 
   // -------------------------------------------------------------
-  // DETALLE DE UN EVENTO ACTIVO
+  // DETALLE DE UN EVENTO ACTIVO O LÍNEA TEMPORAL (SI ESTÁ CERRADO)
   // -------------------------------------------------------------
   if (activeEvent) {
     const totalSpent = (activeEvent.expenses || []).reduce((acc, c) => acc + Number(c.amount), 0);
@@ -471,6 +508,8 @@ export default function App() {
     const currentActiveSpot = (activeEvent.spots || []).find(s => s.active_now);
     const coverImage = getPlanCover(activeEvent.title);
     const calculatedDebts = calculateDebts(activeEvent.members, activeEvent.expenses);
+    const isCreator = activeEvent.creator_name === currentUser.name;
+    const isClosed = activeEvent.status === 'closed';
 
     return (
       <div className="min-h-screen bg-slate-50 text-slate-900 pb-24">
@@ -487,9 +526,16 @@ export default function App() {
           </button>
           
           <div className="absolute bottom-4 left-4 right-4 text-white">
-            <span className="text-[10px] font-bold uppercase tracking-wider bg-white/25 backdrop-blur-md px-2.5 py-0.5 rounded-full inline-block mb-1">
-              📅 {activeEvent.date}
-            </span>
+            <div className="flex items-center space-x-2 mb-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider bg-white/25 backdrop-blur-md px-2.5 py-0.5 rounded-full">
+                📅 {activeEvent.date}
+              </span>
+              {isClosed && (
+                <span className="text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white px-2.5 py-0.5 rounded-full shadow">
+                  🔒 Quedada Cerrada
+                </span>
+              )}
+            </div>
             <h1 className="text-2xl font-black leading-tight drop-shadow-sm">{activeEvent.title}</h1>
             <p className="text-xs text-slate-200 mt-0.5">Organiza: <span className="font-semibold text-white">{activeEvent.creator_name}</span></p>
           </div>
@@ -497,222 +543,277 @@ export default function App() {
 
         <main className="max-w-md mx-auto p-4 space-y-5">
           
-          {/* ASISTENTES */}
-          <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
-                <Users size={14} className="mr-1.5 text-indigo-600" /> Asistentes Confirmados ({activeEvent.members.length})
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {activeEvent.members.map((member) => (
-                <span key={member} className="text-xs font-bold bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-100 flex items-center">
-                  👤 {member}
-                </span>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden">
-            <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full">📍 Ubicación Activa</span>
-            <h2 className="text-xl font-black mt-2 mb-1">{currentActiveSpot ? currentActiveSpot.name : 'Ningún sitio seleccionado'}</h2>
-            {currentActiveSpot && (
-              <a 
-                href={`https://maps.google.com/?q=${encodeURIComponent(currentActiveSpot.name)}`} 
-                target="_blank" 
-                rel="noreferrer" 
-                className="mt-3 inline-flex items-center space-x-2 bg-white text-indigo-700 font-bold text-xs px-4 py-2.5 rounded-xl shadow transition hover:bg-slate-100"
-              >
-                <Navigation size={14} /> <span>Abrir en Google Maps</span>
-              </a>
-            )}
-          </div>
-
-          <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm" role="tablist">
-            <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Sitios y GPS</button>
-            <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Gastos y Deudas</button>
-            <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Fotos</button>
-          </div>
-
-          {eventSubTab === 'spots' && (
-            <div className="space-y-4">
-              
-              {/* BOTÓN GPS Y BUSCADOR CON SUGERENCIAS */}
-              <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                <h3 className="text-xs font-black text-slate-800">Añadir lugar al plan</h3>
-                
-                <button 
-                  type="button"
-                  onClick={handleAddCurrentLocation}
-                  disabled={isGettingLocation}
-                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow hover:opacity-95 flex items-center justify-center space-x-2 transition"
-                >
-                  <Compass size={16} className={isGettingLocation ? "animate-spin" : ""} />
-                  <span>{isGettingLocation ? 'Obteniendo GPS...' : '📍 Marcar mi ubicación GPS actual'}</span>
-                </button>
-
-                <div className="relative pt-1">
-                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
-                  <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400 font-bold">o escribe / selecciona un sitio</span></div>
-                </div>
-
-                <form onSubmit={handleAddSpot} className="space-y-2.5">
-                  <div className="relative flex items-center">
-                    <Search className="absolute left-3.5 text-slate-400" size={16} />
-                    <input 
-                      type="text" 
-                      placeholder="Ej. Bar El Rinconcillo, Cervecería..." 
-                      value={newSpotName} 
-                      onChange={(e) => setNewSpotName(e.target.value)} 
-                      className="w-full bg-slate-50 border border-slate-300 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" 
-                    />
-                  </div>
-
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    <span className="text-[10px] font-bold text-slate-400 self-center mr-1">Sugeridos:</span>
-                    {['Bar El Rinconcillo', 'La Campana', 'Los Coloniales', 'Bodeguita'].map((suggestion) => (
-                      <button
-                        key={suggestion}
-                        type="button"
-                        onClick={() => setNewSpotName(suggestion)}
-                        className="text-[10px] bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 font-bold px-2.5 py-1 rounded-xl border border-slate-200 transition"
-                      >
-                        + {suggestion}
-                      </button>
-                    ))}
-                  </div>
-
-                  <button type="submit" className="w-full bg-indigo-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-indigo-700 transition mt-2">
-                    🔍 Añadir sitio propuesto
-                  </button>
-                </form>
-              </div>
-
-              <div className="space-y-2.5">
-                <h4 className="text-xs font-bold text-slate-700 px-1">Lugares Propuestos y Enlaces a Google Maps</h4>
-                {(activeEvent.spots || []).length === 0 ? (
-                  <p className="text-xs text-slate-400 px-1">Ningún lugar propuesto todavía.</p>
-                ) : (
-                  (activeEvent.spots || []).map((spot) => (
-                    <div key={spot.id} className={`p-4 rounded-2xl border flex flex-col space-y-2.5 ${spot.active_now ? 'bg-indigo-50 border-indigo-300 shadow-sm' : 'bg-white border-slate-200'}`}>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h3 className="font-bold text-slate-900 text-sm">{spot.name}</h3>
-                          <p className="text-[11px] text-slate-500 font-medium">
-                            Propuesto por <span className="font-bold text-indigo-600">{spot.suggested_by}</span> • {spot.votes} votos
-                          </p>
-                        </div>
-                        {spot.active_now && (
-                          <span className="bg-indigo-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full">Activo ahora</span>
-                        )}
-                      </div>
-
-                      <div className="flex gap-2 pt-1 border-t border-slate-100">
-                        <a 
-                          href={`https://maps.google.com/?q=${encodeURIComponent(spot.name)}`} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-center font-bold text-xs py-2 rounded-xl flex items-center justify-center space-x-1.5 transition"
-                        >
-                          <MapPin size={14} className="text-indigo-600" />
-                          <span>Ver en Google Maps</span>
-                        </a>
-                        <button 
-                          onClick={() => handleVoteSpot(spot.id, spot.votes)} 
-                          className="bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800 transition"
-                        >
-                          👍 {spot.votes}
-                        </button>
-                        {!spot.active_now && (
-                          <button 
-                            onClick={() => handleActivateSpot(spot.id)} 
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-xl text-xs font-bold transition shadow-sm"
-                          >
-                            Ir aquí
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+          {/* BOTÓN DE CIERRE DE SALIDA (SOLO CREADOR SI ESTÁ ABIERTA) */}
+          {isCreator && !isClosed && (
+            <button 
+              onClick={handleCloseEvent}
+              className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow-md shadow-amber-600/20 flex items-center justify-center space-x-2 transition hover:opacity-95"
+            >
+              <Flag size={16} /> <span>Cerrar Salida y Generar Línea Temporal</span>
+            </button>
           )}
 
-          {eventSubTab === 'expenses' && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><p className="text-[10px] font-bold text-slate-500">TOTAL GRUPO</p><p className="text-xl font-black text-emerald-600">{totalSpent.toFixed(2)}€</p></div>
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><p className="text-[10px] font-bold text-slate-500">POR PERSONA</p><p className="text-xl font-black text-indigo-600">{perPerson.toFixed(2)}€</p></div>
+          {/* VISTA DE LÍNEA TEMPORAL SI LA SALIDA ESTÁ CERRADA */}
+          {isClosed ? (
+            <div className="space-y-6">
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                <div className="text-center space-y-1">
+                  <span className="text-2xl">🏆</span>
+                  <h2 className="text-lg font-black text-slate-900">Resumen de la Salida</h2>
+                  <p className="text-xs text-slate-500">Historial completo de la ruta y momentos vividos</p>
+                </div>
+
+                <div className="border-l-2 border-indigo-500 pl-4 space-y-6 ml-2 pt-2">
+                  {(activeEvent.spots || []).map((spot, idx) => (
+                    <div key={spot.id} className="relative space-y-1">
+                      <div className="absolute -left-[21px] top-1 w-3 h-3 bg-indigo-600 rounded-full border-2 border-white"></div>
+                      <span className="text-[10px] font-bold text-indigo-600 uppercase">Parada {idx + 1}</span>
+                      <h3 className="font-bold text-sm text-slate-900">{spot.name}</h3>
+                      <p className="text-[11px] text-slate-500">Propuesto por {spot.suggested_by}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-5 rounded-3xl shadow-lg space-y-3">
-                <h3 className="text-xs font-black uppercase tracking-wider text-indigo-300 flex items-center">
-                  <DollarSign size={16} className="mr-1 text-emerald-400" /> Reparto y Liquidación de Deudas
-                </h3>
-                
-                {calculatedDebts.length === 0 ? (
-                  <p className="text-xs text-slate-300">¡Cuentas saldadas! Nadie debe dinero a nadie en este momento.</p>
+              {/* GALERÍA DE MINIATURAS EN LÍNEA TEMPORAL */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">📸 Álbum de Fotos del Recuerdo</h3>
+                {(activeEvent.photos || []).length === 0 ? (
+                  <p className="text-xs text-slate-400">No se subieron fotos en este plan.</p>
                 ) : (
-                  <div className="space-y-2">
-                    {calculatedDebts.map((debt, index) => (
-                      <div key={index} className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10 flex justify-between items-center text-xs">
-                        <div>
-                          <span className="font-bold text-white">{debt.from}</span>
-                          <span className="text-slate-300 mx-1.5">debe pagar a</span>
-                          <span className="font-bold text-emerald-300">{debt.to}</span>
-                        </div>
-                        <span className="font-black text-emerald-400 text-sm bg-emerald-950/60 px-3 py-1 rounded-xl">
-                          {debt.amount.toFixed(2)}€
+                  <div className="grid grid-cols-3 gap-2">
+                    {(activeEvent.photos || []).map((photo) => (
+                      <div key={photo.id} className="relative group aspect-square rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-100">
+                        <img src={photo.url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition" />
+                        <span className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-xs text-white text-[9px] font-bold px-1.5 py-0.5 rounded truncate text-center">
+                          {photo.user_name}
                         </span>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
+            </div>
+          ) : (
+            /* VISTA NORMAL DE PLAN ACTIVO */
+            <>
+              <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-2.5">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
+                  <Users size={14} className="mr-1.5 text-indigo-600" /> Asistentes Confirmados ({activeEvent.members.length})
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {activeEvent.members.map((member) => (
+                    <span key={member} className="text-xs font-bold bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-100 flex items-center">
+                      👤 {member}
+                    </span>
+                  ))}
+                </div>
+              </div>
 
-              <form onSubmit={handleAddExpense} className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto</h4>
-                <input type="text" aria-label="Concepto" placeholder="Concepto (ej. Cervezas, Comida...)" value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" />
-                <input type="number" step="0.01" aria-label="Importe" placeholder="Importe (€)" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" />
-                <button type="submit" className="w-full bg-emerald-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-emerald-700 transition">Añadir Gasto</button>
-              </form>
-
-              <div className="space-y-2">
-                <h4 className="text-xs font-bold text-slate-700 px-1">Historial de Gastos</h4>
-                {(activeEvent.expenses || []).length === 0 ? (
-                  <p className="text-xs text-slate-400 px-1">No hay gastos registrados todavía.</p>
-                ) : (
-                  (activeEvent.expenses || []).map((exp) => (
-                    <div key={exp.id} className="bg-white p-3.5 rounded-2xl border border-slate-200 flex justify-between items-center text-xs shadow-sm">
-                      <div>
-                        <p className="font-bold text-slate-900">{exp.description}</p>
-                        <p className="text-[10px] text-slate-500">Pagado por <span className="font-bold text-indigo-600">{exp.paid_by}</span></p>
-                      </div>
-                      <span className="font-black text-emerald-700 text-sm">{Number(exp.amount).toFixed(2)}€</span>
-                    </div>
-                  ))
+              <div className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden">
+                <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full">📍 Ubicación Activa</span>
+                <h2 className="text-xl font-black mt-2 mb-1">{currentActiveSpot ? currentActiveSpot.name : 'Ningún sitio seleccionado'}</h2>
+                {currentActiveSpot && (
+                  <a 
+                    href={`https://maps.google.com/?q=${encodeURIComponent(currentActiveSpot.name)}`} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="mt-3 inline-flex items-center space-x-2 bg-white text-indigo-700 font-bold text-xs px-4 py-2.5 rounded-xl shadow transition hover:bg-slate-100"
+                  >
+                    <Navigation size={14} /> <span>Abrir en Google Maps</span>
+                  </a>
                 )}
               </div>
-            </div>
-          )}
 
-          {eventSubTab === 'gallery' && (
-            <div className="space-y-4">
-              <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 bg-white rounded-3xl p-6 cursor-pointer hover:border-indigo-500 transition shadow-sm">
-                <Camera className="w-6 h-6 text-indigo-600 mb-1" />
-                <span className="text-xs font-bold text-slate-800">Subir foto del plan</span>
-                <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                {(activeEvent.photos || []).map((photo) => (
-                  <div key={photo.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                    <img src={photo.url} alt={`Foto de ${photo.user_name}`} className="w-full aspect-square object-cover" />
-                    <p className="p-2 text-[10px] text-slate-600 text-center font-bold">{photo.user_name}</p>
-                  </div>
-                ))}
+              <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm" role="tablist">
+                <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Sitios y GPS</button>
+                <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Gastos y Deudas</button>
+                <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Fotos</button>
               </div>
-            </div>
+
+              {eventSubTab === 'spots' && (
+                <div className="space-y-4">
+                  <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+                    <h3 className="text-xs font-black text-slate-800">Añadir lugar al plan</h3>
+                    
+                    <button 
+                      type="button"
+                      onClick={handleAddCurrentLocation}
+                      disabled={isGettingLocation}
+                      className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow hover:opacity-95 flex items-center justify-center space-x-2 transition"
+                    >
+                      <Compass size={16} className={isGettingLocation ? "animate-spin" : ""} />
+                      <span>{isGettingLocation ? 'Obteniendo GPS...' : '📍 Marcar mi ubicación GPS actual'}</span>
+                    </button>
+
+                    <div className="relative pt-1">
+                      <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
+                      <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400 font-bold">o escribe / selecciona un sitio</span></div>
+                    </div>
+
+                    <form onSubmit={handleAddSpot} className="space-y-2.5">
+                      <div className="relative flex items-center">
+                        <Search className="absolute left-3.5 text-slate-400" size={16} />
+                        <input 
+                          type="text" 
+                          placeholder="Ej. Bar El Rinconcillo, Cervecería..." 
+                          value={newSpotName} 
+                          onChange={(e) => setNewSpotName(e.target.value)} 
+                          className="w-full bg-slate-50 border border-slate-300 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" 
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        <span className="text-[10px] font-bold text-slate-400 self-center mr-1">Sugeridos:</span>
+                        {['Bar El Rinconcillo', 'La Campana', 'Los Coloniales', 'Bodeguita'].map((suggestion) => (
+                          <button
+                            key={suggestion}
+                            type="button"
+                            onClick={() => setNewSpotName(suggestion)}
+                            className="text-[10px] bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 font-bold px-2.5 py-1 rounded-xl border border-slate-200 transition"
+                          >
+                            + {suggestion}
+                          </button>
+                        ))}
+                      </div>
+
+                      <button type="submit" className="w-full bg-indigo-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-indigo-700 transition mt-2">
+                        🔍 Añadir sitio propuesto
+                      </button>
+                    </form>
+                  </div>
+
+                  <div className="space-y-2.5">
+                    <h4 className="text-xs font-bold text-slate-700 px-1">Lugares Propuestos y Enlaces a Google Maps</h4>
+                    {(activeEvent.spots || []).length === 0 ? (
+                      <p className="text-xs text-slate-400 px-1">Ningún lugar propuesto todavía.</p>
+                    ) : (
+                      (activeEvent.spots || []).map((spot) => (
+                        <div key={spot.id} className={`p-4 rounded-2xl border flex flex-col space-y-2.5 ${spot.active_now ? 'bg-indigo-50 border-indigo-300 shadow-sm' : 'bg-white border-slate-200'}`}>
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <h3 className="font-bold text-slate-900 text-sm">{spot.name}</h3>
+                              <p className="text-[11px] text-slate-500 font-medium">
+                                Propuesto por <span className="font-bold text-indigo-600">{spot.suggested_by}</span> • {spot.votes} votos
+                              </p>
+                            </div>
+                            {spot.active_now && (
+                              <span className="bg-indigo-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full">Activo ahora</span>
+                            )}
+                          </div>
+
+                          <div className="flex gap-2 pt-1 border-t border-slate-100">
+                            <a 
+                              href={`https://maps.google.com/?q=${encodeURIComponent(spot.name)}`} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-center font-bold text-xs py-2 rounded-xl flex items-center justify-center space-x-1.5 transition"
+                            >
+                              <MapPin size={14} className="text-indigo-600" />
+                              <span>Ver en Google Maps</span>
+                            </a>
+                            <button 
+                              onClick={() => handleVoteSpot(spot.id, spot.votes)} 
+                              className="bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800 transition"
+                            >
+                              👍 {spot.votes}
+                            </button>
+                            {!spot.active_now && (
+                              <button 
+                                onClick={() => handleActivateSpot(spot.id)} 
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-xl text-xs font-bold transition shadow-sm"
+                              >
+                                Ir aquí
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {eventSubTab === 'expenses' && (
+                <div className="space-y-5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><p className="text-[10px] font-bold text-slate-500">TOTAL GRUPO</p><p className="text-xl font-black text-emerald-600">{totalSpent.toFixed(2)}€</p></div>
+                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><p className="text-[10px] font-bold text-slate-500">POR PERSONA</p><p className="text-xl font-black text-indigo-600">{perPerson.toFixed(2)}€</p></div>
+                  </div>
+
+                  <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-5 rounded-3xl shadow-lg space-y-3">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-indigo-300 flex items-center">
+                      <DollarSign size={16} className="mr-1 text-emerald-400" /> Reparto y Liquidación de Deudas
+                    </h3>
+                    
+                    {calculatedDebts.length === 0 ? (
+                      <p className="text-xs text-slate-300">¡Cuentas saldadas! Nadie debe dinero a nadie en este momento.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {calculatedDebts.map((debt, index) => (
+                          <div key={index} className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10 flex justify-between items-center text-xs">
+                            <div>
+                              <span className="font-bold text-white">{debt.from}</span>
+                              <span className="text-slate-300 mx-1.5">debe pagar a</span>
+                              <span className="font-bold text-emerald-300">{debt.to}</span>
+                            </div>
+                            <span className="font-black text-emerald-400 text-sm bg-emerald-950/60 px-3 py-1 rounded-xl">
+                              {debt.amount.toFixed(2)}€
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <form onSubmit={handleAddExpense} className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+                    <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto</h4>
+                    <input type="text" aria-label="Concepto" placeholder="Concepto (ej. Cervezas, Comida...)" value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" />
+                    <input type="number" step="0.01" aria-label="Importe" placeholder="Importe (€)" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" />
+                    <button type="submit" className="w-full bg-emerald-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-emerald-700 transition">Añadir Gasto</button>
+                  </form>
+
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold text-slate-700 px-1">Historial de Gastos</h4>
+                    {(activeEvent.expenses || []).length === 0 ? (
+                      <p className="text-xs text-slate-400 px-1">No hay gastos registrados todavía.</p>
+                    ) : (
+                      (activeEvent.expenses || []).map((exp) => (
+                        <div key={exp.id} className="bg-white p-3.5 rounded-2xl border border-slate-200 flex justify-between items-center text-xs shadow-sm">
+                          <div>
+                            <p className="font-bold text-slate-900">{exp.description}</p>
+                            <p className="text-[10px] text-slate-500">Pagado por <span className="font-bold text-indigo-600">{exp.paid_by}</span></p>
+                          </div>
+                          <span className="font-black text-emerald-700 text-sm">{Number(exp.amount).toFixed(2)}€</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {eventSubTab === 'gallery' && (
+                <div className="space-y-4">
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-indigo-300 bg-indigo-50/50 rounded-3xl p-6 cursor-pointer hover:bg-indigo-50 transition shadow-sm">
+                    <Camera className="w-6 h-6 text-indigo-600 mb-1" />
+                    <span className="text-xs font-bold text-indigo-900">Tomar / Subir foto con GPS actual</span>
+                    <span className="text-[10px] text-slate-500 mt-0.5">Se guardará con la ubicación exacta en miniatura</span>
+                    <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUploadWithGPS} className="hidden" />
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {(activeEvent.photos || []).map((photo) => (
+                      <div key={photo.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm flex flex-col">
+                        <div className="aspect-square w-full bg-slate-100">
+                          <img src={photo.url} alt="" className="w-full h-full object-cover" />
+                        </div>
+                        <p className="p-2 text-[10px] text-slate-600 text-center font-bold truncate">{photo.user_name}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </main>
       </div>
@@ -755,6 +856,7 @@ export default function App() {
               ) : (
                 myEvents.map((event) => {
                   const cover = getPlanCover(event.title);
+                  const isClosed = event.status === 'closed';
                   return (
                     <article 
                       key={event.id} 
@@ -764,16 +866,17 @@ export default function App() {
                       <div className="h-32 w-full relative bg-slate-200">
                         <img src={cover} alt="" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" aria-hidden="true" />
                         <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent"></div>
-                        <span className="absolute top-3 right-3 text-[10px] font-bold bg-white/90 backdrop-blur-md text-slate-900 px-2.5 py-1 rounded-full shadow">
-                          📅 {event.date}
-                        </span>
+                        <div className="absolute top-3 right-3 flex gap-1">
+                          {isClosed && <span className="text-[10px] font-bold bg-amber-500 text-white px-2 py-0.5 rounded-full shadow">🔒 Cerrada</span>}
+                          <span className="text-[10px] font-bold bg-white/90 backdrop-blur-md text-slate-900 px-2.5 py-1 rounded-full shadow">📅 {event.date}</span>
+                        </div>
                         <h3 className="absolute bottom-3 left-3 right-3 text-white font-black text-lg drop-shadow">{event.title}</h3>
                       </div>
                       
                       <div className="p-4 flex justify-between items-center">
                         <p className="text-xs text-slate-600 font-medium">Organiza: <span className="font-bold text-slate-900">{event.creator_name}</span></p>
                         <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition">
-                          Entrar →
+                          {isClosed ? 'Ver Timeline →' : 'Entrar →'}
                         </span>
                       </div>
                     </article>
