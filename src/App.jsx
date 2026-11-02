@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, MapPin, DollarSign, Plus, CheckCircle, 
-  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy
+  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -46,15 +46,17 @@ export default function App() {
   const [friendSearchInput, setFriendSearchInput] = useState('');
   const [registeredUsers, setRegisteredUsers] = useState([]);
 
-  // Sitios, GPS y Autocompletado de Mapas
+  // Sitios, GPS y Mapas
   const [newSpotName, setNewSpotName] = useState('');
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [mapSuggestions, setMapSuggestions] = useState([]);
   const [isSearchingMaps, setIsSearchingMaps] = useState(false);
 
-  // Gastos
+  // Gastos y Tickets
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseReceiptUrl, setExpenseReceiptUrl] = useState('');
+  const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
 
   const [events, setEvents] = useState([]);
 
@@ -65,7 +67,6 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Búsqueda de lugares en tiempo real mediante API pública de Mapas (Nominatim / OpenStreetMap)
   useEffect(() => {
     const timer = setTimeout(async () => {
       if (newSpotName.trim().length > 2) {
@@ -75,7 +76,7 @@ export default function App() {
           const data = await res.json();
           setMapSuggestions(data || []);
         } catch (err) {
-          console.error('Error buscando lugares en mapas:', err);
+          console.error('Error buscando lugares:', err);
           setMapSuggestions([]);
         } finally {
           setIsSearchingMaps(false);
@@ -83,7 +84,7 @@ export default function App() {
       } else {
         setMapSuggestions([]);
       }
-    }, 400); // Debounce para evitar llamadas excesivas
+    }, 400);
 
     return () => clearTimeout(timer);
   }, [newSpotName]);
@@ -272,6 +273,20 @@ export default function App() {
     fetchAppData();
   };
 
+  // Subir foto del ticket de gasto
+  const handleReceiptUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setIsUploadingReceipt(true);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setExpenseReceiptUrl(reader.result);
+      setIsUploadingReceipt(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleAddExpense = async (e) => {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
@@ -280,11 +295,13 @@ export default function App() {
       event_id: activeEvent.id,
       description: expenseDesc,
       amount: parseFloat(expenseAmount),
-      paid_by: currentUser.name
+      paid_by: currentUser.name,
+      receipt_url: expenseReceiptUrl || null
     }]);
 
     setExpenseDesc('');
     setExpenseAmount('');
+    setExpenseReceiptUrl('');
     fetchAppData();
   };
 
@@ -604,6 +621,33 @@ export default function App() {
                 </div>
               </div>
 
+              {/* HISTORIAL DE GASTOS CON TICKETS EN LÍNEA TEMPORAL */}
+              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">🧾 Gastos y Tickets de la Salida</h3>
+                {(activeEvent.expenses || []).length === 0 ? (
+                  <p className="text-xs text-slate-400">No hay gastos registrados.</p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {(activeEvent.expenses || []).map((exp) => (
+                      <div key={exp.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex justify-between items-center text-xs">
+                        <div>
+                          <p className="font-bold text-slate-900">{exp.description}</p>
+                          <p className="text-[10px] text-slate-500">Pagado por {exp.paid_by}</p>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="font-black text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
+                          {exp.receipt_url && (
+                            <a href={exp.receipt_url} target="_blank" rel="noreferrer" className="w-7 h-7 bg-indigo-100 hover:bg-indigo-200 rounded-lg flex items-center justify-center text-indigo-700 transition" title="Ver ticket">
+                              <Receipt size={14} />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">📸 Álbum de Fotos del Recuerdo</h3>
                 {(activeEvent.photos || []).length === 0 ? (
@@ -693,7 +737,6 @@ export default function App() {
                         )}
                       </div>
 
-                      {/* DESPLEGABLE EN TIEMPO REAL DE SUGERENCIAS DE MAPAS */}
                       {mapSuggestions.length > 0 && (
                         <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden max-h-56 overflow-y-auto">
                           {mapSuggestions.map((place) => (
@@ -816,11 +859,50 @@ export default function App() {
                     )}
                   </div>
 
+                  {/* FORMULARIO DE GASTO CON FOTO DE TICKET */}
                   <form onSubmit={handleAddExpense} className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                    <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto</h4>
-                    <input type="text" aria-label="Concepto" placeholder="Concepto (ej. Cervezas, Comida...)" value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" />
-                    <input type="number" step="0.01" aria-label="Importe" placeholder="Importe (€)" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" />
-                    <button type="submit" className="w-full bg-emerald-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-emerald-700 transition">Añadir Gasto</button>
+                    <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto y ticket</h4>
+                    
+                    <input 
+                      type="text" 
+                      aria-label="Concepto" 
+                      placeholder="Concepto (ej. Cervezas, Comida...)" 
+                      value={expenseDesc} 
+                      onChange={(e) => setExpenseDesc(e.target.value)} 
+                      className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" 
+                      required
+                    />
+
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      aria-label="Importe" 
+                      placeholder="Importe (€)" 
+                      value={expenseAmount} 
+                      onChange={(e) => setExpenseAmount(e.target.value)} 
+                      className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" 
+                      required
+                    />
+
+                    <div className="space-y-1.5">
+                      <label className="block text-[11px] font-bold text-slate-600">Foto del Ticket (Opcional)</label>
+                      <label className="flex items-center justify-center space-x-2 border-2 border-dashed border-slate-300 bg-slate-50 rounded-2xl p-3 cursor-pointer hover:bg-slate-100 transition">
+                        <Receipt size={16} className="text-indigo-600" />
+                        <span className="text-xs font-bold text-slate-700">
+                          {isUploadingReceipt ? 'Cargando...' : expenseReceiptUrl ? '✓ Ticket adjuntado correctamente' : 'Subir foto del ticket'}
+                        </span>
+                        <input type="file" accept="image/*" onChange={handleReceiptUpload} className="hidden" />
+                      </label>
+                      {expenseReceiptUrl && (
+                        <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-200 mt-1">
+                          <img src={expenseReceiptUrl} alt="Vista previa ticket" className="w-full h-full object-cover" />
+                        </div>
+                      )}
+                    </div>
+
+                    <button type="submit" className="w-full bg-emerald-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-emerald-700 transition mt-1">
+                      Añadir Gasto con Ticket
+                    </button>
                   </form>
 
                   <div className="space-y-2">
@@ -834,7 +916,14 @@ export default function App() {
                             <p className="font-bold text-slate-900">{exp.description}</p>
                             <p className="text-[10px] text-slate-500">Pagado por <span className="font-bold text-indigo-600">{exp.paid_by}</span></p>
                           </div>
-                          <span className="font-black text-emerald-700 text-sm">{Number(exp.amount).toFixed(2)}€</span>
+                          <div className="flex items-center space-x-2">
+                            <span className="font-black text-emerald-700 text-sm">{Number(exp.amount).toFixed(2)}€</span>
+                            {exp.receipt_url && (
+                              <a href={exp.receipt_url} target="_blank" rel="noreferrer" className="w-7 h-7 bg-indigo-50 hover:bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-700 transition border border-indigo-200" title="Ver ticket">
+                                <Receipt size={14} />
+                              </a>
+                            )}
+                          </div>
                         </div>
                       ))
                     )}
