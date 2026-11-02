@@ -42,19 +42,36 @@ export default function App() {
   const [selectedFriends, setSelectedFriends] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Búsqueda dinámica de usuarios reales
+  const [friendSearchInput, setFriendSearchInput] = useState('');
+  const [registeredUsers, setRegisteredUsers] = useState([]);
+
   const [newSpotName, setNewSpotName] = useState('');
   const [newSpotCategory, setNewSpotCategory] = useState('cervecitas');
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
 
-  const availableFriends = ['Kike', 'Nacho', 'Rulo', 'Pelu', 'Joaquín', 'Paco', 'Pablo', 'Fer', 'Javi'];
   const [events, setEvents] = useState([]);
 
   useEffect(() => {
     if (currentUser) {
       fetchAppData();
+      fetchRegisteredUsers();
     }
   }, [currentUser]);
+
+  // Cargar usuarios registrados en Supabase
+  const fetchRegisteredUsers = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('name, email');
+      if (error) throw error;
+      setRegisteredUsers(data || []);
+    } catch (err) {
+      console.error('Error cargando perfiles de usuario:', err.message);
+    }
+  };
 
   const fetchAppData = async () => {
     try {
@@ -89,8 +106,9 @@ export default function App() {
         return;
       }
       if (data.user) {
-        await supabase.from('profiles').insert([{ id: data.user.id, name: name || 'Usuario', email }]);
-        setCurrentUser({ id: data.user.id, name: name || 'Usuario', email });
+        const userDisplayName = name.trim() || email.split('@')[0];
+        await supabase.from('profiles').insert([{ id: data.user.id, name: userDisplayName, email }]);
+        setCurrentUser({ id: data.user.id, name: userDisplayName, email });
       }
     } else {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
@@ -100,16 +118,17 @@ export default function App() {
       }
       if (data.user) {
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
-        setCurrentUser({ id: data.user.id, name: profile ? profile.name : email.split('@')[0], email });
+        const userDisplayName = profile ? profile.name : email.split('@')[0];
+        setCurrentUser({ id: data.user.id, name: userDisplayName, email });
       }
     }
   };
 
-  const toggleFriendSelection = (friend) => {
-    if (selectedFriends.includes(friend)) {
-      setSelectedFriends(selectedFriends.filter(f => f !== friend));
+  const toggleFriendSelection = (friendName) => {
+    if (selectedFriends.includes(friendName)) {
+      setSelectedFriends(selectedFriends.filter(f => f !== friendName));
     } else {
-      setSelectedFriends([...selectedFriends, friend]);
+      setSelectedFriends([...selectedFriends, friendName]);
     }
   };
 
@@ -118,28 +137,44 @@ export default function App() {
     if (!newTitle.trim() || !newDate) return;
 
     try {
-      const { data: newEv, error } = await supabase.from('events').insert([{
-        title: newTitle,
-        date: newDate,
-        creator_id: currentUser.id,
-        creator_name: currentUser.name
-      }]).select().single();
+      const { data: newEv, error: eventError } = await supabase
+        .from('events')
+        .insert([{
+          title: newTitle,
+          date: newDate,
+          creator_id: currentUser.id,
+          creator_name: currentUser.name
+        }])
+        .select()
+        .single();
 
-      if (error) throw error;
+      if (eventError) throw eventError;
 
-      await supabase.from('event_members').insert([{ event_id: newEv.id, user_name: currentUser.name, status: 'member' }]);
+      await supabase.from('event_members').insert([{ 
+        event_id: newEv.id, 
+        user_name: currentUser.name, 
+        status: 'member' 
+      }]);
 
-      for (const friend of selectedFriends) {
-        await supabase.from('event_members').insert([{ event_id: newEv.id, user_name: friend, status: 'pending_invite' }]);
+      if (selectedFriends.length > 0) {
+        const memberInserts = selectedFriends.map(friend => ({
+          event_id: newEv.id,
+          user_name: friend,
+          status: 'pending_invite'
+        }));
+        await supabase.from('event_members').insert(memberInserts);
       }
 
       setNewTitle('');
       setNewDate('');
       setSelectedFriends([]);
+      setFriendSearchInput('');
       setShowCreateModal(false);
-      fetchAppData();
+      await fetchAppData();
+
     } catch (err) {
-      console.error('Error creando evento:', err.message);
+      console.error('Error al crear evento:', err.message);
+      alert('Error al crear el evento: ' + err.message);
     }
   };
 
@@ -236,18 +271,22 @@ export default function App() {
   const myApprovalRequests = events.filter(e => e.creator_name === currentUser?.name && e.pendingRequests.length > 0);
   const totalNotifications = myInvitations.length + myApprovalRequests.reduce((acc, curr) => acc + curr.pendingRequests.length, 0);
 
+  // Filtrado de usuarios según búsqueda en el modal
+  const filteredUsersToInvite = registeredUsers.filter(u => 
+    u.name.toLowerCase() !== currentUser?.name.toLowerCase() &&
+    (u.name.toLowerCase().includes(friendSearchInput.toLowerCase()) || 
+     u.email.toLowerCase().includes(friendSearchInput.toLowerCase()))
+  );
+
   // -------------------------------------------------------------
-  // PANTALLA DE LOGIN / REGISTRO DISEÑADA Y ELEGANTE
+  // PANTALLA DE LOGIN / REGISTRO
   // -------------------------------------------------------------
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 text-slate-900 relative overflow-hidden">
-        {/* Fondo decorativo suave */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-80 bg-gradient-to-tr from-indigo-300/40 to-purple-300/40 rounded-b-full blur-3xl pointer-events-none" aria-hidden="true"></div>
 
         <div className="max-w-md w-full bg-white/90 backdrop-blur-xl p-8 rounded-[2.5rem] shadow-xl border border-slate-200/80 relative z-10 space-y-6">
-          
-          {/* Logo y Cabecera */}
           <div className="text-center space-y-2">
             <div className="w-16 h-16 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-2xl mx-auto flex items-center justify-center text-3xl shadow-lg shadow-indigo-500/20 text-white" aria-hidden="true">
               🚀
@@ -256,13 +295,12 @@ export default function App() {
             <p className="text-xs font-medium text-slate-500">Organiza tus salidas, gastos y quedadas con tu grupo</p>
           </div>
 
-          {/* Pestañas Login / Registro */}
-          <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200" role="tablist" aria-label="Modo de autenticación">
+          <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200" role="tablist">
             <button 
               role="tab"
               aria-selected={authMode === 'login'}
               onClick={() => setAuthMode('login')}
-              className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-indigo-600 ${authMode === 'login' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+              className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all focus:outline-none ${authMode === 'login' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
             >
               Iniciar Sesión
             </button>
@@ -270,13 +308,12 @@ export default function App() {
               role="tab"
               aria-selected={authMode === 'register'}
               onClick={() => setAuthMode('register')}
-              className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-indigo-600 ${authMode === 'register' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+              className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all focus:outline-none ${authMode === 'register' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
             >
               Crear Cuenta
             </button>
           </div>
 
-          {/* Formulario */}
           <form onSubmit={handleAuth} className="space-y-4">
             {authMode === 'register' && (
               <div className="space-y-1">
@@ -335,7 +372,6 @@ export default function App() {
               {authMode === 'login' ? 'Entrar a mi cuenta' : 'Registrarme'}
             </button>
           </form>
-
         </div>
       </main>
     );
@@ -603,6 +639,7 @@ export default function App() {
         )}
       </main>
 
+      {/* MODAL CREAR SALIDA CON BÚSQUEDA REAL DE USUARIOS */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white max-w-md w-full p-6 rounded-3xl shadow-2xl space-y-4 border border-slate-200">
@@ -616,22 +653,47 @@ export default function App() {
                 <label htmlFor="plan-date" className="block text-xs font-bold text-slate-700 mb-1">Fecha</label>
                 <input id="plan-date" type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-2.5 text-sm text-slate-900" required />
               </div>
+              
+              {/* Buscador de usuarios de Supabase */}
               <div>
-                <span className="block text-xs font-bold text-slate-700 mb-2">Invitar Amigos</span>
-                <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto">
-                  {availableFriends.map((friend) => {
-                    const isSelected = selectedFriends.includes(friend);
-                    return (
-                      <button type="button" key={friend} onClick={() => toggleFriendSelection(friend)} className={`text-xs px-3 py-1.5 rounded-xl font-bold border ${isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-100 text-slate-700 border-slate-300'}`}>
-                        {friend}
-                      </button>
-                    );
-                  })}
+                <label htmlFor="friend-search" className="block text-xs font-bold text-slate-700 mb-1">Invitar Usuarios Registrados</label>
+                <div className="relative mb-2">
+                  <Search className="absolute left-3.5 top-2.5 text-slate-400" size={16} />
+                  <input 
+                    id="friend-search"
+                    type="text" 
+                    placeholder="Buscar por nombre o email..." 
+                    value={friendSearchInput} 
+                    onChange={(e) => setFriendSearchInput(e.target.value)} 
+                    className="w-full bg-slate-50 border border-slate-300 rounded-2xl pl-9 pr-4 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" 
+                  />
+                </div>
+
+                <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto p-1 bg-slate-50 rounded-2xl border border-slate-200">
+                  {filteredUsersToInvite.length === 0 ? (
+                    <p className="text-[11px] text-slate-400 p-2 text-center w-full">No se encontraron usuarios registrados.</p>
+                  ) : (
+                    filteredUsersToInvite.map((u) => {
+                      const isSelected = selectedFriends.includes(u.name);
+                      return (
+                        <button 
+                          type="button" 
+                          key={u.email} 
+                          onClick={() => toggleFriendSelection(u.name)} 
+                          className={`text-xs px-3 py-1.5 rounded-xl font-bold border transition flex items-center space-x-1 ${isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-400'}`}
+                        >
+                          <span>{u.name}</span>
+                          {isSelected && <Check size={12} className="ml-1" />}
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
               </div>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setShowCreateModal(false)} className="w-1/2 bg-slate-100 text-slate-800 font-bold py-2.5 rounded-2xl text-xs">Cancelar</button>
-                <button type="submit" className="w-1/2 bg-indigo-600 text-white font-bold py-2.5 rounded-2xl text-xs shadow">Crear Plan</button>
+
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setShowCreateModal(false)} className="w-1/2 bg-slate-100 text-slate-800 font-bold py-2.5 rounded-2xl text-xs hover:bg-slate-200 transition">Cancelar</button>
+                <button type="submit" className="w-1/2 bg-indigo-600 text-white font-bold py-2.5 rounded-2xl text-xs shadow hover:bg-indigo-700 transition">Crear Plan</button>
               </div>
             </form>
           </div>
