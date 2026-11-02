@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, MapPin, DollarSign, Plus, CheckCircle, 
-  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus
+  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus, UserMinus
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -259,6 +259,26 @@ export default function App() {
     }
   };
 
+  // Función para que un miembro se dé de baja o el creador elimine a un asistente
+  const handleRemoveMember = async (memberName) => {
+    if (!confirm(`¿Estás seguro de que ${memberName === currentUser.name ? 'quieres salir' : 'quieres eliminar a ' + memberName} del plan?`)) return;
+
+    const { error } = await supabase
+      .from('event_members')
+      .delete()
+      .eq('event_id', activeEvent.id)
+      .eq('user_name', memberName);
+
+    if (error) {
+      alert('Error al quitar al asistente: ' + error.message);
+    } else {
+      if (memberName === currentUser.name) {
+        setActiveEvent(null);
+      }
+      fetchAppData();
+    }
+  };
+
   const handleAddSpot = async (e) => {
     e.preventDefault();
     if (!newSpotName.trim() || !activeEvent) return;
@@ -353,7 +373,7 @@ export default function App() {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
 
-    await supabase.from('expenses').insert([{
+    const { error } = await supabase.from('expenses').insert([{
       event_id: activeEvent.id,
       description: expenseDesc,
       amount: parseFloat(expenseAmount),
@@ -361,6 +381,11 @@ export default function App() {
       spot_id: expenseSpotId || null,
       receipt_url: expenseReceiptUrl || null
     }]);
+
+    if (error) {
+      alert('Error al añadir gasto: ' + error.message);
+      return;
+    }
 
     setExpenseDesc('');
     setExpenseAmount('');
@@ -958,16 +983,32 @@ export default function App() {
             </div>
           ) : (
             <>
-              <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-2.5">
-                <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
-                  <Users size={14} className="mr-1.5 text-sky-600" /> Asistentes Confirmados ({activeEvent.members.length})
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {activeEvent.members.map((member) => (
-                    <span key={member} className="text-xs font-bold bg-sky-50 text-sky-700 px-3 py-1.5 rounded-xl border border-sky-100 flex items-center">
-                      👤 {member}
-                    </span>
-                  ))}
+              {/* ASISTENTES CONFIRMADOS CON OPCIÓN DE ELIMINARSE / DARSE DE BAJA */}
+              <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
+                    <Users size={14} className="mr-1.5 text-sky-600" /> Asistentes Confirmados ({activeEvent.members.length})
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {activeEvent.members.map((member) => {
+                    const canRemove = isCreator || member === currentUser.name;
+                    return (
+                      <div key={member} className="text-xs font-bold bg-sky-50 text-sky-700 px-3 py-1.5 rounded-xl border border-sky-200 flex items-center space-x-2">
+                        <span>👤 {member}</span>
+                        {canRemove && (
+                          <button 
+                            type="button"
+                            onClick={() => handleRemoveMember(member)}
+                            className="text-slate-400 hover:text-red-600 transition p-0.5"
+                            title={member === currentUser.name ? "Salir del plan" : "Eliminar asistente"}
+                          >
+                            <UserMinus size={13} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1223,7 +1264,7 @@ export default function App() {
                   </form>
 
                   <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-slate-700 px-1">Historial de Gastos</h4>
+                    <h4 className="text-xs font-bold text-slate-700 px-1">Historial de Gastos ({activeEvent.expenses.length})</h4>
                     {(activeEvent.expenses || []).length === 0 ? (
                       <p className="text-xs text-slate-400 px-1">No hay gastos registrados todavía.</p>
                     ) : (
@@ -1519,7 +1560,7 @@ export default function App() {
                   {filteredUsersToInvite.length === 0 ? (
                     <p className="text-[11px] text-slate-400 p-2 text-center w-full">No se encontraron usuarios registrados.</p>
                   ) : (
-                    filteredUsersToInvite.link.map?.(() => {}) || filteredUsersToInvite.map((u) => {
+                    filteredUsersToInvite.map((u) => {
                       const isSelected = selectedFriends.includes(u.name);
                       return (
                         <button 
