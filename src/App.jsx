@@ -613,22 +613,24 @@ export default function App() {
     const maxVotes = Math.max(0, ...(activeEvent.spots || []).map(s => s.votes || 0));
 
     return (
-      <div className="min-h-screen bg-slate-50 text-slate-900 pb-24">
-        <div className="relative h-44 w-full bg-slate-800">
-          <img src={coverImage} alt="" className="w-full h-full object-cover opacity-60" aria-hidden="true" />
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/30"></div>
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-slate-100 pb-28 relative overflow-hidden">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-60 bg-indigo-600/15 rounded-b-full blur-3xl pointer-events-none" aria-hidden="true"></div>
+
+        <div className="relative h-44 w-full bg-slate-900">
+          <img src={coverImage} alt="" className="w-full h-full object-cover opacity-50" aria-hidden="true" />
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent"></div>
           
           <button 
             onClick={() => setActiveEvent(null)} 
             aria-label="Volver a mis salidas"
-            className="absolute top-4 left-4 flex items-center text-xs font-bold text-slate-900 bg-white/90 backdrop-blur-md px-3.5 py-2 rounded-full hover:bg-white transition shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-600"
+            className="absolute top-4 left-4 flex items-center text-xs font-bold text-white bg-slate-900/80 backdrop-blur-md px-3.5 py-2 rounded-full hover:bg-slate-800 transition shadow-lg border border-white/10"
           >
-            <ArrowLeft size={16} className="mr-1" /> Volver
+            <ArrowLeft size={16} className="mr-1 text-indigo-400" /> Volver
           </button>
           
           <div className="absolute bottom-4 left-4 right-4 text-white">
             <div className="flex items-center space-x-2 mb-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-white/25 backdrop-blur-md px-2.5 py-0.5 rounded-full">
+              <span className="text-[10px] font-bold uppercase tracking-wider bg-indigo-500/30 text-indigo-300 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-indigo-500/30">
                 📅 {activeEvent.date}
               </span>
               {isClosed && (
@@ -638,16 +640,16 @@ export default function App() {
               )}
             </div>
             <h1 className="text-2xl font-black leading-tight drop-shadow-sm">{activeEvent.title}</h1>
-            <p className="text-xs text-slate-200 mt-0.5">Organiza: <span className="font-semibold text-white">{activeEvent.creator_name}</span></p>
+            <p className="text-xs text-slate-400 mt-0.5">Organiza: <span className="font-semibold text-white">{activeEvent.creator_name}</span></p>
           </div>
         </div>
 
-        <main className="max-w-md mx-auto p-4 space-y-5">
+        <main className="max-w-md mx-auto p-4 space-y-5 relative z-10">
           
           {isCreator && !isClosed && (
             <button 
               onClick={handleCloseEvent}
-              className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow-md shadow-amber-600/20 flex items-center justify-center space-x-2 transition hover:opacity-95"
+              className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow-lg shadow-amber-600/25 flex items-center justify-center space-x-2 transition hover:opacity-95 border border-amber-500/30"
             >
               <Flag size={16} /> <span>Cerrar Salida y Generar Línea Temporal</span>
             </button>
@@ -655,11 +657,11 @@ export default function App() {
 
           {isClosed ? (
             <div className="space-y-6">
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+              <div className="bg-slate-900/80 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-white/10 shadow-2xl space-y-4">
                 <div className="text-center space-y-1">
                   <span className="text-2xl">🏆</span>
-                  <h2 className="text-lg font-black text-slate-900">Resumen de la Salida</h2>
-                  <p className="text-xs text-slate-500">Línea temporal de la ruta, paradas y gastos</p>
+                  <h2 className="text-lg font-black text-white">Resumen de la Salida</h2>
+                  <p className="text-xs text-slate-400">Línea temporal de la ruta, paradas y gastos</p>
                 </div>
 
                 <div className="border-l-2 border-indigo-500 pl-4 space-y-8 ml-2 pt-2">
@@ -669,31 +671,30 @@ export default function App() {
 
                     return (
                       <div key={spot.id} className="relative space-y-3">
-                        <div className="absolute -left-[21px] top-1 w-3 h-3 bg-indigo-600 rounded-full border-2 border-white"></div>
+                        <div className="absolute -left-[21px] top-1 w-3 h-3 bg-indigo-500 rounded-full border-2 border-slate-900 shadow-glow"></div>
                         <div>
-                          <span className="text-[10px] font-bold text-indigo-600 uppercase">Parada {idx + 1}</span>
-                          <h3 className="font-bold text-sm text-slate-900">{spot.name}</h3>
-                          <p className="text-[11px] text-slate-500">Propuesto por {spot.suggested_by} • {spot.votes} votos</p>
+                          <span className="text-[10px] font-bold text-indigo-400 uppercase">Parada {idx + 1}</span>
+                          <h3 className="font-bold text-sm text-white">{spot.name}</h3>
+                          <p className="text-[11px] text-slate-400">Propuesto por {spot.suggested_by} • {spot.votes} votos</p>
                         </div>
 
-                        {/* GASTOS DE ESTA PARADA ESPECÍFICA */}
                         {spotExpenses.length > 0 && (
-                          <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
-                            <div className="flex justify-between items-center text-xs font-bold text-slate-700">
+                          <div className="bg-slate-800/80 p-3 rounded-2xl border border-white/10 space-y-2">
+                            <div className="flex justify-between items-center text-xs font-bold text-slate-300">
                               <span>🧾 Gastos en este sitio:</span>
-                              <span className="text-emerald-700">{spotSpent.toFixed(2)}€</span>
+                              <span className="text-emerald-400">{spotSpent.toFixed(2)}€</span>
                             </div>
                             <div className="space-y-1.5">
                               {spotExpenses.map(exp => (
-                                <div key={exp.id} className="flex justify-between items-center text-xs bg-white p-2 rounded-xl border border-slate-100">
+                                <div key={exp.id} className="flex justify-between items-center text-xs bg-slate-900/80 p-2.5 rounded-xl border border-white/5">
                                   <div>
-                                    <span className="font-bold text-slate-900">{exp.description}</span>
-                                    <span className="text-[10px] text-slate-500 ml-1.5">({exp.paid_by})</span>
+                                    <span className="font-bold text-white">{exp.description}</span>
+                                    <span className="text-[10px] text-slate-400 ml-1.5">({exp.paid_by})</span>
                                   </div>
                                   <div className="flex items-center space-x-2">
-                                    <span className="font-bold text-emerald-600">{Number(exp.amount).toFixed(2)}€</span>
+                                    <span className="font-bold text-emerald-400">{Number(exp.amount).toFixed(2)}€</span>
                                     {exp.receipt_url && (
-                                      <a href={exp.receipt_url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:text-indigo-800" title="Ver ticket">
+                                      <a href={exp.receipt_url} target="_blank" rel="noreferrer" className="text-indigo-400 hover:text-indigo-300" title="Ver ticket">
                                         <Receipt size={14} />
                                       </a>
                                     )}
@@ -709,16 +710,16 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">📸 Álbum de Fotos del Recuerdo</h3>
+              <div className="bg-slate-900/80 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-white/10 shadow-2xl space-y-3">
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-300">📸 Álbum de Fotos del Recuerdo</h3>
                 {(activeEvent.photos || []).length === 0 ? (
                   <p className="text-xs text-slate-400">No se subieron fotos en este plan.</p>
                 ) : (
                   <div className="grid grid-cols-3 gap-2">
                     {(activeEvent.photos || []).map((photo) => (
-                      <div key={photo.id} className="relative group aspect-square rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-100">
+                      <div key={photo.id} className="relative group aspect-square rounded-2xl overflow-hidden border border-white/10 shadow-md bg-slate-800">
                         <img src={photo.url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition" />
-                        <span className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-xs text-white text-[9px] font-bold px-1.5 py-0.5 rounded truncate text-center">
+                        <span className="absolute bottom-1 left-1 right-1 bg-black/70 backdrop-blur-xs text-white text-[9px] font-bold px-1.5 py-0.5 rounded truncate text-center">
                           {photo.user_name}
                         </span>
                       </div>
@@ -729,20 +730,20 @@ export default function App() {
             </div>
           ) : (
             <>
-              <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-2.5">
-                <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
-                  <Users size={14} className="mr-1.5 text-indigo-600" /> Asistentes Confirmados ({activeEvent.members.length})
+              <div className="bg-slate-900/80 backdrop-blur-2xl p-4 rounded-3xl border border-white/10 shadow-xl space-y-2.5">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-300 flex items-center">
+                  <Users size={14} className="mr-1.5 text-indigo-400" /> Asistentes Confirmados ({activeEvent.members.length})
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {activeEvent.members.map((member) => (
-                    <span key={member} className="text-xs font-bold bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-100 flex items-center">
+                    <span key={member} className="text-xs font-bold bg-indigo-950/80 text-indigo-300 px-3 py-1.5 rounded-xl border border-indigo-500/20 flex items-center">
                       👤 {member}
                     </span>
                   ))}
                 </div>
               </div>
 
-              <div className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden">
+              <div className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white p-5 rounded-3xl shadow-xl relative overflow-hidden border border-white/10">
                 <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full">📍 Sitio Confirmado Oficial</span>
                 <h2 className="text-xl font-black mt-2 mb-1">{currentActiveSpot ? currentActiveSpot.name : 'Votando sitio entre el grupo...'}</h2>
                 {currentActiveSpot && (
@@ -750,37 +751,37 @@ export default function App() {
                     href={`https://maps.google.com/?q=${encodeURIComponent(currentActiveSpot.name)}`} 
                     target="_blank" 
                     rel="noreferrer" 
-                    className="mt-3 inline-flex items-center space-x-2 bg-white text-indigo-700 font-bold text-xs px-4 py-2.5 rounded-xl shadow transition hover:bg-slate-100"
+                    className="mt-3 inline-flex items-center space-x-2 bg-white text-indigo-900 font-bold text-xs px-4 py-2.5 rounded-xl shadow transition hover:bg-slate-100"
                   >
                     <Navigation size={14} /> <span>Abrir en Google Maps</span>
                   </a>
                 )}
               </div>
 
-              <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm" role="tablist">
-                <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Votaciones y Sitios</button>
-                <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Gastos y Deudas</button>
-                <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Fotos</button>
+              <div className="flex bg-slate-900/80 backdrop-blur-xl p-1 rounded-2xl border border-white/10 shadow-xl" role="tablist">
+                <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>Votaciones y Sitios</button>
+                <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>Gastos y Deudas</button>
+                <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}>Fotos</button>
               </div>
 
               {eventSubTab === 'spots' && (
                 <div className="space-y-4">
-                  <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3 relative">
-                    <h3 className="text-xs font-black text-slate-800">Proponer nuevo sitio</h3>
+                  <div className="bg-slate-900/80 backdrop-blur-2xl p-4 rounded-3xl border border-white/10 shadow-xl space-y-3 relative">
+                    <h3 className="text-xs font-black text-white">Proponer nuevo sitio</h3>
                     
                     <button 
                       type="button"
                       onClick={handleAddCurrentLocation}
                       disabled={isGettingLocation}
-                      className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow hover:opacity-95 flex items-center justify-center space-x-2 transition"
+                      className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow-lg hover:opacity-95 flex items-center justify-center space-x-2 transition border border-emerald-500/30"
                     >
                       <Compass size={16} className={isGettingLocation ? "animate-spin" : ""} />
                       <span>{isGettingLocation ? 'Obteniendo GPS...' : '📍 Marcar mi ubicación GPS actual'}</span>
                     </button>
 
                     <div className="relative pt-1">
-                      <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
-                      <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400 font-bold">o busca en el mapa</span></div>
+                      <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10"></div></div>
+                      <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-slate-900 px-2 text-slate-400 font-bold">o busca en el mapa</span></div>
                     </div>
 
                     <form onSubmit={handleAddSpot} className="space-y-2.5 relative">
@@ -791,37 +792,37 @@ export default function App() {
                           placeholder="Escribe bar, restaurante, calle..." 
                           value={newSpotName} 
                           onChange={(e) => setNewSpotName(e.target.value)} 
-                          className="w-full bg-slate-50 border border-slate-300 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" 
+                          className="w-full bg-slate-800/80 border border-slate-700 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner" 
                         />
                         {isSearchingMaps && (
-                          <div className="absolute right-3.5 text-xs text-indigo-600 animate-pulse font-bold">Buscando...</div>
+                          <div className="absolute right-3.5 text-xs text-indigo-400 animate-pulse font-bold">Buscando...</div>
                         )}
                       </div>
 
                       {mapSuggestions.length > 0 && (
-                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden max-h-56 overflow-y-auto">
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-slate-900 border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden max-h-56 overflow-y-auto">
                           {mapSuggestions.map((place) => (
                             <button
                               key={place.place_id}
                               type="button"
                               onClick={() => handleSelectSuggestion(place.display_name)}
-                              className="w-full text-left px-4 py-2.5 text-xs text-slate-800 hover:bg-indigo-50 hover:text-indigo-700 border-b border-slate-100 last:border-b-0 transition flex items-center space-x-2"
+                              className="w-full text-left px-4 py-2.5 text-xs text-slate-200 hover:bg-indigo-950 hover:text-indigo-300 border-b border-white/5 last:border-b-0 transition flex items-center space-x-2"
                             >
-                              <MapPin size={14} className="text-indigo-600 shrink-0" />
+                              <MapPin size={14} className="text-indigo-400 shrink-0" />
                               <span className="truncate">{place.display_name}</span>
                             </button>
                           ))}
                         </div>
                       )}
 
-                      <button type="submit" className="w-full bg-indigo-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-indigo-700 transition mt-2">
+                      <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow-lg shadow-indigo-600/25 transition mt-2">
                         🔍 Añadir propuesta
                       </button>
                     </form>
                   </div>
 
                   <div className="space-y-2.5">
-                    <h4 className="text-xs font-bold text-slate-700 px-1">Votación de Sitios Propuestos</h4>
+                    <h4 className="text-xs font-bold text-slate-300 px-1">Votación de Sitios Propuestos</h4>
                     {(activeEvent.spots || []).length === 0 ? (
                       <p className="text-xs text-slate-400 px-1">Ningún lugar propuesto todavía.</p>
                     ) : (
@@ -830,11 +831,11 @@ export default function App() {
                         const isConfirmed = spot.active_now;
 
                         return (
-                          <div key={spot.id} className={`p-4 rounded-2xl border flex flex-col space-y-3 ${isConfirmed ? 'bg-indigo-50 border-indigo-400 shadow-sm' : isMajority ? 'bg-amber-50/60 border-amber-300' : 'bg-white border-slate-200'}`}>
+                          <div key={spot.id} className={`p-4 rounded-3xl border flex flex-col space-y-3 backdrop-blur-xl ${isConfirmed ? 'bg-indigo-950/60 border-indigo-500/50 shadow-xl' : isMajority ? 'bg-amber-950/40 border-amber-500/40' : 'bg-slate-900/80 border-white/10 shadow-xl'}`}>
                             <div className="flex justify-between items-start">
                               <div className="pr-2">
                                 <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                                  <h3 className="font-bold text-slate-900 text-sm">{spot.name}</h3>
+                                  <h3 className="font-bold text-white text-sm">{spot.name}</h3>
                                   {isMajority && !isConfirmed && (
                                     <span className="bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full flex items-center space-x-1 shadow-xs">
                                       <Trophy size={10} className="mr-0.5" /> Mayoría
@@ -846,8 +847,8 @@ export default function App() {
                                     </span>
                                   )}
                                 </div>
-                                <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                                  Propuesto por <span className="font-bold text-indigo-600">{spot.suggested_by}</span> • <span className="font-extrabold text-slate-800">{spot.votes} votos</span>
+                                <p className="text-[11px] text-slate-400 font-medium mt-0.5">
+                                  Propuesto por <span className="font-bold text-indigo-400">{spot.suggested_by}</span> • <span className="font-extrabold text-white">{spot.votes} votos</span>
                                 </p>
                               </div>
 
@@ -855,26 +856,26 @@ export default function App() {
                                 <button 
                                   onClick={() => handleDeleteSpot(spot.id)}
                                   title="Eliminar sitio propuesto"
-                                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition shrink-0"
+                                  className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-950/50 rounded-xl transition shrink-0"
                                 >
                                   <Trash2 size={16} />
                                 </button>
                               )}
                             </div>
 
-                            <div className="flex gap-2 pt-1 border-t border-slate-100/80">
+                            <div className="flex gap-2 pt-1 border-t border-white/10">
                               <button 
                                 onClick={() => handleVoteSpot(spot.id, spot.votes)} 
-                                className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-3 py-2 rounded-xl flex items-center space-x-1.5 transition"
+                                className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-3 py-2 rounded-xl flex items-center space-x-1.5 transition border border-white/5"
                               >
-                                <ThumbsUp size={14} className="text-indigo-600" />
+                                <ThumbsUp size={14} className="text-indigo-400" />
                                 <span>Votar ({spot.votes})</span>
                               </button>
 
                               {!isConfirmed ? (
                                 <button 
                                   onClick={() => handleConfirmSpot(spot.id)} 
-                                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2 rounded-xl transition shadow-sm"
+                                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2 rounded-xl transition shadow-md shadow-indigo-600/25"
                                 >
                                   ✓ Confirmar este Sitio
                                 </button>
@@ -883,7 +884,7 @@ export default function App() {
                                   href={`https://maps.google.com/?q=${encodeURIComponent(spot.name)}`} 
                                   target="_blank" 
                                   rel="noreferrer" 
-                                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-center font-bold text-xs py-2 rounded-xl flex items-center justify-center space-x-1 transition shadow-sm"
+                                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-center font-bold text-xs py-2 rounded-xl flex items-center justify-center space-x-1 transition shadow-md shadow-emerald-600/25"
                                 >
                                   <Navigation size={14} />
                                   <span>Abrir Maps</span>
@@ -901,11 +902,11 @@ export default function App() {
               {eventSubTab === 'expenses' && (
                 <div className="space-y-5">
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><p className="text-[10px] font-bold text-slate-500">TOTAL GRUPO</p><p className="text-xl font-black text-emerald-600">{totalSpent.toFixed(2)}€</p></div>
-                    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><p className="text-[10px] font-bold text-slate-500">POR PERSONA</p><p className="text-xl font-black text-indigo-600">{perPerson.toFixed(2)}€</p></div>
+                    <div className="bg-slate-900/80 backdrop-blur-2xl p-4 rounded-3xl border border-white/10 shadow-xl"><p className="text-[10px] font-bold text-slate-400">TOTAL GRUPO</p><p className="text-xl font-black text-emerald-400">{totalSpent.toFixed(2)}€</p></div>
+                    <div className="bg-slate-900/80 backdrop-blur-2xl p-4 rounded-3xl border border-white/10 shadow-xl"><p className="text-[10px] font-bold text-slate-400">POR PERSONA</p><p className="text-xl font-black text-indigo-400">{perPerson.toFixed(2)}€</p></div>
                   </div>
 
-                  <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-5 rounded-3xl shadow-lg space-y-3">
+                  <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-5 rounded-3xl shadow-xl space-y-3 border border-white/10">
                     <h3 className="text-xs font-black uppercase tracking-wider text-indigo-300 flex items-center">
                       <DollarSign size={16} className="mr-1 text-emerald-400" /> Reparto y Liquidación de Deudas
                     </h3>
@@ -921,7 +922,7 @@ export default function App() {
                               <span className="text-slate-300 mx-1.5">debe pagar a</span>
                               <span className="font-bold text-emerald-300">{debt.to}</span>
                             </div>
-                            <span className="font-black text-emerald-400 text-sm bg-emerald-950/60 px-3 py-1 rounded-xl">
+                            <span className="font-black text-emerald-400 text-sm bg-emerald-950/80 px-3 py-1 rounded-xl border border-emerald-500/30">
                               {debt.amount.toFixed(2)}€
                             </span>
                           </div>
@@ -930,9 +931,8 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* FORMULARIO DE GASTO CON SELECCIÓN DE UBICACIÓN */}
-                  <form onSubmit={handleAddExpense} className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                    <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto vinculado a un sitio</h4>
+                  <form onSubmit={handleAddExpense} className="bg-slate-900/80 backdrop-blur-2xl p-4 rounded-3xl border border-white/10 shadow-xl space-y-3">
+                    <h4 className="text-xs font-bold text-white">Añadir nuevo gasto vinculado a un sitio</h4>
                     
                     <input 
                       type="text" 
@@ -940,7 +940,7 @@ export default function App() {
                       placeholder="Concepto (ej. Cervezas, Comida...)" 
                       value={expenseDesc} 
                       onChange={(e) => setExpenseDesc(e.target.value)} 
-                      className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" 
+                      className="w-full bg-slate-800/80 border border-slate-700 rounded-2xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner" 
                       required
                     />
 
@@ -951,65 +951,65 @@ export default function App() {
                       placeholder="Importe (€)" 
                       value={expenseAmount} 
                       onChange={(e) => setExpenseAmount(e.target.value)} 
-                      className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" 
+                      className="w-full bg-slate-800/80 border border-slate-700 rounded-2xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner" 
                       required
                     />
 
                     <div className="space-y-1">
-                      <label className="block text-[11px] font-bold text-slate-600">Ubicación / Sitio del Gasto</label>
+                      <label className="block text-[11px] font-bold text-slate-300">Ubicación / Sitio del Gasto</label>
                       <select 
                         value={expenseSpotId} 
                         onChange={(e) => setExpenseSpotId(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                        className="w-full bg-slate-800/80 border border-slate-700 rounded-2xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-inner"
                       >
                         <option value="">Selecciona un sitio del plan...</option>
                         {(activeEvent.spots || []).map((spot) => (
-                          <option key={spot.id} value={spot.id}>{spot.name}</option>
+                          <option key={spot.id} value={spot.id} className="bg-slate-900">{spot.name}</option>
                         ))}
                       </select>
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-slate-600">Foto del Ticket (Opcional)</label>
-                      <label className="flex items-center justify-center space-x-2 border-2 border-dashed border-slate-300 bg-slate-50 rounded-2xl p-3 cursor-pointer hover:bg-slate-100 transition">
-                        <Receipt size={16} className="text-indigo-600" />
-                        <span className="text-xs font-bold text-slate-700">
+                      <label className="block text-[11px] font-bold text-slate-300">Foto del Ticket (Opcional)</label>
+                      <label className="flex items-center justify-center space-x-2 border-2 border-dashed border-slate-700 bg-slate-800/50 rounded-2xl p-3 cursor-pointer hover:bg-slate-800 transition">
+                        <Receipt size={16} className="text-indigo-400" />
+                        <span className="text-xs font-bold text-slate-200">
                           {isUploadingReceipt ? 'Cargando...' : expenseReceiptUrl ? '✓ Ticket adjuntado correctamente' : 'Subir foto del ticket'}
                         </span>
                         <input type="file" accept="image/*" onChange={handleReceiptUpload} className="hidden" />
                       </label>
                       {expenseReceiptUrl && (
-                        <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-200 mt-1">
+                        <div className="w-16 h-16 rounded-xl overflow-hidden border border-white/10 mt-1">
                           <img src={expenseReceiptUrl} alt="Vista previa ticket" className="w-full h-full object-cover" />
                         </div>
                       )}
                     </div>
 
-                    <button type="submit" className="w-full bg-emerald-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-emerald-700 transition mt-1">
+                    <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow-lg shadow-emerald-600/25 transition mt-1">
                       Añadir Gasto al Sitio
                     </button>
                   </form>
 
                   <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-slate-700 px-1">Historial de Gastos</h4>
+                    <h4 className="text-xs font-bold text-slate-300 px-1">Historial de Gastos</h4>
                     {(activeEvent.expenses || []).length === 0 ? (
                       <p className="text-xs text-slate-400 px-1">No hay gastos registrados todavía.</p>
                     ) : (
                       (activeEvent.expenses || []).map((exp) => {
                         const spotObj = (activeEvent.spots || []).find(s => s.id === exp.spot_id);
                         return (
-                          <div key={exp.id} className="bg-white p-3.5 rounded-2xl border border-slate-200 flex justify-between items-center text-xs shadow-sm">
+                          <div key={exp.id} className="bg-slate-900/80 backdrop-blur-2xl p-3.5 rounded-2xl border border-white/10 flex justify-between items-center text-xs shadow-xl">
                             <div>
-                              <p className="font-bold text-slate-900">{exp.description}</p>
-                              <p className="text-[10px] text-slate-500">
-                                Pagado por <span className="font-bold text-indigo-600">{exp.paid_by}</span>
-                                {spotObj && <span className="ml-1 text-slate-600">• 📍 {spotObj.name}</span>}
+                              <p className="font-bold text-white">{exp.description}</p>
+                              <p className="text-[10px] text-slate-400">
+                                Pagado por <span className="font-bold text-indigo-400">{exp.paid_by}</span>
+                                {spotObj && <span className="ml-1 text-slate-300">• 📍 {spotObj.name}</span>}
                               </p>
                             </div>
                             <div className="flex items-center space-x-2">
-                              <span className="font-black text-emerald-700 text-sm">{Number(exp.amount).toFixed(2)}€</span>
+                              <span className="font-black text-emerald-400 text-sm">{Number(exp.amount).toFixed(2)}€</span>
                               {exp.receipt_url && (
-                                <a href={exp.receipt_url} target="_blank" rel="noreferrer" className="w-7 h-7 bg-indigo-50 hover:bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-700 transition border border-indigo-200" title="Ver ticket">
+                                <a href={exp.receipt_url} target="_blank" rel="noreferrer" className="w-7 h-7 bg-indigo-950 hover:bg-indigo-900 rounded-xl flex items-center justify-center text-indigo-300 transition border border-indigo-500/30" title="Ver ticket">
                                   <Receipt size={14} />
                                 </a>
                               )}
@@ -1024,20 +1024,20 @@ export default function App() {
 
               {eventSubTab === 'gallery' && (
                 <div className="space-y-4">
-                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-indigo-300 bg-indigo-50/50 rounded-3xl p-6 cursor-pointer hover:bg-indigo-50 transition shadow-sm">
-                    <Camera className="w-6 h-6 text-indigo-600 mb-1" />
-                    <span className="text-xs font-bold text-indigo-900">Tomar / Subir foto con GPS actual</span>
-                    <span className="text-[10px] text-slate-500 mt-0.5">Se guardará con la ubicación exacta en miniatura</span>
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-indigo-500/40 bg-indigo-950/40 backdrop-blur-xl rounded-3xl p-6 cursor-pointer hover:bg-indigo-950/60 transition shadow-xl">
+                    <Camera className="w-6 h-6 text-indigo-400 mb-1" />
+                    <span className="text-xs font-bold text-indigo-200">Tomar / Subir foto con GPS actual</span>
+                    <span className="text-[10px] text-slate-400 mt-0.5">Se guardará con la ubicación exacta en miniatura</span>
                     <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUploadWithGPS} className="hidden" />
                   </label>
 
                   <div className="grid grid-cols-2 gap-3">
                     {(activeEvent.photos || []).map((photo) => (
-                      <div key={photo.id} className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm flex flex-col">
-                        <div className="aspect-square w-full bg-slate-100">
+                      <div key={photo.id} className="bg-slate-900 border border-white/10 rounded-2xl overflow-hidden shadow-xl flex flex-col">
+                        <div className="aspect-square w-full bg-slate-800">
                           <img src={photo.url} alt="" className="w-full h-full object-cover" />
                         </div>
-                        <p className="p-2 text-[10px] text-slate-600 text-center font-bold truncate">{photo.user_name}</p>
+                        <p className="p-2 text-[10px] text-slate-300 text-center font-bold truncate">{photo.user_name}</p>
                       </div>
                     ))}
                   </div>
@@ -1054,34 +1054,36 @@ export default function App() {
   const myEvents = events.filter(e => e.members.includes(currentUser.name));
 
   // -------------------------------------------------------------
-  // ÁREA PERSONAL
+  // ÁREA PERSONAL (DASHBOARD)
   // -------------------------------------------------------------
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 pb-24">
-      <header className="bg-white/90 backdrop-blur-md border-b border-slate-200 p-4 sticky top-0 z-40 flex justify-between items-center shadow-sm">
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-slate-100 pb-28 relative overflow-hidden">
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-72 bg-indigo-600/15 rounded-b-full blur-3xl pointer-events-none" aria-hidden="true"></div>
+
+      <header className="bg-slate-900/80 backdrop-blur-2xl border-b border-white/10 p-4 sticky top-0 z-40 flex justify-between items-center shadow-xl">
         <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-black text-sm" aria-hidden="true">N</div>
-          <span className="font-extrabold text-slate-900 text-base">Área Personal</span>
+          <div className="w-9 h-9 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center text-white font-black text-sm shadow-lg shadow-indigo-500/30" aria-hidden="true">N</div>
+          <span className="font-extrabold text-white text-base tracking-tight">Nosotros</span>
         </div>
         <div className="flex items-center space-x-3">
-          <span className="text-xs font-bold text-slate-700">Hola, {currentUser.name}</span>
-          <button onClick={() => setCurrentUser(null)} className="text-xs bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 px-3 py-1.5 rounded-full font-bold transition">Salir</button>
+          <span className="text-xs font-bold text-slate-300">Hola, {currentUser.name}</span>
+          <button onClick={() => setCurrentUser(null)} className="text-xs bg-slate-800 hover:bg-red-950/60 text-slate-300 hover:text-red-400 px-3 py-1.5 rounded-full font-bold transition border border-white/10">Salir</button>
         </div>
       </header>
 
-      <main className="max-w-md mx-auto p-4 space-y-5">
+      <main className="max-w-md mx-auto p-4 space-y-5 relative z-10">
         {activeTab === 'my-events' && (
           <div className="space-y-4">
-            <button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold py-3.5 px-4 rounded-2xl text-sm shadow-md shadow-indigo-600/20 flex items-center justify-center space-x-2 transition hover:opacity-95">
+            <button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-3.5 px-4 rounded-2xl text-sm shadow-lg shadow-indigo-500/25 flex items-center justify-center space-x-2 transition hover:opacity-95">
               <Plus size={18} /> <span>Crear Nueva Salida / Plan</span>
             </button>
 
             <div className="space-y-3">
-              <h2 className="text-base font-black text-slate-900 px-1">Tus Salidas Confirmadas ({myEvents.length})</h2>
+              <h2 className="text-base font-black text-white px-1">Tus Salidas Confirmadas ({myEvents.length})</h2>
               
               {myEvents.length === 0 ? (
-                <div className="bg-white p-6 rounded-3xl border border-slate-200 text-center">
-                  <p className="text-xs text-slate-500 font-medium">No estás participando en ninguna salida aún.</p>
+                <div className="bg-slate-900/80 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-white/10 text-center shadow-2xl">
+                  <p className="text-xs text-slate-400 font-medium">No estás participando en ninguna salida aún.</p>
                 </div>
               ) : (
                 myEvents.map((event) => {
@@ -1091,21 +1093,21 @@ export default function App() {
                     <article 
                       key={event.id} 
                       onClick={() => setActiveEvent(event)} 
-                      className="bg-white rounded-3xl border border-slate-200/80 overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer group"
+                      className="bg-slate-900/80 backdrop-blur-2xl rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl hover:border-indigo-500/50 transition cursor-pointer group"
                     >
-                      <div className="h-32 w-full relative bg-slate-200">
-                        <img src={cover} alt="" className="w-full h-full object-cover group-hover:scale-105 transition duration-300" aria-hidden="true" />
-                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent"></div>
+                      <div className="h-32 w-full relative bg-slate-800">
+                        <img src={cover} alt="" className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition duration-300" aria-hidden="true" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent"></div>
                         <div className="absolute top-3 right-3 flex gap-1">
                           {isClosed && <span className="text-[10px] font-bold bg-amber-500 text-white px-2 py-0.5 rounded-full shadow">🔒 Cerrada</span>}
-                          <span className="text-[10px] font-bold bg-white/90 backdrop-blur-md text-slate-900 px-2.5 py-1 rounded-full shadow">📅 {event.date}</span>
+                          <span className="text-[10px] font-bold bg-slate-900/95 backdrop-blur-md text-white px-2.5 py-1 rounded-full shadow border border-white/10">📅 {event.date}</span>
                         </div>
                         <h3 className="absolute bottom-3 left-3 right-3 text-white font-black text-lg drop-shadow">{event.title}</h3>
                       </div>
                       
                       <div className="p-4 flex justify-between items-center">
-                        <p className="text-xs text-slate-600 font-medium">Organiza: <span className="font-bold text-slate-900">{event.creator_name}</span></p>
-                        <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-xl group-hover:bg-indigo-600 group-hover:text-white transition">
+                        <p className="text-xs text-slate-400 font-medium">Organiza: <span className="font-bold text-white">{event.creator_name}</span></p>
+                        <span className="text-xs font-bold text-indigo-300 bg-indigo-950/80 px-3 py-1.5 rounded-xl border border-indigo-500/20 group-hover:bg-indigo-600 group-hover:text-white transition">
                           {isClosed ? 'Ver Timeline →' : 'Entrar →'}
                         </span>
                       </div>
@@ -1119,10 +1121,10 @@ export default function App() {
 
         {activeTab === 'search' && (
           <div className="space-y-4">
-            <input type="text" aria-label="Buscar salida" placeholder="Buscar por título o creador..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-white border border-slate-300 rounded-2xl px-4 py-3 text-sm text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-600" />
+            <input type="text" aria-label="Buscar salida" placeholder="Buscar por título o creador..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-slate-900/80 backdrop-blur-2xl border border-white/10 rounded-2xl px-4 py-3 text-sm text-white shadow-xl focus:outline-none focus:ring-2 focus:ring-indigo-500" />
             
             <div className="space-y-3">
-              <h2 className="text-base font-black text-slate-900 px-1">Salidas Disponibles</h2>
+              <h2 className="text-base font-black text-white px-1">Salidas Disponibles</h2>
               {filteredEvents.map((event) => {
                 const isMember = event.members.includes(currentUser.name);
                 const isPending = event.pendingInvitations.includes(currentUser.name);
@@ -1130,21 +1132,21 @@ export default function App() {
                 const cover = getPlanCover(event.title);
 
                 return (
-                  <article key={event.id} className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-sm flex flex-col">
-                    <div className="h-24 w-full relative bg-slate-200">
-                      <img src={cover} alt="" className="w-full h-full object-cover" aria-hidden="true" />
-                      <div className="absolute inset-0 bg-black/40"></div>
+                  <article key={event.id} className="bg-slate-900/80 backdrop-blur-2xl rounded-[2.5rem] border border-white/10 overflow-hidden shadow-2xl flex flex-col">
+                    <div className="h-24 w-full relative bg-slate-800">
+                      <img src={cover} alt="" className="w-full h-full object-cover opacity-60" aria-hidden="true" />
+                      <div className="absolute inset-0 bg-black/50"></div>
                       <h3 className="absolute bottom-2.5 left-3 text-white font-bold text-sm drop-shadow">{event.title}</h3>
                     </div>
                     
                     <div className="p-3.5 flex justify-between items-center">
-                      <span className="text-xs text-slate-600 font-medium">{event.date} • {event.creator_name}</span>
+                      <span className="text-xs text-slate-400 font-medium">{event.date} • {event.creator_name}</span>
                       {isMember ? (
-                        <button onClick={() => setActiveEvent(event)} className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-xl">Ver Plan</button>
+                        <button onClick={() => setActiveEvent(event)} className="text-xs font-bold text-indigo-300 bg-indigo-950 px-3 py-1.5 rounded-xl border border-indigo-500/20">Ver Plan</button>
                       ) : hasRequested ? (
-                        <span className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1.5 rounded-xl">Solicitado</span>
+                        <span className="text-xs font-bold text-amber-300 bg-amber-950 px-3 py-1.5 rounded-xl border border-amber-500/20">Solicitado</span>
                       ) : isPending ? (
-                        <span className="text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-1.5 rounded-xl">Invitado</span>
+                        <span className="text-xs font-bold text-indigo-300 bg-indigo-950 px-3 py-1.5 rounded-xl border border-indigo-500/20">Invitado</span>
                       ) : (
                         <button onClick={() => handleRequestJoin(event.id)} className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow">Unirme</button>
                       )}
@@ -1158,30 +1160,30 @@ export default function App() {
 
         {activeTab === 'notifications' && (
           <div className="space-y-4">
-            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-              <h2 className="text-base font-black text-slate-900">Invitaciones Recibidas ({myInvitations.length})</h2>
-              {myInvitations.length === 0 ? <p className="text-xs text-slate-500">Sin invitaciones pendientes.</p> : myInvitations.map((event) => (
-                <div key={event.id} className="p-3.5 rounded-2xl border border-indigo-200 bg-indigo-50/50 flex justify-between items-center">
-                  <p className="text-xs font-bold text-slate-900">{event.title}</p>
+            <div className="bg-slate-900/80 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-white/10 shadow-2xl space-y-3">
+              <h2 className="text-base font-black text-white">Invitaciones Recibidas ({myInvitations.length})</h2>
+              {myInvitations.length === 0 ? <p className="text-xs text-slate-400">Sin invitaciones pendientes.</p> : myInvitations.map((event) => (
+                <div key={event.id} className="p-3.5 rounded-2xl border border-indigo-500/30 bg-indigo-950/60 flex justify-between items-center">
+                  <p className="text-xs font-bold text-white">{event.title}</p>
                   <div className="flex gap-2">
                     <button onClick={() => handleAcceptInvitation(event.id)} aria-label="Aceptar" className="bg-emerald-600 text-white p-2 rounded-xl text-xs"><Check size={14} /></button>
-                    <button onClick={() => handleRejectInvitation(event.id)} aria-label="Rechazar" className="bg-slate-200 text-slate-700 p-2 rounded-xl text-xs"><X size={14} /></button>
+                    <button onClick={() => handleRejectInvitation(event.id)} aria-label="Rechazar" className="bg-slate-800 text-slate-300 p-2 rounded-xl text-xs border border-white/10"><X size={14} /></button>
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-              <h2 className="text-base font-black text-slate-900">Solicitudes para tus Eventos</h2>
-              {myApprovalRequests.length === 0 ? <p className="text-xs text-slate-500">Sin solicitudes pendientes.</p> : myApprovalRequests.map((event) => (
+            <div className="bg-slate-900/80 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-white/10 shadow-2xl space-y-3">
+              <h2 className="text-base font-black text-white">Solicitudes para tus Eventos</h2>
+              {myApprovalRequests.length === 0 ? <p className="text-xs text-slate-400">Sin solicitudes pendientes.</p> : myApprovalRequests.map((event) => (
                 <div key={event.id} className="space-y-2">
-                  <p className="text-xs font-bold text-slate-800">{event.title}</p>
+                  <p className="text-xs font-bold text-slate-300">{event.title}</p>
                   {event.pendingRequests.map((userName) => (
-                    <div key={userName} className="p-3.5 rounded-2xl border border-purple-200 bg-purple-50/50 flex justify-between items-center">
-                      <p className="text-xs font-bold text-slate-900">{userName} quiere unirse</p>
+                    <div key={userName} className="p-3.5 rounded-2xl border border-purple-500/30 bg-purple-950/60 flex justify-between items-center">
+                      <p className="text-xs font-bold text-white">{userName} quiere unirse</p>
                       <div className="flex gap-2">
                         <button onClick={() => handleApproveRequest(event.id, userName)} className="bg-purple-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold">Aprobar</button>
-                        <button onClick={() => handleRejectRequest(event.id, userName)} aria-label="Rechazar" className="bg-slate-200 text-slate-700 p-1.5 rounded-xl text-xs"><X size={14} /></button>
+                        <button onClick={() => handleRejectRequest(event.id, userName)} aria-label="Rechazar" className="bg-slate-800 text-slate-300 p-1.5 rounded-xl text-xs border border-white/10"><X size={14} /></button>
                       </div>
                     </div>
                   ))}
@@ -1194,21 +1196,21 @@ export default function App() {
 
       {/* MODAL CREAR SALIDA */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white max-w-md w-full p-6 rounded-3xl shadow-2xl space-y-4 border border-slate-200">
-            <h2 className="font-black text-slate-900 text-lg">Organizar Nueva Salida</h2>
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 max-w-md w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-white/10">
+            <h2 className="font-black text-white text-lg">Organizar Nueva Salida</h2>
             <form onSubmit={handleCreateEvent} className="space-y-4">
               <div>
-                <label htmlFor="plan-title" className="block text-xs font-bold text-slate-700 mb-1">Título del Plan</label>
-                <input id="plan-title" type="text" placeholder="Ej. Cervecitas en el centro" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-2.5 text-sm text-slate-900" required />
+                <label htmlFor="plan-title" className="block text-xs font-bold text-slate-300 mb-1">Título del Plan</label>
+                <input id="plan-title" type="text" placeholder="Ej. Cervecitas en el centro" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" required />
               </div>
               <div>
-                <label htmlFor="plan-date" className="block text-xs font-bold text-slate-700 mb-1">Fecha</label>
-                <input id="plan-date" type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-2.5 text-sm text-slate-900" required />
+                <label htmlFor="plan-date" className="block text-xs font-bold text-slate-300 mb-1">Fecha</label>
+                <input id="plan-date" type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-2xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" required />
               </div>
               
               <div>
-                <label htmlFor="friend-search" className="block text-xs font-bold text-slate-700 mb-1">Invitar Usuarios Registrados</label>
+                <label htmlFor="friend-search" className="block text-xs font-bold text-slate-300 mb-1">Invitar Usuarios Registrados</label>
                 <div className="relative mb-2">
                   <Search className="absolute left-3.5 top-2.5 text-slate-400" size={16} />
                   <input 
@@ -1217,11 +1219,11 @@ export default function App() {
                     placeholder="Buscar por nombre o email..." 
                     value={friendSearchInput} 
                     onChange={(e) => setFriendSearchInput(e.target.value)} 
-                    className="w-full bg-slate-50 border border-slate-300 rounded-2xl pl-9 pr-4 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" 
+                    className="w-full bg-slate-800 border border-slate-700 rounded-2xl pl-9 pr-4 py-2 text-xs text-white focus:outline-none focus:ring-2 focus:ring-indigo-500" 
                   />
                 </div>
 
-                <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto p-1 bg-slate-50 rounded-2xl border border-slate-200">
+                <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto p-1 bg-slate-800/50 rounded-2xl border border-white/5">
                   {filteredUsersToInvite.length === 0 ? (
                     <p className="text-[11px] text-slate-400 p-2 text-center w-full">No se encontraron usuarios registrados.</p>
                   ) : (
@@ -1232,7 +1234,7 @@ export default function App() {
                           type="button" 
                           key={u.email} 
                           onClick={() => toggleFriendSelection(u.name)} 
-                          className={`text-xs px-3 py-1.5 rounded-xl font-bold border transition flex items-center space-x-1 ${isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-400'}`}
+                          className={`text-xs px-3 py-1.5 rounded-xl font-bold border transition flex items-center space-x-1 ${isSelected ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-indigo-500'}`}
                         >
                           <span>{u.name}</span>
                           {isSelected && <Check size={12} className="ml-1" />}
@@ -1244,27 +1246,27 @@ export default function App() {
               </div>
 
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowCreateModal(false)} className="w-1/2 bg-slate-100 text-slate-800 font-bold py-2.5 rounded-2xl text-xs hover:bg-slate-200 transition">Cancelar</button>
-                <button type="submit" className="w-1/2 bg-indigo-600 text-white font-bold py-2.5 rounded-2xl text-xs shadow hover:bg-indigo-700 transition">Crear Plan</button>
+                <button type="button" onClick={() => setShowCreateModal(false)} className="w-1/2 bg-slate-800 text-slate-300 font-bold py-2.5 rounded-2xl text-xs hover:bg-slate-700 transition border border-white/10">Cancelar</button>
+                <button type="submit" className="w-1/2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-2xl text-xs shadow-lg shadow-indigo-600/25 transition">Crear Plan</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      <nav className="fixed bottom-3 left-4 right-4 bg-white/95 backdrop-blur-xl border border-slate-200 py-3 px-6 flex justify-around items-center z-40 rounded-3xl shadow-xl max-w-md mx-auto" aria-label="Navegación principal">
-        <button onClick={() => setActiveTab('my-events')} className={`flex flex-col items-center ${activeTab === 'my-events' ? 'text-indigo-700 font-bold' : 'text-slate-500'}`}>
+      <nav className="fixed bottom-3 left-4 right-4 bg-slate-900/90 backdrop-blur-2xl border border-white/10 py-3 px-6 flex justify-around items-center z-40 rounded-[2rem] shadow-2xl max-w-md mx-auto" aria-label="Navegación principal">
+        <button onClick={() => setActiveTab('my-events')} className={`flex flex-col items-center ${activeTab === 'my-events' ? 'text-indigo-400 font-bold' : 'text-slate-400 hover:text-white'}`}>
           <Calendar size={20} />
           <span className="text-[10px] mt-0.5">Mis Salidas</span>
         </button>
-        <button onClick={() => setActiveTab('search')} className={`flex flex-col items-center ${activeTab === 'search' ? 'text-indigo-700 font-bold' : 'text-slate-500'}`}>
+        <button onClick={() => setActiveTab('search')} className={`flex flex-col items-center ${activeTab === 'search' ? 'text-indigo-400 font-bold' : 'text-slate-400 hover:text-white'}`}>
           <Search size={20} />
           <span className="text-[10px] mt-0.5">Buscar</span>
         </button>
-        <button onClick={() => setActiveTab('notifications')} className={`flex flex-col items-center relative ${activeTab === 'notifications' ? 'text-indigo-700 font-bold' : 'text-slate-500'}`}>
+        <button onClick={() => setActiveTab('notifications')} className={`flex flex-col items-center relative ${activeTab === 'notifications' ? 'text-indigo-400 font-bold' : 'text-slate-400 hover:text-white'}`}>
           <Inbox size={20} />
           <span className="text-[10px] mt-0.5">Aprobaciones</span>
-          {totalNotifications > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{totalNotifications}</span>}
+          {totalNotifications > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold shadow-lg">{totalNotifications}</span>}
         </button>
       </nav>
     </div>
