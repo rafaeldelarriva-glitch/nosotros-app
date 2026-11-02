@@ -46,9 +46,11 @@ export default function App() {
   const [friendSearchInput, setFriendSearchInput] = useState('');
   const [registeredUsers, setRegisteredUsers] = useState([]);
 
-  // Sitios y GPS
+  // Sitios, GPS y Autocompletado de Mapas
   const [newSpotName, setNewSpotName] = useState('');
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [mapSuggestions, setMapSuggestions] = useState([]);
+  const [isSearchingMaps, setIsSearchingMaps] = useState(false);
 
   // Gastos
   const [expenseDesc, setExpenseDesc] = useState('');
@@ -62,6 +64,29 @@ export default function App() {
       fetchRegisteredUsers();
     }
   }, [currentUser]);
+
+  // Búsqueda de lugares en tiempo real mediante API pública de Mapas (Nominatim / OpenStreetMap)
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (newSpotName.trim().length > 2) {
+        setIsSearchingMaps(true);
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(newSpotName)}&limit=5`);
+          const data = await res.json();
+          setMapSuggestions(data || []);
+        } catch (err) {
+          console.error('Error buscando lugares en mapas:', err);
+          setMapSuggestions([]);
+        } finally {
+          setIsSearchingMaps(false);
+        }
+      } else {
+        setMapSuggestions([]);
+      }
+    }, 400); // Debounce para evitar llamadas excesivas
+
+    return () => clearTimeout(timer);
+  }, [newSpotName]);
 
   const fetchRegisteredUsers = async () => {
     try {
@@ -193,7 +218,13 @@ export default function App() {
     }]);
 
     setNewSpotName('');
+    setMapSuggestions([]);
     fetchAppData();
+  };
+
+  const handleSelectSuggestion = async (displayName) => {
+    setNewSpotName(displayName);
+    setMapSuggestions([]);
   };
 
   const handleAddCurrentLocation = () => {
@@ -230,13 +261,11 @@ export default function App() {
     );
   };
 
-  // Votar un sitio propuesto
   const handleVoteSpot = async (spotId, currentVotes) => {
     await supabase.from('spots').update({ votes: currentVotes + 1 }).eq('id', spotId);
     fetchAppData();
   };
 
-  // Confirmar explícitamente un sitio como la ubicación elegida de la quedada
   const handleConfirmSpot = async (spotId) => {
     await supabase.from('spots').update({ active_now: false }).eq('event_id', activeEvent.id);
     await supabase.from('spots').update({ active_now: true }).eq('id', spotId);
@@ -511,7 +540,6 @@ export default function App() {
     const isCreator = activeEvent.creator_name === currentUser.name;
     const isClosed = activeEvent.status === 'closed';
 
-    // Determinar el sitio más votado para marcar mayoría
     const maxVotes = Math.max(0, ...(activeEvent.spots || []).map(s => s.votes || 0));
 
     return (
@@ -546,7 +574,6 @@ export default function App() {
 
         <main className="max-w-md mx-auto p-4 space-y-5">
           
-          {/* BOTÓN DE CIERRE DE SALIDA (SOLO CREADOR) */}
           {isCreator && !isClosed && (
             <button 
               onClick={handleCloseEvent}
@@ -556,7 +583,6 @@ export default function App() {
             </button>
           )}
 
-          {/* VISTA DE LÍNEA TEMPORAL SI ESTÁ CERRADA */}
           {isClosed ? (
             <div className="space-y-6">
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
@@ -597,7 +623,6 @@ export default function App() {
               </div>
             </div>
           ) : (
-            /* VISTA NORMAL DE PLAN ACTIVO */
             <>
               <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-2.5">
                 <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
@@ -635,7 +660,7 @@ export default function App() {
 
               {eventSubTab === 'spots' && (
                 <div className="space-y-4">
-                  <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+                  <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3 relative">
                     <h3 className="text-xs font-black text-slate-800">Proponer nuevo sitio</h3>
                     
                     <button 
@@ -650,34 +675,40 @@ export default function App() {
 
                     <div className="relative pt-1">
                       <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
-                      <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400 font-bold">o escribe un sitio</span></div>
+                      <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400 font-bold">o busca en el mapa</span></div>
                     </div>
 
-                    <form onSubmit={handleAddSpot} className="space-y-2.5">
+                    <form onSubmit={handleAddSpot} className="space-y-2.5 relative">
                       <div className="relative flex items-center">
                         <Search className="absolute left-3.5 text-slate-400" size={16} />
                         <input 
                           type="text" 
-                          placeholder="Ej. Bar El Rinconcillo, Cervecería..." 
+                          placeholder="Escribe bar, restaurante, calle..." 
                           value={newSpotName} 
                           onChange={(e) => setNewSpotName(e.target.value)} 
                           className="w-full bg-slate-50 border border-slate-300 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" 
                         />
+                        {isSearchingMaps && (
+                          <div className="absolute right-3.5 text-xs text-indigo-600 animate-pulse font-bold">Buscando...</div>
+                        )}
                       </div>
 
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        <span className="text-[10px] font-bold text-slate-400 self-center mr-1">Sugeridos:</span>
-                        {['Bar El Rinconcillo', 'La Campana', 'Los Coloniales', 'Bodeguita'].map((suggestion) => (
-                          <button
-                            key={suggestion}
-                            type="button"
-                            onClick={() => setNewSpotName(suggestion)}
-                            className="text-[10px] bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 font-bold px-2.5 py-1 rounded-xl border border-slate-200 transition"
-                          >
-                            + {suggestion}
-                          </button>
-                        ))}
-                      </div>
+                      {/* DESPLEGABLE EN TIEMPO REAL DE SUGERENCIAS DE MAPAS */}
+                      {mapSuggestions.length > 0 && (
+                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 overflow-hidden max-h-56 overflow-y-auto">
+                          {mapSuggestions.map((place) => (
+                            <button
+                              key={place.place_id}
+                              type="button"
+                              onClick={() => handleSelectSuggestion(place.display_name)}
+                              className="w-full text-left px-4 py-2.5 text-xs text-slate-800 hover:bg-indigo-50 hover:text-indigo-700 border-b border-slate-100 last:border-b-0 transition flex items-center space-x-2"
+                            >
+                              <MapPin size={14} className="text-indigo-600 shrink-0" />
+                              <span className="truncate">{place.display_name}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
 
                       <button type="submit" className="w-full bg-indigo-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-indigo-700 transition mt-2">
                         🔍 Añadir propuesta
@@ -685,7 +716,6 @@ export default function App() {
                     </form>
                   </div>
 
-                  {/* Votación de sitios y confirmación de mayoría */}
                   <div className="space-y-2.5">
                     <h4 className="text-xs font-bold text-slate-700 px-1">Votación de Sitios Propuestos</h4>
                     {(activeEvent.spots || []).length === 0 ? (
