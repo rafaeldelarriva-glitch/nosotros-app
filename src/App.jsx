@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
-// Imágenes temáticas sugeridas según el título o categoría del plan
 const PLAN_IMAGES = {
   cervecitas: 'https://images.unsplash.com/photo-1535958636474-b021ee887b13?auto=format&fit=crop&w=600&q=80',
   tapas: 'https://images.unsplash.com/photo-1515443961218-a51367888e4b?auto=format&fit=crop&w=600&q=80',
@@ -238,26 +237,32 @@ export default function App() {
   const totalNotifications = myInvitations.length + myApprovalRequests.reduce((acc, curr) => acc + curr.pendingRequests.length, 0);
 
   // -------------------------------------------------------------
-  // ACCESIBILIDAD & PANTALLA LOGIN
+  // PANTALLA DE LOGIN / REGISTRO DISEÑADA Y ELEGANTE
   // -------------------------------------------------------------
   if (!currentUser) {
     return (
-      <main className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-slate-900 relative overflow-hidden">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-72 bg-indigo-200/40 rounded-b-full blur-3xl pointer-events-none" aria-hidden="true"></div>
+      <main className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 text-slate-900 relative overflow-hidden">
+        {/* Fondo decorativo suave */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-80 bg-gradient-to-tr from-indigo-300/40 to-purple-300/40 rounded-b-full blur-3xl pointer-events-none" aria-hidden="true"></div>
 
-        <div className="max-w-md w-full bg-white backdrop-blur-xl p-8 rounded-3xl shadow-xl border border-slate-200 relative z-10">
-          <div className="w-16 h-16 bg-indigo-600 rounded-2xl mx-auto flex items-center justify-center text-3xl mb-4 shadow-lg shadow-indigo-500/20 text-white" aria-hidden="true">
-            🚀
+        <div className="max-w-md w-full bg-white/90 backdrop-blur-xl p-8 rounded-[2.5rem] shadow-xl border border-slate-200/80 relative z-10 space-y-6">
+          
+          {/* Logo y Cabecera */}
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-2xl mx-auto flex items-center justify-center text-3xl shadow-lg shadow-indigo-500/20 text-white" aria-hidden="true">
+              🚀
+            </div>
+            <h1 className="text-2xl font-black tracking-tight text-slate-900">Nosotros APP</h1>
+            <p className="text-xs font-medium text-slate-500">Organiza tus salidas, gastos y quedadas con tu grupo</p>
           </div>
-          <h1 className="text-2xl font-black text-center text-slate-900 mb-1">Nosotros APP</h1>
-          <p className="text-slate-600 text-center mb-6 text-xs font-medium">Organiza tus quedadas y salidas con tu grupo</p>
 
-          <div className="flex bg-slate-100 p-1 rounded-2xl mb-6 border border-slate-200" role="tablist" aria-label="Modo de acceso">
+          {/* Pestañas Login / Registro */}
+          <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200" role="tablist" aria-label="Modo de autenticación">
             <button 
               role="tab"
               aria-selected={authMode === 'login'}
               onClick={() => setAuthMode('login')}
-              className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition focus:outline-none focus:ring-2 focus:ring-indigo-600 ${authMode === 'login' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+              className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-indigo-600 ${authMode === 'login' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
             >
               Iniciar Sesión
             </button>
@@ -265,62 +270,79 @@ export default function App() {
               role="tab"
               aria-selected={authMode === 'register'}
               onClick={() => setAuthMode('register')}
-              className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition focus:outline-none focus:ring-2 focus:ring-indigo-600 ${authMode === 'register' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}
+              className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-indigo-600 ${authMode === 'register' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
             >
               Crear Cuenta
             </button>
           </div>
 
+          {/* Formulario */}
           <form onSubmit={handleAuth} className="space-y-4">
             {authMode === 'register' && (
-              <div>
-                <label htmlFor="reg-name" className="block text-xs font-bold text-slate-700 mb-1">Nombre</label>
+              <div className="space-y-1">
+                <label htmlFor="reg-name" className="block text-xs font-bold text-slate-700 ml-1">Nombre Completo</label>
+                <div className="relative flex items-center">
+                  <User className="absolute left-3.5 text-slate-400" size={18} />
+                  <input 
+                    id="reg-name"
+                    type="text" 
+                    placeholder="Tu nombre" 
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-900 transition-all shadow-sm"
+                    required
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1">
+              <label htmlFor="auth-email" className="block text-xs font-bold text-slate-700 ml-1">Correo Electrónico</label>
+              <div className="relative flex items-center">
+                <Mail className="absolute left-3.5 text-slate-400" size={18} />
                 <input 
-                  id="reg-name"
-                  type="text" 
-                  placeholder="Tu nombre" 
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600 text-slate-900"
+                  id="auth-email"
+                  type="email" 
+                  placeholder="correo@ejemplo.com" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-900 transition-all shadow-sm"
                   required
                 />
               </div>
-            )}
-            <div>
-              <label htmlFor="auth-email" className="block text-xs font-bold text-slate-700 mb-1">Correo Electrónico</label>
-              <input 
-                id="auth-email"
-                type="email" 
-                placeholder="correo@ejemplo.com" 
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600 text-slate-900"
-                required
-              />
             </div>
-            <div>
-              <label htmlFor="auth-password" className="block text-xs font-bold text-slate-700 mb-1">Contraseña</label>
-              <input 
-                id="auth-password"
-                type="password" 
-                placeholder="••••••••" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-600 text-slate-900"
-                required
-              />
+
+            <div className="space-y-1">
+              <label htmlFor="auth-password" className="block text-xs font-bold text-slate-700 ml-1">Contraseña</label>
+              <div className="relative flex items-center">
+                <Lock className="absolute left-3.5 text-slate-400" size={18} />
+                <input 
+                  id="auth-password"
+                  type="password" 
+                  placeholder="••••••••" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-900 transition-all shadow-sm"
+                  required
+                />
+              </div>
             </div>
-            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3.5 rounded-2xl text-sm transition shadow-md shadow-indigo-600/20 active:scale-[0.99] focus:outline-none focus:ring-2 focus:ring-indigo-600">
-              {authMode === 'login' ? 'Entrar' : 'Registrarse'}
+
+            <button 
+              type="submit" 
+              className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-3.5 rounded-2xl text-sm transition shadow-md shadow-indigo-600/20 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-indigo-600 mt-2"
+            >
+              {authMode === 'login' ? 'Entrar a mi cuenta' : 'Registrarme'}
             </button>
           </form>
+
         </div>
       </main>
     );
   }
 
   // -------------------------------------------------------------
-  // DETALLE DE UN EVENTO ACTIVO CON CABECERA VISUAL
+  // DETALLE DE UN EVENTO ACTIVO
   // -------------------------------------------------------------
   if (activeEvent) {
     const totalSpent = (activeEvent.expenses || []).reduce((acc, c) => acc + Number(c.amount), 0);
@@ -330,7 +352,6 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 text-slate-900 pb-24">
-        {/* Cabecera con imagen y accesibilidad de retorno */}
         <div className="relative h-44 w-full bg-slate-800">
           <img src={coverImage} alt="" className="w-full h-full object-cover opacity-60" aria-hidden="true" />
           <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/30"></div>
@@ -344,7 +365,7 @@ export default function App() {
           </button>
           
           <div className="absolute bottom-4 left-4 right-4 text-white">
-            <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 backdrop-blur-md px-2.5 py-0.5 rounded-full inline-block mb-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider bg-white/25 backdrop-blur-md px-2.5 py-0.5 rounded-full inline-block mb-1">
               📅 {activeEvent.date}
             </span>
             <h1 className="text-2xl font-black leading-tight drop-shadow-sm">{activeEvent.title}</h1>
@@ -353,7 +374,6 @@ export default function App() {
         </div>
 
         <main className="max-w-md mx-auto p-4 space-y-5">
-          {/* Tarjeta de Sitio Activo (LIVE) */}
           <div className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden">
             <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full">📍 Ubicación Elegida</span>
             <h2 className="text-xl font-black mt-2 mb-1">{currentActiveSpot ? currentActiveSpot.name : 'Ningún sitio seleccionado'}</h2>
@@ -362,15 +382,14 @@ export default function App() {
                 href={`https://maps.google.com/?q=${encodeURIComponent(currentActiveSpot.name)}`} 
                 target="_blank" 
                 rel="noreferrer" 
-                className="mt-3 inline-flex items-center space-x-2 bg-white text-indigo-700 font-bold text-xs px-4 py-2.5 rounded-xl shadow transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-white"
+                className="mt-3 inline-flex items-center space-x-2 bg-white text-indigo-700 font-bold text-xs px-4 py-2.5 rounded-xl shadow transition hover:bg-slate-100"
               >
                 <Navigation size={14} /> <span>Abrir en Google Maps</span>
               </a>
             )}
           </div>
 
-          {/* Subnavegación de Experiencia */}
-          <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm" role="tablist" aria-label="Secciones de la queda">
+          <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm" role="tablist">
             <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Sitios</button>
             <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Gastos</button>
             <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Fotos</button>
@@ -381,7 +400,7 @@ export default function App() {
               <form onSubmit={handleAddSpot} className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
                 <label htmlFor="new-spot-input" className="block text-xs font-bold text-slate-700">Proponer sitio</label>
                 <input id="new-spot-input" type="text" placeholder="Ej. Bar Pepe" value={newSpotName} onChange={(e) => setNewSpotName(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" />
-                <button type="submit" className="w-full bg-indigo-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow transition hover:bg-indigo-700">Añadir Sitio</button>
+                <button type="submit" className="w-full bg-indigo-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-indigo-700">Añadir Sitio</button>
               </form>
               <div className="space-y-2.5">
                 {(activeEvent.spots || []).map((spot) => (
@@ -391,8 +410,8 @@ export default function App() {
                       <p className="text-[11px] text-slate-600 font-medium">{spot.votes} votos</p>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => handleVoteSpot(spot.id, spot.votes)} className="bg-slate-100 border border-slate-300 px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-slate-200 text-slate-800">👍 Votar</button>
-                      {!spot.active_now && <button onClick={() => handleActivateSpot(spot.id)} className="bg-indigo-100 text-indigo-800 px-3 py-1.5 rounded-xl text-xs font-bold hover:bg-indigo-200">Ir aquí</button>}
+                      <button onClick={() => handleVoteSpot(spot.id, spot.votes)} className="bg-slate-100 border border-slate-300 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800">👍 Votar</button>
+                      {!spot.active_now && <button onClick={() => handleActivateSpot(spot.id)} className="bg-indigo-100 text-indigo-800 px-3 py-1.5 rounded-xl text-xs font-bold">Ir aquí</button>}
                     </div>
                   </div>
                 ))}
@@ -407,8 +426,8 @@ export default function App() {
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><p className="text-[10px] font-bold text-slate-500">POR PERSONA</p><p className="text-xl font-black text-indigo-600">{perPerson.toFixed(2)}€</p></div>
               </div>
               <form onSubmit={handleAddExpense} className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                <input type="text" aria-label="Concepto del gasto" placeholder="Concepto (ej. Cervezas)" value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900" />
-                <input type="number" step="0.01" aria-label="Importe en euros" placeholder="Importe (€)" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900" />
+                <input type="text" aria-label="Concepto" placeholder="Concepto (ej. Cervezas)" value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900" />
+                <input type="number" step="0.01" aria-label="Importe" placeholder="Importe (€)" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900" />
                 <button type="submit" className="w-full bg-emerald-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-emerald-700">Añadir Gasto</button>
               </form>
               <div className="space-y-2">
@@ -448,7 +467,7 @@ export default function App() {
   const myEvents = events.filter(e => e.members.includes(currentUser.name));
 
   // -------------------------------------------------------------
-  // ÁREA PERSONAL CON TARJETAS VISUALES CON IMAGEN
+  // ÁREA PERSONAL
   // -------------------------------------------------------------
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-24">
@@ -556,8 +575,8 @@ export default function App() {
                 <div key={event.id} className="p-3.5 rounded-2xl border border-indigo-200 bg-indigo-50/50 flex justify-between items-center">
                   <p className="text-xs font-bold text-slate-900">{event.title}</p>
                   <div className="flex gap-2">
-                    <button onClick={() => handleAcceptInvitation(event.id)} aria-label="Aceptar invitación" className="bg-emerald-600 text-white p-2 rounded-xl text-xs"><Check size={14} /></button>
-                    <button onClick={() => handleRejectInvitation(event.id)} aria-label="Rechazar invitación" className="bg-slate-200 text-slate-700 p-2 rounded-xl text-xs"><X size={14} /></button>
+                    <button onClick={() => handleAcceptInvitation(event.id)} aria-label="Aceptar" className="bg-emerald-600 text-white p-2 rounded-xl text-xs"><Check size={14} /></button>
+                    <button onClick={() => handleRejectInvitation(event.id)} aria-label="Rechazar" className="bg-slate-200 text-slate-700 p-2 rounded-xl text-xs"><X size={14} /></button>
                   </div>
                 </div>
               ))}
@@ -584,7 +603,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Modal accesible para crear evento */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white max-w-md w-full p-6 rounded-3xl shadow-2xl space-y-4 border border-slate-200">
@@ -620,7 +638,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Barra de navegación accesible */}
       <nav className="fixed bottom-3 left-4 right-4 bg-white/95 backdrop-blur-xl border border-slate-200 py-3 px-6 flex justify-around items-center z-40 rounded-3xl shadow-xl max-w-md mx-auto" aria-label="Navegación principal">
         <button onClick={() => setActiveTab('my-events')} className={`flex flex-col items-center ${activeTab === 'my-events' ? 'text-indigo-700 font-bold' : 'text-slate-500'}`}>
           <Calendar size={20} />
