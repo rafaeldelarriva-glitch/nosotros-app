@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, MapPin, DollarSign, Plus, CheckCircle, 
-  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight
+  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -63,6 +63,10 @@ export default function App() {
   // Fotos y Ubicación de la Foto
   const [photoSpotId, setPhotoSpotId] = useState('');
 
+  // Comentarios (General y por Ubicación)
+  const [generalCommentInput, setGeneralCommentInput] = useState('');
+  const [spotCommentInputs, setSpotCommentInputs] = useState({});
+
   // Línea temporal interactiva (Expandir parada en cerrado)
   const [expandedTimelineSpotId, setExpandedTimelineSpotId] = useState(null);
 
@@ -116,19 +120,22 @@ export default function App() {
           spots(*),
           expenses(*),
           photos(*),
+          comments(*),
           event_members(*)
         `);
 
       if (error) throw error;
 
-      const formattedEvents = eventsData.map(ev => ({
+      const formattedEvents = (eventsData || []).map(ev => ({
         ...ev,
+        status: ev.status || 'active',
         members: (ev.event_members || []).filter(m => m.status === 'member').map(m => m.user_name),
         pendingInvitations: (ev.event_members || []).filter(m => m.status === 'pending_invite').map(m => m.user_name),
         pendingRequests: (ev.event_members || []).filter(m => m.status === 'pending_request').map(m => m.user_name),
         spots: ev.spots || [],
         expenses: ev.expenses || [],
-        photos: ev.photos || []
+        photos: ev.photos || [],
+        comments: ev.comments || []
       }));
 
       setEvents(formattedEvents);
@@ -388,6 +395,36 @@ export default function App() {
     fetchAppData();
   };
 
+  const handleAddGeneralComment = async (e) => {
+    e.preventDefault();
+    if (!generalCommentInput.trim() || !activeEvent) return;
+
+    await supabase.from('comments').insert([{
+      event_id: activeEvent.id,
+      spot_id: null,
+      user_name: currentUser.name,
+      content: generalCommentInput.trim()
+    }]);
+
+    setGeneralCommentInput('');
+    fetchAppData();
+  };
+
+  const handleAddSpotComment = async (spotId) => {
+    const text = spotCommentInputs[spotId];
+    if (!text || !text.trim() || !activeEvent) return;
+
+    await supabase.from('comments').insert([{
+      event_id: activeEvent.id,
+      spot_id: spotId,
+      user_name: currentUser.name,
+      content: text.trim()
+    }]);
+
+    setSpotCommentInputs({ ...spotCommentInputs, [spotId]: '' });
+    fetchAppData();
+  };
+
   const handleCloseEvent = async () => {
     if (!confirm('¿Estás seguro de cerrar esta salida? Pasará al modo línea temporal resumen.')) return;
 
@@ -624,6 +661,7 @@ export default function App() {
     const isClosed = activeEvent.status === 'closed';
 
     const maxVotes = Math.max(0, ...(activeEvent.spots || []).map(s => s.votes || 0));
+    const generalComments = (activeEvent.comments || []).filter(c => !c.spot_id);
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
@@ -674,15 +712,15 @@ export default function App() {
                 <div className="text-center space-y-1">
                   <span className="text-2xl">⏳</span>
                   <h2 className="text-lg font-black text-slate-800">Línea Temporal del Día</h2>
-                  <p className="text-xs text-slate-500">Pulsa sobre cada parada para ver su información, tickets y fotos</p>
+                  <p className="text-xs text-slate-500">Pulsa sobre cada parada para ver su información, tickets, fotos y comentarios</p>
                 </div>
 
-                {/* LÍNEA VERTICAL TEMPORAL */}
                 <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-gradient-to-b before:from-sky-500 before:via-indigo-500 before:to-sky-300">
                   {(activeEvent.spots || []).map((spot, idx) => {
                     const spotExpenses = (activeEvent.expenses || []).filter(e => e.spot_id === spot.id);
                     const spotSpent = spotExpenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
                     const spotPhotos = (activeEvent.photos || []).filter(p => p.spot_id === spot.id);
+                    const spotComments = (activeEvent.comments || []).filter(c => c.spot_id === spot.id);
                     const isExpanded = expandedTimelineSpotId === spot.id;
 
                     const estimatedTime = `${12 + idx}:30`;
@@ -702,20 +740,16 @@ export default function App() {
                               </span>
                               <h3 className="font-bold text-sm text-slate-800">{spot.name}</h3>
                             </div>
-                            <div className="flex items-center space-x-2 text-xs font-bold text-slate-500">
-                              {(spotExpenses.length > 0 || spotPhotos.length > 0) && (
-                                <span className="bg-sky-100 text-sky-700 px-2.5 py-0.5 rounded-full text-[10px] border border-sky-200">
-                                  {spotExpenses.length} gastos • {spotPhotos.length} fotos
-                                </span>
-                              )}
+                            <div className="flex items-center space-x-1.5 text-xs font-bold text-slate-500">
+                              <span className="bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full text-[10px] border border-sky-200">
+                                {spotExpenses.length}g • {spotPhotos.length}f • {spotComments.length}c
+                              </span>
                               <ChevronRight size={16} className={`transition-transform ${isExpanded ? 'rotate-90 text-sky-600' : ''}`} />
                             </div>
                           </div>
 
-                          {/* INFORMACIÓN EXPANDIBLE DE LA PARADA */}
                           {isExpanded && (
                             <div className="mt-4 pt-4 border-t border-sky-200/60 space-y-4 animate-fadeIn">
-                              {/* Gastos de este sitio */}
                               <div className="space-y-2">
                                 <div className="flex justify-between items-center text-xs font-bold text-slate-700">
                                   <span className="flex items-center"><Receipt size={14} className="mr-1 text-emerald-600" /> Gastos y Tickets</span>
@@ -745,7 +779,6 @@ export default function App() {
                                 )}
                               </div>
 
-                              {/* Fotos de este sitio */}
                               <div className="space-y-2">
                                 <span className="text-xs font-bold text-slate-700 flex items-center">
                                   <Camera size={14} className="mr-1 text-indigo-600" /> Álbum de este momento
@@ -760,6 +793,24 @@ export default function App() {
                                         <span className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-xs text-white text-[9px] font-bold px-1.5 py-0.5 rounded truncate text-center">
                                           {photo.user_name}
                                         </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="space-y-2">
+                                <span className="text-xs font-bold text-slate-700 flex items-center">
+                                  <MessageSquare size={14} className="mr-1 text-sky-600" /> Comentarios y Recomendaciones
+                                </span>
+                                {spotComments.length === 0 ? (
+                                  <p className="text-[11px] text-slate-400 italic">Sin comentarios en este sitio.</p>
+                                ) : (
+                                  <div className="space-y-1.5">
+                                    {spotComments.map(c => (
+                                      <div key={c.id} className="bg-white p-2.5 rounded-2xl border border-sky-100 text-xs">
+                                        <p className="text-slate-800">{c.content}</p>
+                                        <p className="text-[10px] font-bold text-sky-600 mt-1">— {c.user_name}</p>
                                       </div>
                                     ))}
                                   </div>
@@ -801,6 +852,37 @@ export default function App() {
                   >
                     <Navigation size={14} /> <span>Abrir en Google Maps</span>
                   </a>
+                )}
+              </div>
+
+              {/* COMENTARIOS GENERALES DEL PLAN */}
+              <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
+                <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
+                  <MessageSquare size={14} className="mr-1.5 text-sky-600" /> Comentarios Generales del Plan ({generalComments.length})
+                </h3>
+
+                <form onSubmit={handleAddGeneralComment} className="flex gap-2">
+                  <input 
+                    type="text" 
+                    placeholder="Escribe un comentario o aviso general..." 
+                    value={generalCommentInput} 
+                    onChange={(e) => setGeneralCommentInput(e.target.value)}
+                    className="flex-1 bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-inner"
+                  />
+                  <button type="submit" aria-label="Enviar comentario" className="bg-sky-600 hover:bg-sky-700 text-white p-2.5 rounded-2xl shadow transition flex items-center justify-center shrink-0">
+                    <Send size={14} />
+                  </button>
+                </form>
+
+                {generalComments.length > 0 && (
+                  <div className="space-y-2 pt-1 max-h-44 overflow-y-auto">
+                    {generalComments.map((c) => (
+                      <div key={c.id} className="bg-sky-50/60 p-3 rounded-2xl border border-sky-100 text-xs space-y-1">
+                        <p className="text-slate-800 font-medium">{c.content}</p>
+                        <p className="text-[10px] font-bold text-sky-700">— {c.user_name}</p>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -867,14 +949,16 @@ export default function App() {
                     </form>
                   </div>
 
-                  <div className="space-y-2.5">
-                    <h4 className="text-xs font-bold text-slate-700 px-1">Votación de Sitios Propuestos</h4>
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-bold text-slate-700 px-1">Votación y Comentarios de Sitios</h4>
                     {(activeEvent.spots || []).length === 0 ? (
                       <p className="text-xs text-slate-400 px-1">Ningún lugar propuesto todavía.</p>
                     ) : (
                       (activeEvent.spots || []).map((spot) => {
                         const isMajority = maxVotes > 0 && spot.votes === maxVotes;
                         const isConfirmed = spot.active_now;
+                        const spotComments = (activeEvent.comments || []).filter(c => c.spot_id === spot.id);
+                        const currentInputText = spotCommentInputs[spot.id] || '';
 
                         return (
                           <div key={spot.id} className={`p-4 rounded-3xl border flex flex-col space-y-3 backdrop-blur-xl ${isConfirmed ? 'bg-sky-50/90 border-sky-300 shadow-sm' : isMajority ? 'bg-amber-50/60 border-amber-300' : 'bg-white/90 border-sky-100 shadow-sm'}`}>
@@ -936,6 +1020,42 @@ export default function App() {
                                   <span>Abrir Maps</span>
                                 </a>
                               )}
+                            </div>
+
+                            <div className="pt-2 border-t border-sky-100 space-y-2">
+                              <div className="flex items-center space-x-1 text-[11px] font-bold text-slate-700">
+                                <MessageSquare size={12} className="text-sky-600" />
+                                <span>Reseñas y Recomendaciones ({spotComments.length})</span>
+                              </div>
+
+                              {spotComments.length > 0 && (
+                                <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                                  {spotComments.map(c => (
+                                    <div key={c.id} className="bg-white p-2 rounded-xl border border-sky-100 text-xs space-y-0.5">
+                                      <p className="text-slate-800">{c.content}</p>
+                                      <p className="text-[10px] font-bold text-sky-600">— {c.user_name}</p>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              <div className="flex gap-1.5 pt-1">
+                                <input 
+                                  type="text" 
+                                  placeholder="Ej. Recomiendo el plato X..." 
+                                  value={currentInputText}
+                                  onChange={(e) => setSpotCommentInputs({ ...spotCommentInputs, [spot.id]: e.target.value })}
+                                  className="flex-1 bg-sky-50/50 border border-sky-200 rounded-xl px-3 py-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-inner"
+                                />
+                                <button 
+                                  type="button"
+                                  onClick={() => handleAddSpotComment(spot.id)}
+                                  aria-label="Enviar comentario de sitio"
+                                  className="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-center"
+                                >
+                                  <Send size={12} />
+                                </button>
+                              </div>
                             </div>
                           </div>
                         );
