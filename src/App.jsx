@@ -60,16 +60,13 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Cargar usuarios registrados en Supabase
   const fetchRegisteredUsers = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('name, email');
+      const { data, error } = await supabase.from('profiles').select('name, email');
       if (error) throw error;
       setRegisteredUsers(data || []);
     } catch (err) {
-      console.error('Error cargando perfiles de usuario:', err.message);
+      console.error('Error cargando perfiles:', err.message);
     }
   };
 
@@ -271,7 +268,6 @@ export default function App() {
   const myApprovalRequests = events.filter(e => e.creator_name === currentUser?.name && e.pendingRequests.length > 0);
   const totalNotifications = myInvitations.length + myApprovalRequests.reduce((acc, curr) => acc + curr.pendingRequests.length, 0);
 
-  // Filtrado de usuarios según búsqueda en el modal
   const filteredUsersToInvite = registeredUsers.filter(u => 
     u.name.toLowerCase() !== currentUser?.name.toLowerCase() &&
     (u.name.toLowerCase().includes(friendSearchInput.toLowerCase()) || 
@@ -279,7 +275,7 @@ export default function App() {
   );
 
   // -------------------------------------------------------------
-  // PANTALLA DE LOGIN / REGISTRO
+  // LOGIN / REGISTRO
   // -------------------------------------------------------------
   if (!currentUser) {
     return (
@@ -378,7 +374,7 @@ export default function App() {
   }
 
   // -------------------------------------------------------------
-  // DETALLE DE UN EVENTO ACTIVO
+  // DETALLE DE UN EVENTO ACTIVO (CON ASISTENTES Y PROPUESTAS DE CADA UNO)
   // -------------------------------------------------------------
   if (activeEvent) {
     const totalSpent = (activeEvent.expenses || []).reduce((acc, c) => acc + Number(c.amount), 0);
@@ -410,6 +406,23 @@ export default function App() {
         </div>
 
         <main className="max-w-md mx-auto p-4 space-y-5">
+          
+          {/* SECCIÓN DE ASISTENTES / MIEMBROS DE LA SALIDA */}
+          <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
+                <Users size={14} className="mr-1.5 text-indigo-600" /> Asistentes Confirmados ({activeEvent.members.length})
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {activeEvent.members.map((member) => (
+                <span key={member} className="text-xs font-bold bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-xl border border-indigo-100 flex items-center">
+                  👤 {member}
+                </span>
+              ))}
+            </div>
+          </div>
+
           <div className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden">
             <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full">📍 Ubicación Elegida</span>
             <h2 className="text-xl font-black mt-2 mb-1">{currentActiveSpot ? currentActiveSpot.name : 'Ningún sitio seleccionado'}</h2>
@@ -426,7 +439,7 @@ export default function App() {
           </div>
 
           <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm" role="tablist">
-            <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Sitios</button>
+            <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Sitios Propuestos</button>
             <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Gastos</button>
             <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Fotos</button>
           </div>
@@ -434,16 +447,18 @@ export default function App() {
           {eventSubTab === 'spots' && (
             <div className="space-y-4">
               <form onSubmit={handleAddSpot} className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                <label htmlFor="new-spot-input" className="block text-xs font-bold text-slate-700">Proponer sitio</label>
+                <label htmlFor="new-spot-input" className="block text-xs font-bold text-slate-700">Proponer sitio o bar</label>
                 <input id="new-spot-input" type="text" placeholder="Ej. Bar Pepe" value={newSpotName} onChange={(e) => setNewSpotName(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" />
-                <button type="submit" className="w-full bg-indigo-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-indigo-700">Añadir Sitio</button>
+                <button type="submit" className="w-full bg-indigo-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-indigo-700">Añadir Propuesta</button>
               </form>
               <div className="space-y-2.5">
                 {(activeEvent.spots || []).map((spot) => (
                   <div key={spot.id} className={`p-4 rounded-2xl border flex items-center justify-between ${spot.active_now ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200'}`}>
                     <div>
                       <h3 className="font-bold text-slate-900 text-sm">{spot.name}</h3>
-                      <p className="text-[11px] text-slate-600 font-medium">{spot.votes} votos</p>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        Propuesto por <span className="font-bold text-indigo-600">{spot.suggested_by}</span> • {spot.votes} votos
+                      </p>
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => handleVoteSpot(spot.id, spot.votes)} className="bg-slate-100 border border-slate-300 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800">👍 Votar</button>
@@ -639,7 +654,7 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL CREAR SALIDA CON BÚSQUEDA REAL DE USUARIOS */}
+      {/* MODAL CREAR SALIDA */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white max-w-md w-full p-6 rounded-3xl shadow-2xl space-y-4 border border-slate-200">
@@ -654,7 +669,6 @@ export default function App() {
                 <input id="plan-date" type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-4 py-2.5 text-sm text-slate-900" required />
               </div>
               
-              {/* Buscador de usuarios de Supabase */}
               <div>
                 <label htmlFor="friend-search" className="block text-xs font-bold text-slate-700 mb-1">Invitar Usuarios Registrados</label>
                 <div className="relative mb-2">
