@@ -50,6 +50,7 @@ export default function App() {
   const [newSpotName, setNewSpotName] = useState('');
   const [isGettingLocation, setIsGettingLocation] = useState(false);
 
+  // Gastos
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
 
@@ -177,7 +178,6 @@ export default function App() {
     }
   };
 
-  // Añadir sitio por texto o búsqueda
   const handleAddSpot = async (e) => {
     e.preventDefault();
     if (!newSpotName.trim() || !activeEvent) return;
@@ -195,7 +195,6 @@ export default function App() {
     fetchAppData();
   };
 
-  // Obtener ubicación GPS actual del dispositivo
   const handleAddCurrentLocation = () => {
     if (!navigator.geolocation) {
       alert('Tu navegador no soporta geolocalización GPS.');
@@ -207,7 +206,7 @@ export default function App() {
       async (position) => {
         const lat = position.coords.latitude;
         const lon = position.coords.longitude;
-        const spotName = `📍 Mi ubicación GPS (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
+        const spotName = `📍 Ubicación GPS (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
 
         await supabase.from('spots').insert([{
           event_id: activeEvent.id,
@@ -215,7 +214,7 @@ export default function App() {
           category: 'gps',
           votes: 1,
           suggested_by: currentUser.name,
-          active_now: true // Lo marcamos como activo automáticamente al estar aquí
+          active_now: true
         }]);
 
         setIsGettingLocation(false);
@@ -372,7 +371,7 @@ export default function App() {
       <main className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 text-slate-900 relative overflow-hidden">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-80 bg-gradient-to-tr from-indigo-300/40 to-purple-300/40 rounded-b-full blur-3xl pointer-events-none" aria-hidden="true"></div>
 
-        <div className="max-w-md w-full bg-white/90 backdrop-blur-xl p-8 rounded-[2.5rem] shadow-xl border border-slate-200/85 relative z-10 space-y-6">
+        <div className="max-w-md w-full bg-white/90 backdrop-blur-xl p-8 rounded-[2.5rem] shadow-xl border border-slate-200/80 relative z-10 space-y-6">
           <div className="text-center space-y-2">
             <div className="w-16 h-16 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-2xl mx-auto flex items-center justify-center text-3xl shadow-lg shadow-indigo-500/20 text-white" aria-hidden="true">
               🚀
@@ -538,7 +537,7 @@ export default function App() {
           {eventSubTab === 'spots' && (
             <div className="space-y-4">
               
-              {/* BOTÓN GPS RÁPIDO Y BUSCADOR GOOGLE MAPS */}
+              {/* BOTÓN GPS Y BUSCADOR CON SUGERENCIAS */}
               <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
                 <h3 className="text-xs font-black text-slate-800">Añadir lugar al plan</h3>
                 
@@ -554,7 +553,7 @@ export default function App() {
 
                 <div className="relative pt-1">
                   <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
-                  <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400 font-bold">o busca un sitio para más tarde</span></div>
+                  <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400 font-bold">o escribe / selecciona un sitio</span></div>
                 </div>
 
                 <form onSubmit={handleAddSpot} className="space-y-2.5">
@@ -562,13 +561,28 @@ export default function App() {
                     <Search className="absolute left-3.5 text-slate-400" size={16} />
                     <input 
                       type="text" 
-                      placeholder="Ej. Bar El Rinconcillo, Sevilla..." 
+                      placeholder="Ej. Bar El Rinconcillo, Cervecería..." 
                       value={newSpotName} 
                       onChange={(e) => setNewSpotName(e.target.value)} 
                       className="w-full bg-slate-50 border border-slate-300 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" 
                     />
                   </div>
-                  <button type="submit" className="w-full bg-indigo-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-indigo-700 transition">
+
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    <span className="text-[10px] font-bold text-slate-400 self-center mr-1">Sugeridos:</span>
+                    {['Bar El Rinconcillo', 'La Campana', 'Los Coloniales', 'Bodeguita'].map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        type="button"
+                        onClick={() => setNewSpotName(suggestion)}
+                        className="text-[10px] bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 font-bold px-2.5 py-1 rounded-xl border border-slate-200 transition"
+                      >
+                        + {suggestion}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button type="submit" className="w-full bg-indigo-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-indigo-700 transition mt-2">
                     🔍 Añadir sitio propuesto
                   </button>
                 </form>
