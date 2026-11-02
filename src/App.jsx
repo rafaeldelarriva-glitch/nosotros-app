@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, MapPin, DollarSign, Plus, CheckCircle, 
-  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt
+  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -29,6 +29,7 @@ export default function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [passwordError, setPasswordError] = useState('');
 
   // Navegación
   const [activeTab, setActiveTab] = useState('my-events');
@@ -121,11 +122,31 @@ export default function App() {
     }
   };
 
+  const validateStrongPassword = (pwd) => {
+    const minLength = pwd.length >= 8;
+    const hasUpperCase = /[A-Z]/.test(pwd);
+    const hasNumber = /\d/.test(pwd);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(pwd);
+
+    if (!minLength) return 'Debe tener al menos 8 caracteres.';
+    if (!hasUpperCase) return 'Debe incluir al menos una letra mayúscula.';
+    if (!hasNumber) return 'Debe incluir al menos un número.';
+    if (!hasSpecialChar) return 'Debe incluir al menos un carácter especial (ej. !, @, #, $).';
+    return '';
+  };
+
   const handleAuth = async (e) => {
     e.preventDefault();
     if (!email || !password) return;
 
     if (authMode === 'register') {
+      const errorMsg = validateStrongPassword(password);
+      if (errorMsg) {
+        setPasswordError(errorMsg);
+        return;
+      }
+      setPasswordError('');
+
       const { data, error } = await supabase.auth.signUp({ email, password });
       if (error) {
         alert(error.message);
@@ -137,6 +158,7 @@ export default function App() {
         setCurrentUser({ id: data.user.id, name: userDisplayName, email });
       }
     } else {
+      setPasswordError('');
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
         alert(error.message);
@@ -273,7 +295,17 @@ export default function App() {
     fetchAppData();
   };
 
-  // Subir foto del ticket de gasto
+  // Borrar sitio propuesto (Solo el creador)
+  const handleDeleteSpot = async (spotId) => {
+    if (!confirm('¿Seguro que quieres eliminar este sitio propuesto?')) return;
+    const { error } = await supabase.from('spots').delete().eq('id', spotId);
+    if (error) {
+      alert('Error al eliminar el sitio: ' + error.message);
+    } else {
+      fetchAppData();
+    }
+  };
+
   const handleReceiptUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -451,32 +483,40 @@ export default function App() {
   // -------------------------------------------------------------
   if (!currentUser) {
     return (
-      <main className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 text-slate-900 relative overflow-hidden">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-80 bg-gradient-to-tr from-indigo-300/40 to-purple-300/40 rounded-b-full blur-3xl pointer-events-none" aria-hidden="true"></div>
+      <main className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-purple-950 flex flex-col items-center justify-center p-4 text-slate-100 relative overflow-hidden">
+        <div className="absolute top-10 left-1/2 -translate-x-1/2 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" aria-hidden="true"></div>
 
-        <div className="max-w-md w-full bg-white/90 backdrop-blur-xl p-8 rounded-[2.5rem] shadow-xl border border-slate-200/80 relative z-10 space-y-6">
-          <div className="text-center space-y-2">
-            <div className="w-16 h-16 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-2xl mx-auto flex items-center justify-center text-3xl shadow-lg shadow-indigo-500/20 text-white" aria-hidden="true">
-              🚀
+        <div className="max-w-md w-full bg-slate-900/80 backdrop-blur-2xl p-8 rounded-[2.5rem] shadow-2xl border border-white/10 relative z-10 space-y-6">
+          <div className="text-center space-y-3">
+            <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
+              <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-3xl rotate-6 shadow-lg shadow-indigo-500/30 animate-pulse"></div>
+              <div className="absolute inset-0 bg-slate-900 rounded-3xl flex items-center justify-center border border-white/20">
+                <Compass className="w-10 h-10 text-indigo-400 animate-spin-slow" />
+              </div>
             </div>
-            <h1 className="text-2xl font-black tracking-tight text-slate-900">Nosotros APP</h1>
-            <p className="text-xs font-medium text-slate-500">Organiza tus salidas, gastos y quedadas con tu grupo</p>
+            
+            <div>
+              <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-white via-indigo-200 to-indigo-400 bg-clip-text text-transparent">
+                Nosotros
+              </h1>
+              <p className="text-xs font-bold uppercase tracking-widest text-indigo-300 mt-1">El Punto de Encuentro</p>
+            </div>
           </div>
 
-          <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200" role="tablist">
+          <div className="flex bg-slate-800/80 p-1.5 rounded-2xl border border-white/10" role="tablist">
             <button 
               role="tab"
               aria-selected={authMode === 'login'}
-              onClick={() => setAuthMode('login')}
-              className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all focus:outline-none ${authMode === 'login' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+              onClick={() => { setAuthMode('login'); setPasswordError(''); }}
+              className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all focus:outline-none ${authMode === 'login' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30' : 'text-slate-400 hover:text-white'}`}
             >
               Iniciar Sesión
             </button>
             <button 
               role="tab"
               aria-selected={authMode === 'register'}
-              onClick={() => setAuthMode('register')}
-              className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all focus:outline-none ${authMode === 'register' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+              onClick={() => { setAuthMode('register'); setPasswordError(''); }}
+              className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all focus:outline-none ${authMode === 'register' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30' : 'text-slate-400 hover:text-white'}`}
             >
               Crear Cuenta
             </button>
@@ -485,16 +525,16 @@ export default function App() {
           <form onSubmit={handleAuth} className="space-y-4">
             {authMode === 'register' && (
               <div className="space-y-1">
-                <label htmlFor="reg-name" className="block text-xs font-bold text-slate-700 ml-1">Nombre Completo</label>
+                <label htmlFor="reg-name" className="block text-xs font-bold text-slate-300 ml-1">Nombre Completo</label>
                 <div className="relative flex items-center">
                   <User className="absolute left-3.5 text-slate-400" size={18} />
                   <input 
                     id="reg-name"
                     type="text" 
-                    placeholder="Tu nombre" 
+                    placeholder="Tu nombre en el grupo" 
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-900 transition-all shadow-sm"
+                    className="w-full bg-slate-800/80 border border-slate-700 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-indigo-500 focus:bg-slate-800 text-white transition-all shadow-inner"
                     required
                   />
                 </div>
@@ -502,7 +542,7 @@ export default function App() {
             )}
 
             <div className="space-y-1">
-              <label htmlFor="auth-email" className="block text-xs font-bold text-slate-700 ml-1">Correo Electrónico</label>
+              <label htmlFor="auth-email" className="block text-xs font-bold text-slate-300 ml-1">Correo Electrónico</label>
               <div className="relative flex items-center">
                 <Mail className="absolute left-3.5 text-slate-400" size={18} />
                 <input 
@@ -511,14 +551,14 @@ export default function App() {
                   placeholder="correo@ejemplo.com" 
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-900 transition-all shadow-sm"
+                  className="w-full bg-slate-800/80 border border-slate-700 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-indigo-500 focus:bg-slate-800 text-white transition-all shadow-inner"
                   required
                 />
               </div>
             </div>
 
             <div className="space-y-1">
-              <label htmlFor="auth-password" className="block text-xs font-bold text-slate-700 ml-1">Contraseña</label>
+              <label htmlFor="auth-password" className="block text-xs font-bold text-slate-300 ml-1">Contraseña</label>
               <div className="relative flex items-center">
                 <Lock className="absolute left-3.5 text-slate-400" size={18} />
                 <input 
@@ -527,15 +567,26 @@ export default function App() {
                   placeholder="••••••••" 
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-indigo-500 focus:bg-white text-slate-900 transition-all shadow-sm"
+                  className="w-full bg-slate-800/80 border border-slate-700 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-indigo-500 focus:bg-slate-800 text-white transition-all shadow-inner"
                   required
                 />
               </div>
+              {authMode === 'register' && (
+                <p className="text-[10px] text-slate-400 ml-1 mt-1">
+                  Mínimo 8 caracteres, 1 mayúscula, 1 número y 1 símbolo.
+                </p>
+              )}
+              {passwordError && (
+                <div className="flex items-center space-x-1 text-red-400 text-[11px] font-bold mt-1 ml-1 bg-red-950/50 p-2 rounded-xl border border-red-900/50">
+                  <AlertCircle size={14} className="shrink-0" />
+                  <span>{passwordError}</span>
+                </div>
+              )}
             </div>
 
             <button 
               type="submit" 
-              className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold py-3.5 rounded-2xl text-sm transition shadow-md shadow-indigo-600/20 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-indigo-600 mt-2"
+              className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-bold py-3.5 rounded-2xl text-sm transition shadow-lg shadow-indigo-500/25 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-indigo-500 mt-2"
             >
               {authMode === 'login' ? 'Entrar a mi cuenta' : 'Registrarme'}
             </button>
@@ -621,7 +672,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* HISTORIAL DE GASTOS CON TICKETS EN LÍNEA TEMPORAL */}
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">🧾 Gastos y Tickets de la Salida</h3>
                 {(activeEvent.expenses || []).length === 0 ? (
@@ -771,8 +821,8 @@ export default function App() {
                         return (
                           <div key={spot.id} className={`p-4 rounded-2xl border flex flex-col space-y-3 ${isConfirmed ? 'bg-indigo-50 border-indigo-400 shadow-sm' : isMajority ? 'bg-amber-50/60 border-amber-300' : 'bg-white border-slate-200'}`}>
                             <div className="flex justify-between items-start">
-                              <div>
-                                <div className="flex items-center space-x-2">
+                              <div className="pr-2">
+                                <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                                   <h3 className="font-bold text-slate-900 text-sm">{spot.name}</h3>
                                   {isMajority && !isConfirmed && (
                                     <span className="bg-amber-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full flex items-center space-x-1 shadow-xs">
@@ -789,6 +839,17 @@ export default function App() {
                                   Propuesto por <span className="font-bold text-indigo-600">{spot.suggested_by}</span> • <span className="font-extrabold text-slate-800">{spot.votes} votos</span>
                                 </p>
                               </div>
+
+                              {/* BOTÓN DE BORRAR SITIO (SOLO EL CREADOR) */}
+                              {isCreator && (
+                                <button 
+                                  onClick={() => handleDeleteSpot(spot.id)}
+                                  title="Eliminar sitio propuesto"
+                                  className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition shrink-0"
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              )}
                             </div>
 
                             <div className="flex gap-2 pt-1 border-t border-slate-100/80">
@@ -859,7 +920,6 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* FORMULARIO DE GASTO CON FOTO DE TICKET */}
                   <form onSubmit={handleAddExpense} className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
                     <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto y ticket</h4>
                     
