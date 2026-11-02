@@ -53,9 +53,10 @@ export default function App() {
   const [mapSuggestions, setMapSuggestions] = useState([]);
   const [isSearchingMaps, setIsSearchingMaps] = useState(false);
 
-  // Gastos y Tickets
+  // Gastos, Tickets y Ubicación del Gasto
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
+  const [expenseSpotId, setExpenseSpotId] = useState('');
   const [expenseReceiptUrl, setExpenseReceiptUrl] = useState('');
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
 
@@ -295,7 +296,6 @@ export default function App() {
     fetchAppData();
   };
 
-  // Borrar sitio propuesto (Solo el creador)
   const handleDeleteSpot = async (spotId) => {
     if (!confirm('¿Seguro que quieres eliminar este sitio propuesto?')) return;
     const { error } = await supabase.from('spots').delete().eq('id', spotId);
@@ -328,11 +328,13 @@ export default function App() {
       description: expenseDesc,
       amount: parseFloat(expenseAmount),
       paid_by: currentUser.name,
+      spot_id: expenseSpotId || null,
       receipt_url: expenseReceiptUrl || null
     }]);
 
     setExpenseDesc('');
     setExpenseAmount('');
+    setExpenseSpotId('');
     setExpenseReceiptUrl('');
     fetchAppData();
   };
@@ -657,45 +659,54 @@ export default function App() {
                 <div className="text-center space-y-1">
                   <span className="text-2xl">🏆</span>
                   <h2 className="text-lg font-black text-slate-900">Resumen de la Salida</h2>
-                  <p className="text-xs text-slate-500">Historial completo de la ruta y momentos vividos</p>
+                  <p className="text-xs text-slate-500">Línea temporal de la ruta, paradas y gastos</p>
                 </div>
 
-                <div className="border-l-2 border-indigo-500 pl-4 space-y-6 ml-2 pt-2">
-                  {(activeEvent.spots || []).map((spot, idx) => (
-                    <div key={spot.id} className="relative space-y-1">
-                      <div className="absolute -left-[21px] top-1 w-3 h-3 bg-indigo-600 rounded-full border-2 border-white"></div>
-                      <span className="text-[10px] font-bold text-indigo-600 uppercase">Parada {idx + 1}</span>
-                      <h3 className="font-bold text-sm text-slate-900">{spot.name}</h3>
-                      <p className="text-[11px] text-slate-500">Propuesto por {spot.suggested_by} • {spot.votes} votos</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
+                <div className="border-l-2 border-indigo-500 pl-4 space-y-8 ml-2 pt-2">
+                  {(activeEvent.spots || []).map((spot, idx) => {
+                    const spotExpenses = (activeEvent.expenses || []).filter(e => e.spot_id === spot.id);
+                    const spotSpent = spotExpenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
 
-              <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-700">🧾 Gastos y Tickets de la Salida</h3>
-                {(activeEvent.expenses || []).length === 0 ? (
-                  <p className="text-xs text-slate-400">No hay gastos registrados.</p>
-                ) : (
-                  <div className="space-y-2.5">
-                    {(activeEvent.expenses || []).map((exp) => (
-                      <div key={exp.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex justify-between items-center text-xs">
+                    return (
+                      <div key={spot.id} className="relative space-y-3">
+                        <div className="absolute -left-[21px] top-1 w-3 h-3 bg-indigo-600 rounded-full border-2 border-white"></div>
                         <div>
-                          <p className="font-bold text-slate-900">{exp.description}</p>
-                          <p className="text-[10px] text-slate-500">Pagado por {exp.paid_by}</p>
+                          <span className="text-[10px] font-bold text-indigo-600 uppercase">Parada {idx + 1}</span>
+                          <h3 className="font-bold text-sm text-slate-900">{spot.name}</h3>
+                          <p className="text-[11px] text-slate-500">Propuesto por {spot.suggested_by} • {spot.votes} votos</p>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <span className="font-black text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
-                          {exp.receipt_url && (
-                            <a href={exp.receipt_url} target="_blank" rel="noreferrer" className="w-7 h-7 bg-indigo-100 hover:bg-indigo-200 rounded-lg flex items-center justify-center text-indigo-700 transition" title="Ver ticket">
-                              <Receipt size={14} />
-                            </a>
-                          )}
-                        </div>
+
+                        {/* GASTOS DE ESTA PARADA ESPECÍFICA */}
+                        {spotExpenses.length > 0 && (
+                          <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 space-y-2">
+                            <div className="flex justify-between items-center text-xs font-bold text-slate-700">
+                              <span>🧾 Gastos en este sitio:</span>
+                              <span className="text-emerald-700">{spotSpent.toFixed(2)}€</span>
+                            </div>
+                            <div className="space-y-1.5">
+                              {spotExpenses.map(exp => (
+                                <div key={exp.id} className="flex justify-between items-center text-xs bg-white p-2 rounded-xl border border-slate-100">
+                                  <div>
+                                    <span className="font-bold text-slate-900">{exp.description}</span>
+                                    <span className="text-[10px] text-slate-500 ml-1.5">({exp.paid_by})</span>
+                                  </div>
+                                  <div className="flex items-center space-x-2">
+                                    <span className="font-bold text-emerald-600">{Number(exp.amount).toFixed(2)}€</span>
+                                    {exp.receipt_url && (
+                                      <a href={exp.receipt_url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:text-indigo-800" title="Ver ticket">
+                                        <Receipt size={14} />
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-3">
@@ -840,7 +851,6 @@ export default function App() {
                                 </p>
                               </div>
 
-                              {/* BOTÓN DE BORRAR SITIO (SOLO EL CREADOR) */}
                               {isCreator && (
                                 <button 
                                   onClick={() => handleDeleteSpot(spot.id)}
@@ -920,8 +930,9 @@ export default function App() {
                     )}
                   </div>
 
+                  {/* FORMULARIO DE GASTO CON SELECCIÓN DE UBICACIÓN */}
                   <form onSubmit={handleAddExpense} className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                    <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto y ticket</h4>
+                    <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto vinculado a un sitio</h4>
                     
                     <input 
                       type="text" 
@@ -944,6 +955,20 @@ export default function App() {
                       required
                     />
 
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-bold text-slate-600">Ubicación / Sitio del Gasto</label>
+                      <select 
+                        value={expenseSpotId} 
+                        onChange={(e) => setExpenseSpotId(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600"
+                      >
+                        <option value="">Selecciona un sitio del plan...</option>
+                        {(activeEvent.spots || []).map((spot) => (
+                          <option key={spot.id} value={spot.id}>{spot.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
                     <div className="space-y-1.5">
                       <label className="block text-[11px] font-bold text-slate-600">Foto del Ticket (Opcional)</label>
                       <label className="flex items-center justify-center space-x-2 border-2 border-dashed border-slate-300 bg-slate-50 rounded-2xl p-3 cursor-pointer hover:bg-slate-100 transition">
@@ -961,7 +986,7 @@ export default function App() {
                     </div>
 
                     <button type="submit" className="w-full bg-emerald-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-emerald-700 transition mt-1">
-                      Añadir Gasto con Ticket
+                      Añadir Gasto al Sitio
                     </button>
                   </form>
 
@@ -970,22 +995,28 @@ export default function App() {
                     {(activeEvent.expenses || []).length === 0 ? (
                       <p className="text-xs text-slate-400 px-1">No hay gastos registrados todavía.</p>
                     ) : (
-                      (activeEvent.expenses || []).map((exp) => (
-                        <div key={exp.id} className="bg-white p-3.5 rounded-2xl border border-slate-200 flex justify-between items-center text-xs shadow-sm">
-                          <div>
-                            <p className="font-bold text-slate-900">{exp.description}</p>
-                            <p className="text-[10px] text-slate-500">Pagado por <span className="font-bold text-indigo-600">{exp.paid_by}</span></p>
+                      (activeEvent.expenses || []).map((exp) => {
+                        const spotObj = (activeEvent.spots || []).find(s => s.id === exp.spot_id);
+                        return (
+                          <div key={exp.id} className="bg-white p-3.5 rounded-2xl border border-slate-200 flex justify-between items-center text-xs shadow-sm">
+                            <div>
+                              <p className="font-bold text-slate-900">{exp.description}</p>
+                              <p className="text-[10px] text-slate-500">
+                                Pagado por <span className="font-bold text-indigo-600">{exp.paid_by}</span>
+                                {spotObj && <span className="ml-1 text-slate-600">• 📍 {spotObj.name}</span>}
+                              </p>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <span className="font-black text-emerald-700 text-sm">{Number(exp.amount).toFixed(2)}€</span>
+                              {exp.receipt_url && (
+                                <a href={exp.receipt_url} target="_blank" rel="noreferrer" className="w-7 h-7 bg-indigo-50 hover:bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-700 transition border border-indigo-200" title="Ver ticket">
+                                  <Receipt size={14} />
+                                </a>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-center space-x-2">
-                            <span className="font-black text-emerald-700 text-sm">{Number(exp.amount).toFixed(2)}€</span>
-                            {exp.receipt_url && (
-                              <a href={exp.receipt_url} target="_blank" rel="noreferrer" className="w-7 h-7 bg-indigo-50 hover:bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-700 transition border border-indigo-200" title="Ver ticket">
-                                <Receipt size={14} />
-                              </a>
-                            )}
-                          </div>
-                        </div>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 </div>
