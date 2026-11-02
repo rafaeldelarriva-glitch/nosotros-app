@@ -318,7 +318,6 @@ export default function App() {
     fetchAppData();
   };
 
-  // Alternar selección de un sitio para la ruta del plan (admite múltiples seleccionados)
   const handleToggleSelectSpot = async (spotId, currentSelectedState) => {
     await supabase.from('spots').update({ active_now: !currentSelectedState }).eq('id', spotId);
     fetchAppData();
@@ -530,7 +529,6 @@ export default function App() {
     return transactions;
   };
 
-  // Renderizado dinámico de tarjetas de sitios
   const renderSpotCard = (spot, isSelected, maxVotes) => {
     const isMajority = maxVotes > 0 && spot.votes === maxVotes;
     const spotComments = (activeEvent?.comments || []).filter(c => c.spot_id === spot.id);
