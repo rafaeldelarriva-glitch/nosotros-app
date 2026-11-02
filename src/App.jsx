@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, MapPin, DollarSign, Plus, CheckCircle, 
-  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper
+  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -46,8 +46,10 @@ export default function App() {
   const [friendSearchInput, setFriendSearchInput] = useState('');
   const [registeredUsers, setRegisteredUsers] = useState([]);
 
+  // Sitios y GPS
   const [newSpotName, setNewSpotName] = useState('');
-  const [newSpotCategory, setNewSpotCategory] = useState('cervecitas');
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
+
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
 
@@ -175,6 +177,7 @@ export default function App() {
     }
   };
 
+  // Añadir sitio por texto o búsqueda
   const handleAddSpot = async (e) => {
     e.preventDefault();
     if (!newSpotName.trim() || !activeEvent) return;
@@ -182,7 +185,7 @@ export default function App() {
     await supabase.from('spots').insert([{
       event_id: activeEvent.id,
       name: newSpotName,
-      category: newSpotCategory,
+      category: 'bar',
       votes: 1,
       suggested_by: currentUser.name,
       active_now: false
@@ -190,6 +193,41 @@ export default function App() {
 
     setNewSpotName('');
     fetchAppData();
+  };
+
+  // Obtener ubicación GPS actual del dispositivo
+  const handleAddCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Tu navegador no soporta geolocalización GPS.');
+      return;
+    }
+
+    setIsGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+        const spotName = `📍 Mi ubicación GPS (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
+
+        await supabase.from('spots').insert([{
+          event_id: activeEvent.id,
+          name: spotName,
+          category: 'gps',
+          votes: 1,
+          suggested_by: currentUser.name,
+          active_now: true // Lo marcamos como activo automáticamente al estar aquí
+        }]);
+
+        setIsGettingLocation(false);
+        fetchAppData();
+      },
+      (error) => {
+        console.error('Error obteniendo GPS:', error);
+        alert('No se pudo obtener tu ubicación. Revisa los permisos del navegador.');
+        setIsGettingLocation(false);
+      },
+      { enableHighAccuracy: true }
+    );
   };
 
   const handleVoteSpot = async (spotId, currentVotes) => {
@@ -274,60 +312,46 @@ export default function App() {
      u.email.toLowerCase().includes(friendSearchInput.toLowerCase()))
   );
 
-  // -------------------------------------------------------------
-  // LÓGICA DE REPARTO DE GASTOS Y DEUDAS CRUZADAS
-  // -------------------------------------------------------------
   const calculateDebts = (members = [], expenses = []) => {
     if (members.length === 0) return [];
 
     const totalSpent = expenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
     const sharePerPerson = totalSpent / members.length;
 
-    // Calcular lo que ha pagado cada miembro
     const paidMap = {};
     members.forEach(m => { paidMap[m] = 0; });
     expenses.forEach(exp => {
       if (paidMap[exp.paid_by] !== undefined) {
         paidMap[exp.paid_by] += Number(exp.amount);
       } else {
-        // Si pagó alguien que ya no está formalmente en miembros
         paidMap[exp.paid_by] = Number(exp.amount);
       }
     });
 
-    // Balance neto: positivo = le deben (acreedor), negativo = debe (deudor)
     const balances = [];
     const allNames = Array.from(new Set([...members, ...Object.keys(paidMap)]));
     
     allNames.forEach(name => {
       const paid = paidMap[name] || 0;
       const shouldPay = members.includes(name) ? sharePerPerson : 0;
-      const balance = paid - shouldPay; // > 0 cobra, < 0 paga
+      const balance = paid - shouldPay;
       balances.push({ name, balance });
     });
 
-    // Separar deudores y acreedores
     let debtors = balances.filter(b => b.balance < -0.01).map(d => ({ ...d, balance: Math.abs(d.balance) }));
     let creditors = balances.filter(b => b.balance > 0.01);
 
     const transactions = [];
-
-    // Algoritmo de liquidación de deudas
     let dIndex = 0;
     let cIndex = 0;
 
     while (dIndex < debtors.length && cIndex < creditors.length) {
       const debtor = debtors[dIndex];
       const creditor = creditors[cIndex];
-
       const amountToTransfer = Math.min(debtor.balance, creditor.balance);
 
       if (amountToTransfer > 0.01) {
-        transactions.push({
-          from: debtor.name,
-          to: creditor.name,
-          amount: amountToTransfer
-        });
+        transactions.push({ from: debtor.name, to: creditor.name, amount: amountToTransfer });
       }
 
       debtor.balance -= amountToTransfer;
@@ -348,7 +372,7 @@ export default function App() {
       <main className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 text-slate-900 relative overflow-hidden">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-80 bg-gradient-to-tr from-indigo-300/40 to-purple-300/40 rounded-b-full blur-3xl pointer-events-none" aria-hidden="true"></div>
 
-        <div className="max-w-md w-full bg-white/90 backdrop-blur-xl p-8 rounded-[2.5rem] shadow-xl border border-slate-200/80 relative z-10 space-y-6">
+        <div className="max-w-md w-full bg-white/90 backdrop-blur-xl p-8 rounded-[2.5rem] shadow-xl border border-slate-200/85 relative z-10 space-y-6">
           <div className="text-center space-y-2">
             <div className="w-16 h-16 bg-gradient-to-tr from-indigo-600 to-purple-600 rounded-2xl mx-auto flex items-center justify-center text-3xl shadow-lg shadow-indigo-500/20 text-white" aria-hidden="true">
               🚀
@@ -491,7 +515,7 @@ export default function App() {
           </div>
 
           <div className="bg-gradient-to-br from-indigo-600 to-purple-700 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden">
-            <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full">📍 Ubicación Elegida</span>
+            <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full">📍 Ubicación Activa</span>
             <h2 className="text-xl font-black mt-2 mb-1">{currentActiveSpot ? currentActiveSpot.name : 'Ningún sitio seleccionado'}</h2>
             {currentActiveSpot && (
               <a 
@@ -506,38 +530,101 @@ export default function App() {
           </div>
 
           <div className="flex bg-white p-1 rounded-2xl border border-slate-200 shadow-sm" role="tablist">
-            <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Sitios Propuestos</button>
+            <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Sitios y GPS</button>
             <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Gastos y Deudas</button>
             <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600'}`}>Fotos</button>
           </div>
 
           {eventSubTab === 'spots' && (
             <div className="space-y-4">
-              <form onSubmit={handleAddSpot} className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-                <label htmlFor="new-spot-input" className="block text-xs font-bold text-slate-700">Proponer sitio o bar</label>
-                <input id="new-spot-input" type="text" placeholder="Ej. Bar Pepe" value={newSpotName} onChange={(e) => setNewSpotName(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-2xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" />
-                <button type="submit" className="w-full bg-indigo-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-indigo-700">Añadir Propuesta</button>
-              </form>
-              <div className="space-y-2.5">
-                {(activeEvent.spots || []).map((spot) => (
-                  <div key={spot.id} className={`p-4 rounded-2xl border flex items-center justify-between ${spot.active_now ? 'bg-indigo-50 border-indigo-300' : 'bg-white border-slate-200'}`}>
-                    <div>
-                      <h3 className="font-bold text-slate-900 text-sm">{spot.name}</h3>
-                      <p className="text-[11px] text-slate-500 font-medium">
-                        Propuesto por <span className="font-bold text-indigo-600">{spot.suggested_by}</span> • {spot.votes} votos
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => handleVoteSpot(spot.id, spot.votes)} className="bg-slate-100 border border-slate-300 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-800">👍 Votar</button>
-                      {!spot.active_now && <button onClick={() => handleActivateSpot(spot.id)} className="bg-indigo-100 text-indigo-800 px-3 py-1.5 rounded-xl text-xs font-bold">Ir aquí</button>}
-                    </div>
+              
+              {/* BOTÓN GPS RÁPIDO Y BUSCADOR GOOGLE MAPS */}
+              <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-3">
+                <h3 className="text-xs font-black text-slate-800">Añadir lugar al plan</h3>
+                
+                <button 
+                  type="button"
+                  onClick={handleAddCurrentLocation}
+                  disabled={isGettingLocation}
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow hover:opacity-95 flex items-center justify-center space-x-2 transition"
+                >
+                  <Compass size={16} className={isGettingLocation ? "animate-spin" : ""} />
+                  <span>{isGettingLocation ? 'Obteniendo GPS...' : '📍 Marcar mi ubicación GPS actual'}</span>
+                </button>
+
+                <div className="relative pt-1">
+                  <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
+                  <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400 font-bold">o busca un sitio para más tarde</span></div>
+                </div>
+
+                <form onSubmit={handleAddSpot} className="space-y-2.5">
+                  <div className="relative flex items-center">
+                    <Search className="absolute left-3.5 text-slate-400" size={16} />
+                    <input 
+                      type="text" 
+                      placeholder="Ej. Bar El Rinconcillo, Sevilla..." 
+                      value={newSpotName} 
+                      onChange={(e) => setNewSpotName(e.target.value)} 
+                      className="w-full bg-slate-50 border border-slate-300 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-600" 
+                    />
                   </div>
-                ))}
+                  <button type="submit" className="w-full bg-indigo-600 text-white text-xs font-bold rounded-2xl py-2.5 shadow hover:bg-indigo-700 transition">
+                    🔍 Añadir sitio propuesto
+                  </button>
+                </form>
+              </div>
+
+              <div className="space-y-2.5">
+                <h4 className="text-xs font-bold text-slate-700 px-1">Lugares Propuestos y Enlaces a Google Maps</h4>
+                {(activeEvent.spots || []).length === 0 ? (
+                  <p className="text-xs text-slate-400 px-1">Ningún lugar propuesto todavía.</p>
+                ) : (
+                  (activeEvent.spots || []).map((spot) => (
+                    <div key={spot.id} className={`p-4 rounded-2xl border flex flex-col space-y-2.5 ${spot.active_now ? 'bg-indigo-50 border-indigo-300 shadow-sm' : 'bg-white border-slate-200'}`}>
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <h3 className="font-bold text-slate-900 text-sm">{spot.name}</h3>
+                          <p className="text-[11px] text-slate-500 font-medium">
+                            Propuesto por <span className="font-bold text-indigo-600">{spot.suggested_by}</span> • {spot.votes} votos
+                          </p>
+                        </div>
+                        {spot.active_now && (
+                          <span className="bg-indigo-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full">Activo ahora</span>
+                        )}
+                      </div>
+
+                      <div className="flex gap-2 pt-1 border-t border-slate-100">
+                        <a 
+                          href={`https://maps.google.com/?q=${encodeURIComponent(spot.name)}`} 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-center font-bold text-xs py-2 rounded-xl flex items-center justify-center space-x-1.5 transition"
+                        >
+                          <MapPin size={14} className="text-indigo-600" />
+                          <span>Ver en Google Maps</span>
+                        </a>
+                        <button 
+                          onClick={() => handleVoteSpot(spot.id, spot.votes)} 
+                          className="bg-slate-100 hover:bg-slate-200 px-3 py-2 rounded-xl text-xs font-bold text-slate-800 transition"
+                        >
+                          👍 {spot.votes}
+                        </button>
+                        {!spot.active_now && (
+                          <button 
+                            onClick={() => handleActivateSpot(spot.id)} 
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-xl text-xs font-bold transition shadow-sm"
+                          >
+                            Ir aquí
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
           )}
 
-          {/* GASTOS Y REPARTO EXACTO DE DEUDAS */}
           {eventSubTab === 'expenses' && (
             <div className="space-y-5">
               <div className="grid grid-cols-2 gap-3">
@@ -545,7 +632,6 @@ export default function App() {
                 <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm"><p className="text-[10px] font-bold text-slate-500">POR PERSONA</p><p className="text-xl font-black text-indigo-600">{perPerson.toFixed(2)}€</p></div>
               </div>
 
-              {/* MÓDULO DE LIQUIDACIÓN DE DEUDAS (QUIÉN PAGA A QUIÉN) */}
               <div className="bg-gradient-to-br from-slate-900 to-indigo-950 text-white p-5 rounded-3xl shadow-lg space-y-3">
                 <h3 className="text-xs font-black uppercase tracking-wider text-indigo-300 flex items-center">
                   <DollarSign size={16} className="mr-1 text-emerald-400" /> Reparto y Liquidación de Deudas
