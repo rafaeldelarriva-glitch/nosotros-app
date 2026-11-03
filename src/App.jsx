@@ -981,6 +981,38 @@ export default function App() {
                                   </div>
                                 </div>
                               )}
+
+                              {spotPhotos.length > 0 && (
+                                <div className="space-y-1.5">
+                                  <span className="text-xs font-bold text-slate-700">Fotos de la parada</span>
+                                  <div className="flex gap-2 overflow-x-auto py-1">
+                                    {spotPhotos.map(p => (
+                                      <div key={p.id} onClick={(e) => { e.stopPropagation(); setViewingPhotoUrl(p.url); }} className="w-16 h-16 rounded-xl overflow-hidden border border-sky-200 shrink-0 cursor-pointer">
+                                        <img src={p.url} alt="Foto" className="w-full h-full object-cover" />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="space-y-2">
+                                <span className="text-xs font-bold text-slate-700 flex items-center">
+                                  <Receipt size={14} className="mr-1 text-emerald-600" /> Gastos de la parada ({spotSpent.toFixed(2)}€)
+                                </span>
+                                {spotExpenses.length === 0 ? (
+                                  <p className="text-[11px] text-slate-400">Sin gastos en este sitio.</p>
+                                ) : (
+                                  spotExpenses.map(exp => (
+                                    <div key={exp.id} className="flex justify-between items-center text-xs bg-white p-3 rounded-2xl border border-sky-100">
+                                      <div>
+                                        <p className="font-bold text-slate-800">{exp.description}</p>
+                                        <p className="text-[10px] text-slate-500">Pagado por {exp.paid_by}</p>
+                                      </div>
+                                      <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1077,6 +1109,21 @@ export default function App() {
                     )}
                   </div>
 
+                  {validExpenses.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-black uppercase text-slate-700">Gastos Registrados ({validExpenses.length})</h4>
+                      {validExpenses.map(exp => (
+                        <div key={exp.id} className="bg-white/90 p-3.5 rounded-2xl border border-sky-100 flex justify-between items-center text-xs">
+                          <div>
+                            <p className="font-bold text-slate-800">{exp.description}</p>
+                            <p className="text-[10px] text-slate-500">Pagado por <span className="font-bold text-sky-600">{exp.paid_by}</span></p>
+                          </div>
+                          <span className="font-black text-emerald-600 text-sm">{Number(exp.amount).toFixed(2)}€</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <form onSubmit={handleAddExpense} className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
                     <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto</h4>
                     <input type="text" placeholder="Concepto..." value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
@@ -1113,11 +1160,42 @@ export default function App() {
                       <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} className="hidden" />
                     </label>
                   </div>
+
+                  {validPhotos.length > 0 && (
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-black uppercase text-slate-700">Fotos del Plan ({validPhotos.length})</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        {validPhotos.map(p => (
+                          <div key={p.id} onClick={() => setViewingPhotoUrl(p.url)} className="bg-white/90 p-2 rounded-2xl border border-sky-100 shadow-sm cursor-pointer space-y-1">
+                            <div className="w-full h-32 rounded-xl overflow-hidden bg-sky-50">
+                              <img src={p.url} alt="Foto" className="w-full h-full object-cover" />
+                            </div>
+                            <p className="text-[10px] font-bold text-sky-600 text-center">Por {p.user_name}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </>
           )}
         </main>
+
+        {viewingPhotoUrl && (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white max-w-sm w-full p-4 rounded-[2rem] shadow-2xl space-y-4 border border-sky-100 text-center">
+              <div className="flex justify-between items-center px-1">
+                <h3 className="font-black text-slate-800 text-sm">Foto del Plan</h3>
+                <button onClick={() => setViewingPhotoUrl(null)} className="p-1 bg-sky-50 rounded-full text-slate-600"><X size={18} /></button>
+              </div>
+              <div className="w-full max-h-96 rounded-2xl overflow-hidden border border-sky-200 bg-sky-50 flex items-center justify-center">
+                <img src={viewingPhotoUrl} alt="Foto" className="w-full h-auto object-contain max-h-96" />
+              </div>
+              <button onClick={() => setViewingPhotoUrl(null)} className="w-full bg-sky-600 text-white font-bold py-2.5 rounded-xl text-xs">Cerrar</button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -1258,25 +1336,37 @@ export default function App() {
 
         {activeTab === 'notifications' && (
           <div className="space-y-4">
-            {isAdmin && pendingRegistrations.length > 0 && (
-              <div className="bg-white/90 p-5 rounded-[2.5rem] border border-emerald-100 shadow-sm space-y-3">
-                <h2 className="text-sm font-black text-slate-800 flex items-center">
-                  <ShieldCheck size={16} className="mr-1.5 text-emerald-600" /> Registros Pendientes ({pendingRegistrations.length})
-                </h2>
-                <div className="space-y-2">
-                  {pendingRegistrations.map(reg => (
-                    <div key={reg.id} className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/50 flex justify-between items-center text-xs">
-                      <div>
-                        <p className="font-bold text-slate-800">{reg.name}</p>
-                        <p className="text-[10px] text-slate-500">{reg.email}</p>
-                      </div>
-                      <div className="flex gap-1.5">
-                        <button onClick={() => handleApproveRegistration(reg.id, reg.name)} className="px-3 py-1.5 rounded-xl font-bold bg-emerald-600 text-white">Aprobar</button>
-                        <button onClick={() => handleRejectRegistration(reg.id)} className="px-3 py-1.5 rounded-xl font-bold bg-red-100 text-red-700">Rechazar</button>
-                      </div>
+            {isAdmin ? (
+              <div className="space-y-3">
+                <div className="bg-white/90 p-5 rounded-[2.5rem] border border-emerald-100 shadow-sm space-y-3">
+                  <h2 className="text-sm font-black text-slate-800 flex items-center">
+                    <ShieldCheck size={16} className="mr-1.5 text-emerald-600" /> Registros Pendientes ({pendingRegistrations.length})
+                  </h2>
+                  {pendingRegistrations.length === 0 ? (
+                    <p className="text-xs text-slate-400">No hay registros pendientes de aprobación.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {pendingRegistrations.map(reg => (
+                        <div key={reg.id} className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/50 flex justify-between items-center text-xs">
+                          <div>
+                            <p className="font-bold text-slate-800">{reg.name}</p>
+                            <p className="text-[10px] text-slate-500">{reg.email}</p>
+                          </div>
+                          <div className="flex gap-1.5">
+                            <button onClick={() => handleApproveRegistration(reg.id, reg.name)} className="px-3 py-1.5 rounded-xl font-bold bg-emerald-600 text-white">Aprobar</button>
+                            <button onClick={() => handleRejectRegistration(reg.id)} className="px-3 py-1.5 rounded-xl font-bold bg-red-100 text-red-700">Rechazar</button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
+              </div>
+            ) : (
+              <div className="bg-white/90 p-6 rounded-[2.5rem] text-center space-y-2 border border-sky-100">
+                <Shield size={24} className="mx-auto text-sky-600" />
+                <h3 className="font-black text-slate-800 text-sm">Panel de Administrador</h3>
+                <p className="text-xs text-slate-500">Solo el administrador puede gestionar las aprobaciones de nuevos usuarios.</p>
               </div>
             )}
           </div>
