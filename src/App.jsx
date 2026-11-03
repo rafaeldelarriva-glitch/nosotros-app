@@ -262,7 +262,7 @@ export default function App() {
     }
   };
 
-  const handleApproveRegistration = async (userId, userName) => {
+  const handleApproveRegistration = async (userId) => {
     try {
       await supabase.from('profiles').update({ is_approved: true }).eq('id', userId);
       await refreshAllData();
@@ -375,17 +375,6 @@ export default function App() {
     } catch (err) {
       alert('Error: ' + err.message);
     }
-  };
-
-  const handleApprovePasswordRequest = async (reqId, targetEmail, requestedPassword) => {
-    if (!confirm(`¿Aprobar clave para ${targetEmail}?`)) return;
-    await supabase.from('password_requests').update({ status: 'approved' }).eq('id', reqId);
-    await refreshAllData();
-  };
-
-  const handleRejectPasswordRequest = async (reqId) => {
-    await supabase.from('password_requests').update({ status: 'rejected' }).eq('id', reqId);
-    await refreshAllData();
   };
 
   const toggleExpenseParticipant = (memberName) => {
@@ -595,14 +584,7 @@ export default function App() {
     return transactions;
   };
 
-  // DEFINICIÓN DE LA VARIABLE isAdmin AQUÍ
   const isAdmin = currentUser?.role === 'admin' || currentUser?.email === 'rafa@ejemplo.com';
-  const myInvitations = Array.isArray(events) ? events.filter(e => Array.isArray(e.pendingInvitations) && e.pendingInvitations.includes(currentUser?.name)) : [];
-  const myApprovalRequests = Array.isArray(events) ? events.filter(e => e.creator_name === currentUser?.name && Array.isArray(e.pendingRequests) && e.pendingRequests.length > 0) : [];
-  
-  const totalNotifications = myInvitations.length + 
-    myApprovalRequests.reduce((acc, curr) => acc + (Array.isArray(curr.pendingRequests) ? curr.pendingRequests.length : 0), 0) + 
-    (isAdmin ? (Array.isArray(passwordRequests) ? passwordRequests.length : 0) + (Array.isArray(pendingRegistrations) ? pendingRegistrations.length : 0) : 0);
 
   const renderSpotCard = (spot, isSelected, maxVotes, selectedSpotsList = []) => {
     const isMajority = maxVotes > 0 && spot.votes === maxVotes;
@@ -850,37 +832,8 @@ export default function App() {
             <button type="submit" className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-bold py-3.5 rounded-2xl text-sm shadow-lg mt-2">
               {authMode === 'login' ? 'Entrar a mi cuenta' : 'Registrarme (Requiere aprobación)'}
             </button>
-
-            {authMode === 'login' && (
-              <div className="text-center pt-2">
-                <button type="button" onClick={() => setShowResetModal(true)} className="text-xs font-bold text-sky-600 hover:underline">
-                  ¿Has olvidado tu contraseña?
-                </button>
-              </div>
-            )}
           </form>
         </div>
-
-        {showResetModal && (
-          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white max-w-sm w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-sky-100">
-              <div className="text-center space-y-1">
-                <KeyRound className="w-8 h-8 text-sky-600 mx-auto" />
-                <h3 className="font-black text-slate-800 text-base">Solicitar Cambio de Contraseña</h3>
-                <p className="text-xs text-slate-500">Envía tu propuesta de nueva contraseña al administrador</p>
-              </div>
-
-              <form onSubmit={handleRequestPasswordChange} className="space-y-3">
-                <input type="email" placeholder="Tu correo electrónico..." value={resetEmailInput} onChange={(e) => setResetEmailInput(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-3 text-xs text-slate-800 focus:outline-none" required />
-                <input type="password" placeholder="Nueva contraseña deseada..." value={resetNewPasswordInput} onChange={(e) => setResetNewPasswordInput(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-3 text-xs text-slate-800 focus:outline-none" required />
-                <div className="flex gap-2 pt-1">
-                  <button type="button" onClick={() => setShowResetModal(false)} className="w-1/2 bg-sky-50 text-slate-700 font-bold py-2.5 rounded-2xl text-xs border border-sky-200">Cancelar</button>
-                  <button type="submit" className="w-1/2 bg-sky-600 hover:bg-sky-700 text-white font-bold py-2.5 rounded-2xl text-xs shadow">Enviar</button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
       </main>
     );
   }
@@ -939,15 +892,6 @@ export default function App() {
                 </button>
               )}
             </div>
-
-            {currentSpotHere && !isClosed && (
-              <div className="bg-emerald-500/15 border border-emerald-300 p-2.5 rounded-2xl flex justify-between items-center text-xs">
-                <div className="flex items-center space-x-2">
-                  <Radio size={16} className="text-emerald-600 animate-pulse shrink-0" />
-                  <span className="font-bold text-slate-800">Ubicación Actual: <span className="text-emerald-700">{currentSpotHere.name}</span></span>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -1013,50 +957,6 @@ export default function App() {
                                   </div>
                                 </div>
                               )}
-
-                              {spotPhotos.length > 0 && (
-                                <div className="space-y-1.5">
-                                  <span className="text-xs font-bold text-slate-700">Fotos de la parada</span>
-                                  <div className="flex gap-2 overflow-x-auto py-1">
-                                    {spotPhotos.map(p => (
-                                      <div key={p.id} onClick={(e) => { e.stopPropagation(); setViewingPhotoUrl(p.url); }} className="w-16 h-16 rounded-xl overflow-hidden border border-sky-200 shrink-0 cursor-pointer">
-                                        <img src={p.url} alt="Foto" className="w-full h-full object-cover" />
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
-
-                              <div className="space-y-2">
-                                <span className="text-xs font-bold text-slate-700 flex items-center">
-                                  <Receipt size={14} className="mr-1 text-emerald-600" /> Gastos de la parada ({spotSpent.toFixed(2)}€)
-                                </span>
-                                {spotExpenses.length === 0 ? (
-                                  <p className="text-[11px] text-slate-400">Sin gastos registrados en este sitio.</p>
-                                ) : (
-                                  spotExpenses.map(exp => {
-                                    const parts = Array.isArray(exp.participants) ? exp.participants : validMembers;
-                                    return (
-                                      <div key={exp.id} className="flex justify-between items-center text-xs bg-white p-3 rounded-2xl border border-sky-100">
-                                        <div>
-                                          <p className="font-bold text-slate-800">{exp.description}</p>
-                                          <p className="text-[10px] text-slate-500">
-                                            Pagado por <span className="font-bold text-sky-600">{exp.paid_by}</span> • Reparto: {parts.join(', ')}
-                                          </p>
-                                        </div>
-                                        <div className="flex items-center space-x-2">
-                                          <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
-                                          {exp.receipt_url && (
-                                            <button type="button" onClick={(e) => { e.stopPropagation(); setViewingReceiptUrl(exp.receipt_url); }} className="p-2 bg-sky-50 text-sky-700 rounded-xl border border-sky-200">
-                                              <Receipt size={14} />
-                                            </button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    );
-                                  })
-                                )}
-                              </div>
                             </div>
                           )}
                         </div>
@@ -1073,202 +973,29 @@ export default function App() {
                   <Users size={14} className="mr-1.5 text-sky-600" /> Asistentes Confirmados ({validMembers.length})
                 </span>
                 <div className="flex flex-wrap gap-2">
-                  {validMembers.map((member) => {
-                    const canRemove = isCreator || member === currentUser.name;
-                    return (
-                      <div key={member} className="text-xs font-bold bg-sky-50 text-sky-700 px-3 py-1.5 rounded-xl border border-sky-200 flex items-center space-x-2">
-                        <span>👤 {member}</span>
-                        {canRemove && (
-                          <button type="button" onClick={() => handleRemoveMember(member)} className="text-slate-400 hover:text-red-600">
-                            <UserMinus size={13} />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
+                  {validMembers.map((member) => (
+                    <div key={member} className="text-xs font-bold bg-sky-50 text-sky-700 px-3 py-1.5 rounded-xl border border-sky-200 flex items-center space-x-2">
+                      <span>👤 {member}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <div className="flex bg-white/90 backdrop-blur-xl p-1 rounded-2xl border border-sky-100 shadow-sm" role="tablist">
-                <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>Ruta y Sitios</button>
-                <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>Gastos</button>
-                <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>Fotos ({validPhotos.length})</button>
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase text-sky-800">Ruta y Sitios</h4>
+                {selectedSpots.map((spot) => renderSpotCard(spot, true, maxVotes, selectedSpots))}
               </div>
-
-              {eventSubTab === 'spots' && (
-                <div className="space-y-4">
-                  <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
-                    <h3 className="text-xs font-black text-slate-800">Proponer nuevo sitio</h3>
-                    <form onSubmit={handleAddSpot} className="space-y-2.5">
-                      <input type="text" placeholder="Ej. Bar Shiko..." value={newSpotName} onChange={(e) => setNewSpotName(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" />
-                      <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow">
-                        🔍 Añadir a la ruta
-                      </button>
-                    </form>
-                  </div>
-
-                  <div className="space-y-3">
-                    <h4 className="text-xs font-black uppercase text-sky-800 flex items-center justify-between">
-                      <span>Ruta Ordenada ({selectedSpots.length})</span>
-                      <span className="text-[10px] text-slate-500 font-medium">Usa ⬆️/⬇️ para reordenar</span>
-                    </h4>
-                    {selectedSpots.map((spot) => renderSpotCard(spot, true, maxVotes, selectedSpots))}
-                  </div>
-
-                  <div className="space-y-3 pt-2">
-                    <h4 className="text-xs font-black uppercase text-slate-700">Propuestas Pendientes ({pendingSpots.length})</h4>
-                    {pendingSpots.map((spot) => renderSpotCard(spot, false, maxVotes, selectedSpots))}
-                  </div>
-                </div>
-              )}
-
-              {eventSubTab === 'expenses' && (
-                <div className="space-y-5">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm"><p className="text-[10px] font-bold text-slate-500">TOTAL GRUPO</p><p className="text-xl font-black text-emerald-600">{totalSpent.toFixed(2)}€</p></div>
-                    <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm"><p className="text-[10px] font-bold text-slate-500">POR PERSONA</p><p className="text-xl font-black text-sky-600">{perPerson.toFixed(2)}€</p></div>
-                  </div>
-
-                  <div className="bg-gradient-to-br from-slate-900 to-sky-950 text-white p-5 rounded-3xl shadow-lg space-y-3 border border-sky-400/20">
-                    <h3 className="text-xs font-black uppercase tracking-wider text-sky-300 flex items-center">
-                      <DollarSign size={16} className="mr-1 text-emerald-400" /> Reparto y Liquidación de Deudas (Real)
-                    </h3>
-                    {calculatedDebts.length === 0 ? (
-                      <p className="text-xs text-sky-200">¡Cuentas saldadas!</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {calculatedDebts.map((debt, index) => (
-                          <div key={index} className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10 flex justify-between items-center text-xs">
-                            <div>
-                              <span className="font-bold text-white">{debt.from}</span>
-                              <span className="text-sky-200 mx-1.5">debe pagar a</span>
-                              <span className="font-bold text-emerald-300">{debt.to}</span>
-                            </div>
-                            <span className="font-black text-emerald-400 text-sm bg-emerald-950/80 px-3 py-1 rounded-xl">
-                              {debt.amount.toFixed(2)}€
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <form onSubmit={handleAddExpense} className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
-                    <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto</h4>
-                    <input type="text" placeholder="Concepto (ej. Cervezas, Comida...)" value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
-                    <input type="number" step="0.01" placeholder="Importe (€)" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
-
-                    <div className="space-y-1">
-                      <label className="block text-[11px] font-bold text-slate-700">Ubicación / Sitio del Gasto</label>
-                      <select value={expenseSpotId} onChange={(e) => setExpenseSpotId(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none">
-                        <option value="">Selecciona un sitio del plan...</option>
-                        {validSpots.map((spot) => (
-                          <option key={spot.id} value={spot.id}>{spot.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5 pt-1">
-                      <label className="block text-[11px] font-bold text-slate-700">¿Quiénes participan en este gasto?</label>
-                      <div className="flex flex-wrap gap-1.5 bg-sky-50/50 p-2.5 rounded-2xl border border-sky-200">
-                        {validMembers.map((member) => {
-                          const isParticipant = Array.isArray(expenseParticipants) && expenseParticipants.includes(member);
-                          return (
-                            <button key={member} type="button" onClick={() => toggleExpenseParticipant(member)} className={`text-xs px-2.5 py-1.5 rounded-xl font-bold border transition flex items-center space-x-1 ${isParticipant ? 'bg-sky-600 text-white border-sky-600' : 'bg-white text-slate-500 border-sky-200'}`}>
-                              <span>{member}</span>
-                              {isParticipant && <Check size={12} />}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="block text-[11px] font-bold text-slate-700">Foto del Ticket (Opcional)</label>
-                      <label className="flex items-center justify-center space-x-2 border-2 border-dashed border-sky-200 bg-sky-50/50 rounded-2xl p-3 cursor-pointer hover:bg-sky-50">
-                        <Receipt size={16} className="text-sky-600" />
-                        <span className="text-xs font-bold text-slate-700">
-                          {isUploadingReceipt ? 'Cargando...' : expenseReceiptUrl ? '✓ Ticket adjuntado' : 'Subir foto del ticket'}
-                        </span>
-                        <input type="file" accept="image/*" onChange={handleReceiptUpload} className="hidden" />
-                      </label>
-                      {expenseReceiptUrl && (
-                        <div className="w-16 h-16 rounded-xl overflow-hidden border border-sky-200 mt-1">
-                          <img src={expenseReceiptUrl} alt="Ticket" className="w-full h-full object-cover" />
-                        </div>
-                      )}
-                    </div>
-
-                    <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow mt-1">
-                      Añadir Gasto al Sitio
-                    </button>
-                  </form>
-                </div>
-              )}
-
-              {eventSubTab === 'gallery' && (
-                <div className="space-y-5">
-                  <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
-                    <h3 className="text-xs font-bold text-slate-800">Subir nueva foto al plan</h3>
-                    <select value={photoSpotId} onChange={(e) => setPhotoSpotId(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required>
-                      <option value="">Selecciona el sitio de la foto...</option>
-                      {validSpots.map((spot) => (
-                        <option key={spot.id} value={spot.id}>{spot.name}</option>
-                      ))}
-                    </select>
-
-                    <label className="flex flex-col items-center justify-center border-2 border-dashed border-sky-300 bg-sky-50/60 rounded-3xl p-6 cursor-pointer hover:bg-sky-100 transition">
-                      <Camera className="w-6 h-6 text-sky-600 mb-1" />
-                      <span className="text-xs font-bold text-sky-900">
-                        {isUploadingPhoto ? 'Guardando foto...' : 'Tomar / Subir foto para este sitio'}
-                      </span>
-                      <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} className="hidden" />
-                    </label>
-                  </div>
-                </div>
-              )}
             </>
           )}
         </main>
-
-        {viewingReceiptUrl && (
-          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white max-w-sm w-full p-4 rounded-[2rem] shadow-2xl space-y-4 border border-sky-100 text-center">
-              <div className="flex justify-between items-center px-1">
-                <h3 className="font-black text-slate-800 text-sm">Ticket de Gasto</h3>
-                <button onClick={() => setViewingReceiptUrl(null)} className="p-1 bg-sky-50 rounded-full text-slate-600"><X size={18} /></button>
-              </div>
-              <div className="w-full max-h-96 rounded-2xl overflow-hidden border border-sky-200 bg-sky-50 flex items-center justify-center">
-                <img src={viewingReceiptUrl} alt="Ticket" className="w-full h-auto object-contain max-h-96" />
-              </div>
-              <button onClick={() => setViewingReceiptUrl(null)} className="w-full bg-sky-600 text-white font-bold py-2.5 rounded-xl text-xs">Cerrar</button>
-            </div>
-          </div>
-        )}
-
-        {viewingPhotoUrl && (
-          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white max-w-sm w-full p-4 rounded-[2rem] shadow-2xl space-y-4 border border-sky-100 text-center">
-              <div className="flex justify-between items-center px-1">
-                <h3 className="font-black text-slate-800 text-sm">Foto del Plan</h3>
-                <button onClick={() => setViewingPhotoUrl(null)} className="p-1 bg-sky-50 rounded-full text-slate-600"><X size={18} /></button>
-              </div>
-              <div className="w-full max-h-96 rounded-2xl overflow-hidden border border-sky-200 bg-sky-50 flex items-center justify-center">
-                <img src={viewingPhotoUrl} alt="Foto" className="w-full h-auto object-contain max-h-96" />
-              </div>
-              <button onClick={() => setViewingPhotoUrl(null)} className="w-full bg-sky-600 text-white font-bold py-2.5 rounded-xl text-xs">Cerrar</button>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
 
   const validEvents = Array.isArray(events) ? events : [];
-  const myEventsAll = validEvents.filter(e => Array.isArray(e.members) && e.members.includes(currentUser.name) && (e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase())));
+  const myEventsAll = validEvents.filter(e => Array.isArray(e.members) && e.members.includes(currentUser.name));
   const activeMyEvents = myEventsAll.filter(e => e.status !== 'closed');
   const closedMyEvents = myEventsAll.filter(e => e.status === 'closed');
-  const filteredSearchEvents = validEvents.filter(e => e.status !== 'closed' && (e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase())));
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
@@ -1285,7 +1012,7 @@ export default function App() {
 
       <main className="max-w-md mx-auto p-4 space-y-4">
         {activeTab === 'my-events' && (
-          <div className="space-y-4">
+          <div className="space-y-6">
             <button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-bold py-3 px-4 rounded-2xl text-sm shadow-lg flex items-center justify-center space-x-2">
               <Plus size={18} /> <span>Crear Nueva Salida / Plan</span>
             </button>
@@ -1302,23 +1029,25 @@ export default function App() {
                 </article>
               ))}
             </div>
-          </div>
-        )}
 
-        {activeTab === 'search' && (
-          <div className="space-y-4">
-            <input type="text" placeholder="Buscar por título o creador..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-white/90 border border-sky-200 rounded-2xl px-4 py-3 text-sm" />
-            <div className="space-y-3">
-              <h2 className="text-sm font-black text-slate-800 px-1">Salidas Disponibles</h2>
-              {filteredSearchEvents.map((event) => (
-                <article key={event.id} className="bg-white/90 rounded-2xl border border-sky-100 p-4 shadow-sm flex justify-between items-center">
-                  <div>
-                    <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">📅 {event.date} • {event.creator_name}</span>
-                    <h3 className="font-bold text-sm text-slate-800 mt-1">{event.title}</h3>
-                  </div>
-                  <button onClick={() => setActiveEvent(event)} className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border">Ver Plan</button>
-                </article>
-              ))}
+            {/* SECCIÓN DE HISTÓRICO DE SALIDAS CERRADAS */}
+            <div className="space-y-3 pt-2">
+              <h2 className="text-sm font-black text-slate-700 px-1 flex items-center">
+                <Archive size={16} className="mr-1.5 text-amber-600" /> Histórico de Salidas Cerradas ({closedMyEvents.length})
+              </h2>
+              {closedMyEvents.length === 0 ? (
+                <p className="text-xs text-slate-400 px-1">No hay salidas cerradas todavía.</p>
+              ) : (
+                closedMyEvents.map((event) => (
+                  <article key={event.id} onClick={() => setActiveEvent(event)} className="bg-amber-50/60 rounded-2xl border border-amber-200 p-3.5 flex justify-between items-center cursor-pointer shadow-xs hover:shadow">
+                    <div>
+                      <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">🔒 Cerrada • {event.date}</span>
+                      <h3 className="font-black text-slate-800 text-sm mt-1">{event.title}</h3>
+                    </div>
+                    <span className="text-xs font-bold text-amber-800 bg-amber-100 px-3 py-2 rounded-xl border border-amber-300">Ver Historial →</span>
+                  </article>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -1335,64 +1064,7 @@ export default function App() {
                   <p className="text-xs text-slate-500">{currentUser.email}</p>
                 </div>
               </div>
-
-              <form onSubmit={handleSaveProfile} className="pt-2 border-t border-sky-100 space-y-4">
-                <h3 className="text-xs font-black uppercase text-slate-700 flex items-center">
-                  <Edit3 size={14} className="mr-1 text-sky-600" /> Editar Datos del Perfil
-                </h3>
-
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-bold text-slate-700">Nombre de Usuario</label>
-                  <input type="text" value={editNameInput} onChange={(e) => setEditNameInput(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" required />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="block text-[11px] font-bold text-slate-700">Correo Electrónico</label>
-                  <input type="email" value={editEmailInput} onChange={(e) => setEditEmailInput(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" required />
-                </div>
-
-                <div className="pt-2 border-t border-sky-100 space-y-3">
-                  <h3 className="text-xs font-black uppercase text-slate-700 flex items-center">
-                    <Lock size={14} className="mr-1 text-sky-600" /> Cambio de Contraseña
-                  </h3>
-                  <input type="password" placeholder="Contraseña actual" value={oldPasswordInput} onChange={(e) => setOldPasswordInput(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" />
-                  <input type="password" placeholder="Nueva contraseña" value={newPasswordInput} onChange={(e) => setNewPasswordInput(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" />
-                  <input type="password" placeholder="Repetir nueva contraseña" value={confirmNewPasswordInput} onChange={(e) => setConfirmNewPasswordInput(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" />
-                </div>
-
-                {profileMessage && <div className={`p-3 rounded-2xl text-xs font-bold ${profileMessage.startsWith('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{profileMessage}</div>}
-
-                <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-3 rounded-2xl text-xs shadow">
-                  Guardar Cambios
-                </button>
-              </form>
             </div>
-          </div>
-        )}
-
-        {activeTab === 'notifications' && (
-          <div className="space-y-4">
-            {isAdmin && pendingRegistrations.length > 0 && (
-              <div className="bg-white/90 p-5 rounded-[2.5rem] border border-emerald-100 shadow-sm space-y-3">
-                <h2 className="text-sm font-black text-slate-800 flex items-center">
-                  <ShieldCheck size={16} className="mr-1.5 text-emerald-600" /> Registros Pendientes ({pendingRegistrations.length})
-                </h2>
-                <div className="space-y-2">
-                  {pendingRegistrations.map(reg => (
-                    <div key={reg.id} className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/50 flex justify-between items-center text-xs">
-                      <div>
-                        <p className="font-bold text-slate-800">{reg.name}</p>
-                        <p className="text-[10px] text-slate-500">{reg.email}</p>
-                      </div>
-                      <div className="flex gap-1.5">
-                        <button onClick={() => handleApproveRegistration(reg.id, reg.name)} className="px-3 py-1.5 rounded-xl font-bold bg-emerald-600 text-white">Aprobar</button>
-                        <button onClick={() => handleRejectRegistration(reg.id)} className="px-3 py-1.5 rounded-xl font-bold bg-red-100 text-red-700">Rechazar</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
       </main>
@@ -1424,18 +1096,9 @@ export default function App() {
           <Calendar size={20} />
           <span className="text-[10px] mt-0.5">Mis Salidas</span>
         </button>
-        <button onClick={() => setActiveTab('search')} className={`flex flex-col items-center ${activeTab === 'search' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
-          <Search size={20} />
-          <span className="text-[10px] mt-0.5">Buscar</span>
-        </button>
         <button onClick={() => setActiveTab('profile')} className={`flex flex-col items-center ${activeTab === 'profile' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
           <Settings size={20} />
           <span className="text-[10px] mt-0.5">Perfil</span>
-        </button>
-        <button onClick={() => setActiveTab('notifications')} className={`flex flex-col items-center relative ${activeTab === 'notifications' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
-          <Inbox size={20} />
-          <span className="text-[10px] mt-0.5">Aprobaciones</span>
-          {totalNotifications > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{totalNotifications}</span>}
         </button>
       </nav>
     </div>
