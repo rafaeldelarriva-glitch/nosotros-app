@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, MapPin, DollarSign, Plus, CheckCircle, 
-  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus, UserMinus, ShieldAlert, KeyRound, Archive, Share2, ArrowUp, ArrowDown, Radio, Settings, ShieldCheck, Edit3, QrCode, ExternalLink, Ban, UserCheck, Crosshair
+  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus, UserMinus, ShieldAlert, KeyRound, Archive, Share2, ArrowUp, ArrowDown, Radio, Settings, ShieldCheck, Edit3, QrCode, ExternalLink, Ban, UserCheck, Crosshair, Key
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -32,6 +32,11 @@ export default function App() {
   const [registeredUsers, setRegisteredUsers] = useState([]);
   const [passwordRequests, setPasswordRequests] = useState([]);
   const [pendingRegistrations, setPendingRegistrations] = useState([]);
+
+  // Modal Admin Cambio Contraseña Usuario
+  const [adminTargetUser, setAdminTargetUser] = useState(null);
+  const [adminNewPasswordInput, setAdminNewPasswordInput] = useState('');
+  const [adminPasswordMessage, setAdminPasswordMessage] = useState('');
 
   // Perfil
   const [editNameInput, setEditNameInput] = useState('');
@@ -342,6 +347,40 @@ export default function App() {
     }
   };
 
+  // CAMBIO DE CONTRASEÑA POR EL ADMINISTRADOR
+  const handleAdminChangePassword = async (e) => {
+    e.preventDefault();
+    if (!adminTargetUser || !adminNewPasswordInput) return;
+
+    const errorMsg = validateStrongPassword(adminNewPasswordInput);
+    if (errorMsg) {
+      setAdminPasswordMessage('❌ Contraseña débil: ' + errorMsg);
+      return;
+    }
+
+    try {
+      const { error } = await supabase.rpc('admin_update_user_password', {
+        target_user_id: adminTargetUser.id,
+        new_password: adminNewPasswordInput
+      });
+
+      if (error) {
+        // Fallback si no se usa función RPC directa (requiere Supabase Auth Admin API o función personalizada)
+        alert('Nota: Para cambiar contraseñas desde admin en Supabase se recomienda habilitar una función RPC o usar la API de Auth.');
+        throw error;
+      }
+
+      setAdminPasswordMessage('✅ ¡Contraseña actualizada con éxito para ' + adminTargetUser.name + '!');
+      setTimeout(() => {
+        setAdminTargetUser(null);
+        setAdminNewPasswordInput('');
+        setAdminPasswordMessage('');
+      }, 1500);
+    } catch (err) {
+      setAdminPasswordMessage('❌ Error al actualizar contraseña: ' + (err.message || 'Comprueba la configuración de Supabase.'));
+    }
+  };
+
   const handleApproveEventJoin = async (eventId, userName) => {
     try {
       await supabase.from('event_members').update({ status: 'member' }).eq('event_id', eventId).eq('user_name', userName);
@@ -459,7 +498,7 @@ export default function App() {
       }
 
       setCurrentUser({ ...currentUser, name: editNameInput.trim(), email: emailChanged ? editEmailInput.trim().toLowerCase() : currentUser.email });
-      setProfileMessage('✅ ¡Perfil guardado con éxito!');
+      setProfileMessage('✅ ¡Perfil y contraseña actualizados con éxito!');
       setOldPasswordInput('');
       setNewPasswordInput('');
       setConfirmNewPasswordInput('');
@@ -666,7 +705,6 @@ export default function App() {
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.email === 'rafa@ejemplo.com';
 
-  // Colección de todas las solicitudes pendientes para el panel de aprobación
   const allPendingPlanRequests = events.flatMap(ev => {
     const rawMembers = Array.isArray(ev.rawEventMembers) ? ev.rawEventMembers : [];
     return rawMembers
@@ -1116,7 +1154,6 @@ export default function App() {
 
               {eventSubTab === 'spots' && (
                 <div className="space-y-4">
-                  {/* FORMULARIO DE PROPUESTA DE SITIO CON AUTOCOMPLETADO OPENSTREETMAP Y GPS */}
                   <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3 relative">
                     <div className="flex justify-between items-center">
                       <h3 className="text-xs font-black text-slate-800">Proponer nuevo sitio</h3>
@@ -1145,7 +1182,6 @@ export default function App() {
                         )}
                       </div>
 
-                      {/* DESPLEGABLE DE SUGERENCIAS DE OPENSTREETMAP */}
                       {osmSuggestions.length > 0 && (
                         <div className="absolute left-0 right-0 top-11 bg-white border border-sky-200 rounded-2xl shadow-xl z-50 max-h-48 overflow-y-auto divide-y divide-sky-100">
                           {osmSuggestions.map((item, idx) => (
@@ -1403,6 +1439,7 @@ export default function App() {
           </div>
         )}
 
+        {/* PESTAÑA PERFIL Y CAMBIO DE CONTRASEÑA PROPIA */}
         {activeTab === 'profile' && (
           <div className="space-y-4">
             <div className="bg-white/90 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-4">
@@ -1418,7 +1455,7 @@ export default function App() {
 
               <form onSubmit={handleSaveProfile} className="pt-2 border-t border-sky-100 space-y-4">
                 <h3 className="text-xs font-black uppercase text-slate-700 flex items-center">
-                  <Edit3 size={14} className="mr-1 text-sky-600" /> Editar Datos del Perfil
+                  <Edit3 size={14} className="mr-1 text-sky-600" /> Editar Datos y Contraseña
                 </h3>
 
                 <div className="space-y-1">
@@ -1429,6 +1466,24 @@ export default function App() {
                 <div className="space-y-1">
                   <label className="block text-[11px] font-bold text-slate-700">Correo Electrónico</label>
                   <input type="email" value={editEmailInput} onChange={(e) => setEditEmailInput(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" required />
+                </div>
+
+                <div className="pt-2 border-t border-sky-100 space-y-3">
+                  <h4 className="text-xs font-black uppercase text-slate-700 flex items-center">
+                    <Key size={13} className="mr-1 text-sky-600" /> Cambiar Contraseña (Opcional)
+                  </h4>
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-slate-600">Contraseña Actual</label>
+                    <input type="password" placeholder="••••••••" value={oldPasswordInput} onChange={(e) => setOldPasswordInput(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2 text-xs text-slate-800 focus:outline-none" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-slate-600">Nueva Contraseña (mín. 8 caracteres, mayúscula, número y símbolo)</label>
+                    <input type="password" placeholder="••••••••" value={newPasswordInput} onChange={(e) => setNewPasswordInput(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2 text-xs text-slate-800 focus:outline-none" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-[10px] font-bold text-slate-600">Confirmar Nueva Contraseña</label>
+                    <input type="password" placeholder="••••••••" value={confirmNewPasswordInput} onChange={(e) => setConfirmNewPasswordInput(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2 text-xs text-slate-800 focus:outline-none" />
+                  </div>
                 </div>
 
                 {profileMessage && <div className={`p-3 rounded-2xl text-xs font-bold ${profileMessage.startsWith('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{profileMessage}</div>}
@@ -1444,7 +1499,6 @@ export default function App() {
         {/* PESTAÑA APROBACIONES / PANEL DE ADMINISTRADOR Y SOLICITUDES DE PLANES */}
         {activeTab === 'notifications' && (
           <div className="space-y-4">
-            {/* 1. SOLICITUDES PENDIENTES DE PLANES (Accesible para creadores y administradores) */}
             <div className="bg-white/90 p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
               <h2 className="text-sm font-black text-slate-800 flex items-center">
                 <UserPlus size={16} className="mr-1.5 text-sky-600" /> Solicitudes para unirse a Planes ({allPendingPlanRequests.length})
@@ -1469,10 +1523,8 @@ export default function App() {
               )}
             </div>
 
-            {/* 2. REGISTROS Y GESTIÓN GLOBAL DE USUARIOS (ADMIN) */}
             {isAdmin ? (
               <div className="space-y-4">
-                {/* Registros de nuevas cuentas */}
                 <div className="bg-white/90 p-5 rounded-[2.5rem] border border-emerald-100 shadow-sm space-y-3">
                   <h2 className="text-sm font-black text-slate-800 flex items-center">
                     <ShieldCheck size={16} className="mr-1.5 text-emerald-600" /> Cuentas de Usuario Pendientes ({pendingRegistrations.length})
@@ -1497,29 +1549,41 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Lista general para bloquear/anular usuarios */}
+                {/* LISTADO DE USUARIOS CON ACCIÓN DE BLOQUEO Y CAMBIO DE CONTRASEÑA */}
                 <div className="bg-white/90 p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
                   <h2 className="text-sm font-black text-slate-800 flex items-center">
                     <Users size={16} className="mr-1.5 text-sky-600" /> Todos los Usuarios Registrados ({registeredUsers.length})
                   </h2>
                   <div className="space-y-2">
                     {registeredUsers.map(usr => (
-                      <div key={usr.id} className={`p-3.5 rounded-2xl border flex justify-between items-center text-xs ${usr.is_blocked ? 'bg-red-50/80 border-red-200' : 'bg-white border-sky-100'}`}>
-                        <div>
-                          <p className="font-bold text-slate-800 flex items-center">
-                            {usr.name} {usr.role === 'admin' && <span className="ml-1.5 text-[9px] bg-sky-100 text-sky-800 font-bold px-1.5 py-0.5 rounded-full">ADMIN</span>}
-                          </p>
-                          <p className="text-[10px] text-slate-500">{usr.email}</p>
+                      <div key={usr.id} className={`p-3.5 rounded-2xl border flex flex-col space-y-2 text-xs ${usr.is_blocked ? 'bg-red-50/80 border-red-200' : 'bg-white border-sky-100'}`}>
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="font-bold text-slate-800 flex items-center">
+                              {usr.name} {usr.role === 'admin' && <span className="ml-1.5 text-[9px] bg-sky-100 text-sky-800 font-bold px-1.5 py-0.5 rounded-full">ADMIN</span>}
+                            </p>
+                            <p className="text-[10px] text-slate-500">{usr.email}</p>
+                          </div>
+                          {usr.role !== 'admin' && (
+                            <button 
+                              onClick={() => handleToggleBlockUser(usr.id, usr.is_blocked, usr.name)} 
+                              className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-1 ${usr.is_blocked ? 'bg-emerald-600 text-white' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
+                            >
+                              {usr.is_blocked ? <UserCheck size={12} className="mr-1" /> : <Ban size={12} className="mr-1" />}
+                              <span>{usr.is_blocked ? 'Desbloquear' : 'Bloquear'}</span>
+                            </button>
+                          )}
                         </div>
-                        {usr.role !== 'admin' && (
+
+                        <div className="flex justify-end pt-1 border-t border-sky-100">
                           <button 
-                            onClick={() => handleToggleBlockUser(usr.id, usr.is_blocked, usr.name)} 
-                            className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-1 ${usr.is_blocked ? 'bg-emerald-600 text-white' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
+                            onClick={() => { setAdminTargetUser(usr); setAdminNewPasswordInput(''); setAdminPasswordMessage(''); }} 
+                            className="bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold px-3 py-1.5 rounded-xl border border-sky-200 flex items-center space-x-1"
                           >
-                            {usr.is_blocked ? <UserCheck size={12} className="mr-1" /> : <Ban size={12} className="mr-1" />}
-                            <span>{usr.is_blocked ? 'Desbloquear' : 'Bloquear / Anular'}</span>
+                            <Key size={12} className="mr-1 text-sky-600" />
+                            <span>Cambiar Contraseña</span>
                           </button>
-                        )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1529,12 +1593,49 @@ export default function App() {
               <div className="bg-white/90 p-6 rounded-[2.5rem] text-center space-y-2 border border-sky-100">
                 <Shield size={24} className="mx-auto text-sky-600" />
                 <h3 className="font-black text-slate-800 text-sm">Panel de Administrador</h3>
-                <p className="text-xs text-slate-500">Solo el administrador puede gestionar el bloqueo de cuentas y la aprobación global de registros.</p>
+                <p className="text-xs text-slate-500">Solo el administrador puede gestionar las cuentas de usuario.</p>
               </div>
             )}
           </div>
         )}
       </main>
+
+      {/* MODAL CAMBIO DE CONTRASEÑA POR ADMINISTRADOR */}
+      {adminTargetUser && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white max-w-md w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-sky-100">
+            <div className="flex justify-between items-center">
+              <h3 className="font-black text-slate-800 text-sm">Cambiar Clave: {adminTargetUser.name}</h3>
+              <button onClick={() => setAdminTargetUser(null)} className="p-1 bg-sky-50 rounded-full text-slate-600"><X size={18} /></button>
+            </div>
+            
+            <form onSubmit={handleAdminChangePassword} className="space-y-3">
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700">Nueva Contraseña (mín. 8 caracteres, mayúscula, número, símbolo)</label>
+                <input 
+                  type="password" 
+                  placeholder="Nueva contraseña..." 
+                  value={adminNewPasswordInput} 
+                  onChange={(e) => setAdminNewPasswordInput(e.target.value)} 
+                  className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none"
+                  required 
+                />
+              </div>
+
+              {adminPasswordMessage && (
+                <div className={`p-3 rounded-2xl text-xs font-bold ${adminPasswordMessage.startsWith('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                  {adminPasswordMessage}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setAdminTargetUser(null)} className="w-1/2 bg-sky-50 text-slate-700 font-bold py-2.5 rounded-2xl text-xs border border-sky-200">Cancelar</button>
+                <button type="submit" className="w-1/2 bg-sky-600 text-white font-bold py-2.5 rounded-2xl text-xs shadow">Actualizar Clave</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
