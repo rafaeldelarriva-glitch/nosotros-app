@@ -64,6 +64,8 @@ export default function App() {
   const [expenseReceiptUrl, setExpenseReceiptUrl] = useState('');
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
   const [expenseParticipants, setExpenseParticipants] = useState([]);
+  const [isSavingExpense, setIsSavingExpense] = useState(false);
+  const [deletingExpenseId, setDeletingExpenseId] = useState(null);
   const [viewingReceiptUrl, setViewingReceiptUrl] = useState(null);
 
   // Fotos y Comentarios
@@ -780,7 +782,7 @@ export default function App() {
 
   // Eliminar cualquier gasto del plan (por ejemplo, si alguien lo registra por error).
   const handleDeleteExpense = async (expense) => {
-    if (!expense?.id || !activeEvent?.id) return;
+    if (!expense?.id || !activeEvent?.id || deletingExpenseId) return;
 
     const confirmed = window.confirm(
       `¿Quieres eliminar el gasto \"${expense.description}\" de ${Number(expense.amount || 0).toFixed(2)}€?\n\nSe actualizarán automáticamente el total y la liquidación de deudas. Esta acción no se puede deshacer.`
@@ -788,6 +790,7 @@ export default function App() {
     if (!confirmed) return;
 
     try {
+      setDeletingExpenseId(expense.id);
       const { error } = await supabase
         .from('expenses')
         .delete()
@@ -800,13 +803,15 @@ export default function App() {
     } catch (err) {
       console.error('Error eliminando gasto:', err);
       alert('No se ha podido eliminar el gasto: ' + (err.message || 'Error desconocido.'));
+    } finally {
+      setDeletingExpenseId(null);
     }
   };
 
   // ENVIAR GASTO CON REPARTO INTELIGENTE REAL
   const handleAddExpense = async (e) => {
     e.preventDefault();
-    if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
+    if (isSavingExpense || !expenseDesc.trim() || !expenseAmount || !activeEvent) return;
     
     // Guardamos únicamente los miembros del plan que estén marcados.
     const eventMembers = Array.isArray(activeEvent.members) ? activeEvent.members : [];
@@ -828,6 +833,7 @@ export default function App() {
       participants: finalParticipants
     });
 
+    setIsSavingExpense(true);
     const { error } = await supabase.from('expenses').insert([{
       event_id: activeEvent.id,
       description: expenseDesc.trim(),
@@ -840,6 +846,7 @@ export default function App() {
 
     if (error) {
       alert('❌ Error al guardar el gasto: ' + error.message);
+      setIsSavingExpense(false);
       return;
     }
 
@@ -850,6 +857,7 @@ export default function App() {
     // El siguiente gasto comienza de nuevo con todos los miembros seleccionados.
     setExpenseParticipants([...eventMembers]);
     await refreshAllData();
+    setIsSavingExpense(false);
   };
 
   const handlePhotoUpload = (e) => {
@@ -1252,6 +1260,8 @@ export default function App() {
     const validExpenses = Array.isArray(activeEvent.expenses) ? activeEvent.expenses : [];
     const validMembers = Array.isArray(activeEvent.members) ? activeEvent.members : [];
     const validSpots = Array.isArray(activeEvent.spots) ? activeEvent.spots : [];
+    const totalExpenses = validExpenses.reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0);
+    const averagePerMember = validMembers.length ? totalExpenses / validMembers.length : 0;
     const validPhotos = Array.isArray(activeEvent.photos) ? activeEvent.photos : [];
 
     const totalSpent = validExpenses.reduce((acc, c) => acc + Number(c.amount), 0);
@@ -1306,6 +1316,28 @@ export default function App() {
         </div>
 
         <main className="max-w-md mx-auto p-4 space-y-4 relative z-10">
+          <section aria-label="Resumen de la salida" className="grid grid-cols-2 gap-2">
+            <div className="rounded-2xl border border-sky-100 bg-white/95 p-3 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Participantes</p>
+              <p className="mt-1 text-xl font-black text-slate-900">{validMembers.length}</p>
+              <p className="text-[10px] text-slate-500">Personas en el plan</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-100 bg-white/95 p-3 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Gasto acumulado</p>
+              <p className="mt-1 text-xl font-black text-emerald-700">{totalExpenses.toFixed(2)} €</p>
+              <p className="text-[10px] text-slate-500">{validExpenses.length} gastos registrados</p>
+            </div>
+            <div className="rounded-2xl border border-indigo-100 bg-white/95 p-3 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Media por persona</p>
+              <p className="mt-1 text-xl font-black text-indigo-700">{averagePerMember.toFixed(2)} €</p>
+              <p className="text-[10px] text-slate-500">Orientativa sobre todos los miembros</p>
+            </div>
+            <div className="rounded-2xl border border-amber-100 bg-white/95 p-3 shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Sitios propuestos</p>
+              <p className="mt-1 text-xl font-black text-amber-700">{validSpots.length}</p>
+              <p className="text-[10px] text-slate-500">En la ruta del plan</p>
+            </div>
+          </section>
           {canDeleteEvent && (
             <button onClick={() => handleDeleteEvent(activeEvent.id, activeEvent.title)} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow-lg flex items-center justify-center space-x-2 transition">
               <Trash2 size={16} /> <span>Eliminar este Plan por completo</span>
@@ -1588,11 +1620,12 @@ export default function App() {
                             <button
                               type="button"
                               onClick={() => handleDeleteExpense(exp)}
+                              disabled={deletingExpenseId === exp.id}
                               title="Eliminar gasto"
                               aria-label={`Eliminar gasto ${exp.description}`}
-                              className="bg-red-50 hover:bg-red-100 text-red-600 p-2 rounded-xl border border-red-200 transition"
+                              className="bg-red-50 hover:bg-red-100 disabled:opacity-50 text-red-600 p-2 rounded-xl border border-red-200 transition"
                             >
-                              <Trash2 size={14} />
+                              {deletingExpenseId === exp.id ? <Clock size={14} className="animate-spin" /> : <Trash2 size={14} />}
                             </button>
                           </div>
                         </div>
@@ -1602,8 +1635,10 @@ export default function App() {
 
                   <form onSubmit={handleAddExpense} className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
                     <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto con selección de participantes</h4>
-                    <input type="text" placeholder="Concepto (ej. Cervezas)..." value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
-                    <input type="number" step="0.01" placeholder="Importe (€)..." value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
+                    <label className="sr-only" htmlFor="expense-description">Concepto del gasto</label>
+                    <input id="expense-description" type="text" placeholder="Concepto (ej. Cervezas)..." value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
+                    <label className="sr-only" htmlFor="expense-amount">Importe en euros</label>
+                    <input id="expense-amount" type="number" min="0.01" step="0.01" inputMode="decimal" placeholder="Importe (€)..." value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
 
                     <select value={expenseSpotId} onChange={(e) => setExpenseSpotId(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none">
                       <option value="">Selecciona un sitio del plan (Opcional)...</option>
@@ -1643,8 +1678,8 @@ export default function App() {
                       {expenseReceiptUrl && <p className="text-[10px] text-emerald-600 font-bold mt-1">✓ Ticket adjuntado correctamente</p>}
                     </div>
 
-                    <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow mt-1">
-                      {isUploadingReceipt ? 'Procesando ticket...' : 'Añadir Gasto Inteligente'}
+                    <button type="submit" disabled={isSavingExpense || isUploadingReceipt || !expenseDesc.trim() || !expenseAmount || expenseParticipants.length === 0} className="w-full min-h-11 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-2xl py-3 shadow mt-1 transition" aria-live="polite">
+                      {isUploadingReceipt ? 'Procesando ticket...' : isSavingExpense ? 'Guardando gasto...' : 'Añadir gasto'}
                     </button>
                   </form>
                 </div>
@@ -2038,7 +2073,7 @@ export default function App() {
       )}
 
       {/* BARRA DE NAVEGACIÓN INFERIOR */}
-      <nav className="fixed bottom-3 left-4 right-4 bg-white/95 backdrop-blur-xl border border-sky-200 py-3 px-6 flex justify-around items-center z-40 rounded-[2rem] shadow-lg max-w-md mx-auto">
+      <nav aria-label="Navegación principal" className="fixed bottom-3 left-4 right-4 bg-white/95 backdrop-blur-xl border border-sky-200 py-3 px-6 flex justify-around items-center z-40 rounded-[2rem] shadow-lg max-w-md mx-auto">
         <button onClick={() => setActiveTab('my-events')} className={`flex flex-col items-center ${activeTab === 'my-events' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
           <Calendar size={20} />
           <span className="text-[10px] mt-0.5">Mis Salidas</span>
