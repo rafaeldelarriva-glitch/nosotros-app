@@ -719,9 +719,8 @@ export default function App() {
     
     // Guardamos únicamente los miembros del plan que estén marcados.
     const eventMembers = Array.isArray(activeEvent.members) ? activeEvent.members : [];
-    const finalParticipants = eventMembers.filter(member =>
-      Array.isArray(expenseParticipants) && expenseParticipants.includes(member)
-    );
+    const selectedNames = new Set((Array.isArray(expenseParticipants) ? expenseParticipants : []).map(name => String(name).trim()));
+    const finalParticipants = eventMembers.filter(member => selectedNames.has(String(member).trim()));
     const amount = Number(expenseAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
       alert('Introduce un importe válido mayor que cero.');
@@ -801,8 +800,47 @@ export default function App() {
     await refreshAllData();
   };
 
+  // Convierte el campo participants a un array independientemente de cómo
+  // lo devuelva Supabase (array nativo, JSON en texto o array PostgreSQL en texto).
+  const getExpenseParticipants = (expense, members = []) => {
+    const raw = expense?.participants;
+
+    if (Array.isArray(raw)) {
+      const selected = raw.map(v => String(v).trim()).filter(Boolean);
+      return selected.length ? [...new Set(selected)] : [...members];
+    }
+
+    if (typeof raw === 'string' && raw.trim()) {
+      const value = raw.trim();
+      try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) {
+          const selected = parsed.map(v => String(v).trim()).filter(Boolean);
+          return selected.length ? [...new Set(selected)] : [...members];
+        }
+      } catch (_) {
+        // Puede ser un array PostgreSQL: {Rafa,Manolo} o texto separado por comas.
+      }
+
+      let items = [];
+      if (value.startsWith('{') && value.endsWith('}')) {
+        items = value.slice(1, -1).split(',');
+      } else if (value.includes(',')) {
+        items = value.split(',');
+      } else {
+        items = [value];
+      }
+      const selected = items
+        .map(v => v.trim().replace(/^"|"$/g, ''))
+        .filter(Boolean);
+      return selected.length ? [...new Set(selected)] : [...members];
+    }
+
+    return [...members];
+  };
+
   // ---------------------------------------------------------------------------
-  // ALGORITMO DE LIQUIDACIÓN INTELIGENTE DE DEUDAS PERFECTO Y BLINDADO
+  // ALGORITMO DE LIQUIDACIÓN INTELIGENTE DE DEUDAS
   // ---------------------------------------------------------------------------
   const calculateDebts = (members = [], expenses = []) => {
     if (!Array.isArray(members) || members.length === 0) return [];
@@ -819,11 +857,11 @@ export default function App() {
         balancesMap[paidBy] += amount;
       }
 
-      // Tomar estrictamente los participantes del gasto (si no están definidos, se reparte entre todos)
-      const parts = (Array.isArray(exp.participants) && exp.participants.length > 0)
-        ? exp.participants
-        : members;
+      // Usar los participantes reales guardados, aunque Supabase los devuelva como texto.
+      const parts = getExpenseParticipants(exp, members)
+        .filter(person => balancesMap[person] !== undefined);
 
+      if (parts.length === 0) return;
       const share = amount / parts.length;
 
       // Cada participante del gasto asume su parte proporcional restándola de su balance
@@ -1428,7 +1466,7 @@ export default function App() {
                         <div key={exp.id} className="bg-white/90 p-3.5 rounded-2xl border border-sky-100 flex justify-between items-center text-xs">
                           <div>
                             <p className="font-bold text-slate-800">{exp.description}</p>
-                            <p className="text-[10px] text-slate-500">Pagado por <span className="font-bold text-sky-600">{exp.paid_by}</span> • Reparto: <span className="text-slate-700 font-bold">{Array.isArray(exp.participants) && exp.participants.length > 0 ? exp.participants.join(', ') : validMembers.join(', ')}</span></p>
+                            <p className="text-[10px] text-slate-500">Pagado por <span className="font-bold text-sky-600">{exp.paid_by}</span> • Reparto: <span className="text-slate-700 font-bold">{getExpenseParticipants(exp, validMembers).join(', ')}</span></p>
                           </div>
                           <div className="flex items-center space-x-2">
                             <span className="font-black text-emerald-600 text-sm">{Number(exp.amount).toFixed(2)}€</span>
