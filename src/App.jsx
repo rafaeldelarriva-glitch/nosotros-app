@@ -48,6 +48,7 @@ export default function App() {
   const [registeredUsers, setRegisteredUsers] = useState([]);
   const [passwordRequests, setPasswordRequests] = useState([]);
   const [pendingRegistrations, setPendingRegistrations] = useState([]);
+  const [processingRegistrationId, setProcessingRegistrationId] = useState(null);
 
   // Modal Admin Cambio Contraseña Usuario
   const [adminTargetUser, setAdminTargetUser] = useState(null);
@@ -233,7 +234,6 @@ export default function App() {
       const { data, error } = await supabase.from('profiles').select('id, name, email, role, is_blocked, is_approved');
       if (error) throw error;
       setRegisteredUsers(Array.isArray(data) ? data : []);
-      setPendingRegistrations((Array.isArray(data) ? data : []).filter(p => !p.is_approved && !p.is_blocked && p.role !== 'admin'));
     } catch (err) {
       console.error('Error cargando perfiles:', err.message);
     }
@@ -243,7 +243,7 @@ export default function App() {
     try {
       const { data, error } = await supabase.from('profiles').select('*').eq('is_approved', false).eq('is_blocked', false);
       if (error) throw error;
-      setPendingRegistrations(Array.isArray(data) ? data : []);
+      setPendingRegistrations((Array.isArray(data) ? data : []).filter(p => p.role !== 'admin'));
     } catch (err) {
       console.error('Error cargando registros:', err);
     }
@@ -339,7 +339,7 @@ export default function App() {
         return;
       }
       if (data.user) {
-        await supabase.from('profiles').insert([{ 
+        const { error: profileCreateError } = await supabase.from('profiles').insert([{ 
           id: data.user.id, 
           name: name.trim(), 
           email: email.toLowerCase().trim(), 
@@ -347,6 +347,16 @@ export default function App() {
           is_blocked: false,
           is_approved: false
         }]);
+        if (profileCreateError) {
+          // Algunas instalaciones crean el perfil automáticamente mediante trigger.
+          const { data: existingProfile, error: lookupError } = await supabase.from('profiles')
+            .select('id, is_approved').eq('id', data.user.id).maybeSingle();
+          if (lookupError || !existingProfile) {
+            alert('La cuenta de autenticación se creó, pero no se pudo guardar el perfil para su aprobación: ' + profileCreateError.message + '. Contacta con el administrador.');
+            await supabase.auth.signOut();
+            return;
+          }
+        }
 
         alert('✅ Cuenta registrada. El administrador debe aprobar tu usuario antes de poder entrar.');
         await supabase.auth.signOut();
@@ -380,6 +390,11 @@ export default function App() {
 
       if (data.user) {
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
+        if (!profile) {
+          alert('No existe un perfil válido para esta cuenta. Contacta con el administrador.');
+          await supabase.auth.signOut();
+          return;
+        }
         if (profile) {
           if (profile.is_blocked) {
             alert('Tu cuenta ha sido bloqueada por el administrador.');
@@ -407,18 +422,34 @@ export default function App() {
   // Gestión no destructiva de cuentas: jamás borrar profiles ni auth.users desde esta interfaz.
   // Se preservan eventos, participantes, gastos, lugares, fotografías y comentarios.
   const handleApproveRegistration = async (userId, userName) => {
-    if (!isAdmin || userId === currentUser?.id) return;
+    if (!isAdmin || !userId || userId === currentUser?.id || processingRegistrationId) return;
+    setProcessingRegistrationId(userId);
     try {
+      const { data: target, error: readError } = await supabase.from('profiles')
+        .select('id, name, role, is_approved, is_blocked').eq('id', userId).maybeSingle();
+      if (readError) throw readError;
+      if (!target) throw new Error('No se encuentra el perfil. Comprueba la creación del registro y las políticas RLS.');
+      if (target.role === 'admin') throw new Error('No se puede gestionar otra cuenta administradora desde esta pantalla.');
+      if (target.is_blocked) throw new Error('La cuenta está bloqueada. Desbloquéala antes de aprobarla.');
+      if (target.is_approved) {
+        await refreshAllData();
+        alert('Esta cuenta ya estaba aprobada.');
+        return;
+      }
       const { data, error } = await supabase.from('profiles')
-        .update({ is_approved: true, is_blocked: false })
+        .update({ is_approved: true })
         .eq('id', userId).eq('is_approved', false).eq('is_blocked', false)
-        .neq('role', 'admin').select('id');
+        .select('id, is_approved');
       if (error) throw error;
-      if (!data?.length) throw new Error('No se ha confirmado la aprobación. Comprueba los permisos de Supabase.');
-      alert(`✅ Usuario ${userName} aprobado.`);
+      if (!data?.some(p => p.id === userId && p.is_approved === true)) {
+        throw new Error('Supabase no ha confirmado la aprobación. Revisa los permisos UPDATE/SELECT (RLS) de profiles.');
+      }
       await refreshAllData();
+      alert(`✅ Usuario ${userName} aprobado. Ya puede iniciar sesión.`);
     } catch (err) {
-      alert('Error al aprobar: ' + (err.message || 'Error desconocido'));
+      alert('Error al aprobar la cuenta: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setProcessingRegistrationId(null);
     }
   };
 
@@ -2235,8 +2266,8 @@ export default function App() {
                             <p className="text-[10px] text-slate-500">{reg.email}</p>
                           </div>
                           <div className="flex gap-1.5">
-                            <button onClick={() => handleApproveRegistration(reg.id, reg.name)} className="px-3 py-1.5 rounded-xl font-bold bg-emerald-600 text-white">Aprobar</button>
-                            <button onClick={() => handleRejectRegistration(reg.id)} className="px-3 py-1.5 rounded-xl font-bold bg-red-100 text-red-700">Rechazar</button>
+                            <button disabled={!!processingRegistrationId} onClick={() => handleApproveRegistration(reg.id, reg.name)} className="px-3 py-1.5 rounded-xl font-bold bg-emerald-600 text-white">Aprobar</button>
+                            <button disabled={!!processingRegistrationId} onClick={() => handleRejectRegistration(reg.id)} className="px-3 py-1.5 rounded-xl font-bold bg-red-100 text-red-700">Rechazar</button>
                           </div>
                         </div>
                       ))}
