@@ -64,6 +64,10 @@ export default function App() {
   const [expenseReceiptUrl, setExpenseReceiptUrl] = useState('');
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
   const [expenseParticipants, setExpenseParticipants] = useState([]);
+  const [expensePaidBy, setExpensePaidBy] = useState('');
+  const [editingExpenseId, setEditingExpenseId] = useState(null);
+  const [editingExpensePayer, setEditingExpensePayer] = useState('');
+  const [isUpdatingExpense, setIsUpdatingExpense] = useState(false);
   const [isSavingExpense, setIsSavingExpense] = useState(false);
   const [deletingExpenseId, setDeletingExpenseId] = useState(null);
   const [viewingReceiptUrl, setViewingReceiptUrl] = useState(null);
@@ -109,6 +113,7 @@ export default function App() {
   useEffect(() => {
     if (activeEvent && Array.isArray(activeEvent.members)) {
       setExpenseParticipants([...activeEvent.members]);
+      setExpensePaidBy(currentUser?.name && activeEvent.members.includes(currentUser.name) ? currentUser.name : activeEvent.members[0] || '');
     }
   }, [activeEvent?.id]);
 
@@ -808,6 +813,32 @@ export default function App() {
     }
   };
 
+  // Permite corregir quién pagó un gasto ya registrado sin eliminarlo.
+  const handleUpdateExpensePayer = async (expense) => {
+    if (isUpdatingExpense || !activeEvent?.id) return;
+    if (!activeEvent.members.includes(editingExpensePayer)) {
+      alert('Selecciona un pagador que pertenezca al plan.');
+      return;
+    }
+    try {
+      setIsUpdatingExpense(true);
+      const { data, error } = await supabase.from('expenses')
+        .update({ paid_by: editingExpensePayer })
+        .eq('id', expense.id).eq('event_id', activeEvent.id)
+        .select('id, paid_by');
+      if (error) throw error;
+      if (!data?.length || data[0].paid_by !== editingExpensePayer) {
+        throw new Error('Supabase no confirmó la actualización. Comprueba los permisos UPDATE (RLS).');
+      }
+      await refreshAllData();
+      setEditingExpenseId(null);
+    } catch (err) {
+      alert('No se pudo corregir el pagador: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setIsUpdatingExpense(false);
+    }
+  };
+
   // ENVIAR GASTO CON REPARTO INTELIGENTE REAL
   const handleAddExpense = async (e) => {
     e.preventDefault();
@@ -820,6 +851,10 @@ export default function App() {
     const amount = Number(expenseAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
       alert('Introduce un importe válido mayor que cero.');
+      return;
+    }
+    if (!eventMembers.includes(expensePaidBy)) {
+      alert('Selecciona quién ha pagado realmente el gasto.');
       return;
     }
     if (finalParticipants.length === 0) {
@@ -838,7 +873,7 @@ export default function App() {
       event_id: activeEvent.id,
       description: expenseDesc.trim(),
       amount,
-      paid_by: currentUser.name,
+      paid_by: expensePaidBy,
       spot_id: expenseSpotId || null,
       receipt_url: expenseReceiptUrl || null,
       participants: finalParticipants // Array exacto seleccionado por el usuario
@@ -856,6 +891,7 @@ export default function App() {
     setExpenseReceiptUrl('');
     // El siguiente gasto comienza de nuevo con todos los miembros seleccionados.
     setExpenseParticipants([...eventMembers]);
+    setExpensePaidBy(eventMembers.includes(currentUser?.name) ? currentUser.name : eventMembers[0] || '');
     await refreshAllData();
     setIsSavingExpense(false);
   };
@@ -943,50 +979,36 @@ export default function App() {
   // ---------------------------------------------------------------------------
   const calculateDebts = (members = [], expenses = []) => {
     if (!Array.isArray(members) || members.length === 0) return [];
-    
-    const balancesMap = {};
-    members.forEach(m => { balancesMap[m] = 0; });
-
-    (expenses || []).forEach(exp => {
-      const amount = Number(exp.amount) || 0;
-      const paidBy = exp.paid_by;
-      
-      // Quien paga suma saldo positivo
-      if (balancesMap[paidBy] !== undefined) {
-        balancesMap[paidBy] += amount;
-      }
-
-      // Usar los participantes reales guardados, aunque Supabase los devuelva como texto.
-      const parts = getExpenseParticipants(exp, members)
-        .filter(person => balancesMap[person] !== undefined);
-
-      if (parts.length === 0) return;
-      const share = amount / parts.length;
-
-      // Cada participante del gasto asume su parte proporcional restándola de su balance
-      parts.forEach(p => {
-        if (balancesMap[p] !== undefined) {
-          balancesMap[p] -= share;
-        }
-      });
-    });
-
-    const balances = Object.keys(balancesMap).map(name => ({ name, balance: balancesMap[name] }));
-    let debtors = balances.filter(b => b.balance < -0.01).map(d => ({ ...d, balance: Math.abs(d.balance) }));
-    let creditors = balances.filter(b => b.balance > 0.01);
-    
+    // Céntimos enteros: evita errores de coma flotante y garantiza que cada
+    // gasto se reparte exactamente, incluido el céntimo sobrante.
+    const balances = Object.fromEntries(members.map(name => [name, 0]));
+    for (const exp of (expenses || [])) {
+      const amount = Number(exp.amount);
+      const cents = Math.round(amount * 100);
+      const payer = exp.paid_by;
+      const participants = getExpenseParticipants(exp, members).filter(name =>
+        Object.prototype.hasOwnProperty.call(balances, name));
+      // No inventar repartos ante registros inconsistentes.
+      if (!Number.isFinite(amount) || cents <= 0 ||
+          !Object.prototype.hasOwnProperty.call(balances, payer) || !participants.length) continue;
+      balances[payer] += cents;
+      const base = Math.floor(cents / participants.length);
+      const remainder = cents % participants.length;
+      participants.forEach((name, i) => { balances[name] -= base + (i < remainder ? 1 : 0); });
+    }
+    const debtors = Object.entries(balances).filter(([, value]) => value < 0)
+      .map(([name, value]) => ({ name, cents: -value }));
+    const creditors = Object.entries(balances).filter(([, value]) => value > 0)
+      .map(([name, value]) => ({ name, cents: value }));
     const transactions = [];
-    let dIndex = 0, cIndex = 0;
-
-    while (dIndex < debtors.length && cIndex < creditors.length) {
-      const amount = Math.min(debtors[dIndex].balance, creditors[cIndex].balance);
-      if (amount > 0.01) {
-        transactions.push({ from: debtors[dIndex].name, to: creditors[cIndex].name, amount });
-      }
-      debtors[dIndex].balance -= amount;
-      creditors[cIndex].balance -= amount;
-      if (debtors[dIndex].balance <= 0.01) dIndex++;
-      if (creditors[cIndex].balance <= 0.01) cIndex++;
+    let di = 0, ci = 0;
+    while (di < debtors.length && ci < creditors.length) {
+      const cents = Math.min(debtors[di].cents, creditors[ci].cents);
+      if (cents > 0) transactions.push({ from: debtors[di].name, to: creditors[ci].name, amount: cents / 100 });
+      debtors[di].cents -= cents;
+      creditors[ci].cents -= cents;
+      if (debtors[di].cents === 0) di++;
+      if (creditors[ci].cents === 0) ci++;
     }
     return transactions;
   };
@@ -1605,7 +1627,7 @@ export default function App() {
                     <div className="space-y-2">
                       <h4 className="text-xs font-black uppercase text-slate-700">Gastos Registrados ({validExpenses.length})</h4>
                       {validExpenses.map(exp => (
-                        <div key={exp.id} className="bg-white/90 p-3.5 rounded-2xl border border-sky-100 flex justify-between items-center text-xs">
+                        <div key={exp.id} className="bg-white/90 p-3.5 rounded-2xl border border-sky-100 flex flex-wrap justify-between items-center text-xs">
                           <div>
                             <p className="font-bold text-slate-800">{exp.description}</p>
                             <p className="text-[10px] text-slate-500">Pagado por <span className="font-bold text-sky-600">{exp.paid_by}</span> • Reparto: <span className="text-slate-700 font-bold">{getExpenseParticipants(exp, validMembers).join(', ')}</span></p>
@@ -1617,6 +1639,9 @@ export default function App() {
                                 <Receipt size={12} className="mr-1" /> Ver Ticket
                               </button>
                             )}
+                            <button type="button" title="Corregir quién pagó" aria-label={`Corregir pagador de ${exp.description}`}
+                              onClick={() => { setEditingExpenseId(editingExpenseId === exp.id ? null : exp.id); setEditingExpensePayer(exp.paid_by); }}
+                              className="bg-sky-50 text-sky-700 p-2 rounded-xl border border-sky-200"><Edit3 size={14} /></button>
                             <button
                               type="button"
                               onClick={() => handleDeleteExpense(exp)}
@@ -1628,6 +1653,19 @@ export default function App() {
                               {deletingExpenseId === exp.id ? <Clock size={14} className="animate-spin" /> : <Trash2 size={14} />}
                             </button>
                           </div>
+                          {editingExpenseId === exp.id && (
+                            <div className="w-full mt-2 pt-2 border-t border-sky-100 flex flex-wrap gap-2 items-center">
+                              <label className="text-xs font-bold text-slate-700" htmlFor={`payer-${exp.id}`}>Pagador real:</label>
+                              <select id={`payer-${exp.id}`} value={editingExpensePayer} onChange={e => setEditingExpensePayer(e.target.value)}
+                                className="flex-1 min-w-24 rounded-xl border border-sky-200 bg-white p-2 text-xs">
+                                {!validMembers.includes(editingExpensePayer) && <option value={editingExpensePayer}>{editingExpensePayer || 'Selecciona'}</option>}
+                                {validMembers.map(member => <option key={member} value={member}>{member}</option>)}
+                              </select>
+                              <button type="button" disabled={isUpdatingExpense || !validMembers.includes(editingExpensePayer)}
+                                onClick={() => handleUpdateExpensePayer(exp)} className="rounded-xl bg-emerald-600 px-3 py-2 text-white text-xs font-bold disabled:opacity-50">Guardar</button>
+                              <button type="button" onClick={() => setEditingExpenseId(null)} className="text-xs text-slate-600">Cancelar</button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1639,6 +1677,13 @@ export default function App() {
                     <input id="expense-description" type="text" placeholder="Concepto (ej. Cervezas)..." value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
                     <label className="sr-only" htmlFor="expense-amount">Importe en euros</label>
                     <input id="expense-amount" type="number" min="0.01" step="0.01" inputMode="decimal" placeholder="Importe (€)..." value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
+
+                    <label className="block text-[11px] font-bold text-slate-700" htmlFor="expense-paid-by">¿Quién ha pagado realmente?</label>
+                    <select id="expense-paid-by" value={expensePaidBy} onChange={e => setExpensePaidBy(e.target.value)} required
+                      className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none">
+                      <option value="">Selecciona pagador...</option>
+                      {validMembers.map(member => <option key={member} value={member}>{member}</option>)}
+                    </select>
 
                     <select value={expenseSpotId} onChange={(e) => setExpenseSpotId(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none">
                       <option value="">Selecciona un sitio del plan (Opcional)...</option>
@@ -1678,7 +1723,7 @@ export default function App() {
                       {expenseReceiptUrl && <p className="text-[10px] text-emerald-600 font-bold mt-1">✓ Ticket adjuntado correctamente</p>}
                     </div>
 
-                    <button type="submit" disabled={isSavingExpense || isUploadingReceipt || !expenseDesc.trim() || !expenseAmount || expenseParticipants.length === 0} className="w-full min-h-11 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-2xl py-3 shadow mt-1 transition" aria-live="polite">
+                    <button type="submit" disabled={isSavingExpense || isUploadingReceipt || !expenseDesc.trim() || !expenseAmount || expenseParticipants.length === 0 || !validMembers.includes(expensePaidBy)} className="w-full min-h-11 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-2xl py-3 shadow mt-1 transition" aria-live="polite">
                       {isUploadingReceipt ? 'Procesando ticket...' : isSavingExpense ? 'Guardando gasto...' : 'Añadir gasto'}
                     </button>
                   </form>
