@@ -42,12 +42,13 @@ export default function App() {
   const [mapSuggestions, setMapSuggestions] = useState([]);
   const [isSearchingMaps, setIsSearchingMaps] = useState(false);
 
-  // Gastos, Tickets y Ubicación del Gasto
+  // Gastos, Tickets y Participantes del Gasto
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseSpotId, setExpenseSpotId] = useState('');
   const [expenseReceiptUrl, setExpenseReceiptUrl] = useState('');
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
+  const [expenseParticipants, setExpenseParticipants] = useState([]);
 
   // Fotos y Ubicación de la Foto
   const [photoSpotId, setPhotoSpotId] = useState('');
@@ -77,6 +78,13 @@ export default function App() {
       fetchPasswordRequests();
     }
   }, [currentUser]);
+
+  // Cuando cambia el evento activo o sus miembros, por defecto seleccionamos a todos para nuevos gastos
+  useEffect(() => {
+    if (activeEvent && activeEvent.members) {
+      setExpenseParticipants(activeEvent.members);
+    }
+  }, [activeEvent]);
 
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -114,7 +122,6 @@ export default function App() {
     try {
       const { data, error } = await supabase.from('password_requests').select('*').eq('status', 'pending');
       if (error) {
-        console.warn('Error cargando solicitudes de clave:', error.message);
         setPasswordRequests([]);
         return;
       }
@@ -227,7 +234,6 @@ export default function App() {
     }
   };
 
-  // SOLICITUD DE CAMBIO DE CLAVE AL ADMIN
   const handleRequestPasswordChange = async (e) => {
     e.preventDefault();
     if (!resetEmailInput || !resetNewPasswordInput) {
@@ -250,23 +256,21 @@ export default function App() {
 
       if (error) throw error;
 
-      alert('✅ Solicitud enviada correctamente al administrador. Cuando la apruebe desde su panel, podrás acceder con tu nueva clave.');
+      alert('✅ Solicitud enviada correctamente al administrador.');
       setShowResetModal(false);
       setResetEmailInput('');
       setResetNewPasswordInput('');
     } catch (err) {
-      console.error('Error detallado al solicitar cambio de clave:', err.message);
       alert('Error al enviar la solicitud: ' + err.message);
     }
   };
 
-  // APROBAR SOLICITUD DE CONTRASEÑA
   const handleApprovePasswordRequest = async (reqId, targetEmail, requestedPassword) => {
     if (!confirm(`¿Aprobar el cambio de contraseña para ${targetEmail}?`)) return;
 
     try {
       await supabase.from('password_requests').update({ status: 'approved' }).eq('id', reqId);
-      alert(`✅ Solicitud aprobada para ${targetEmail}.\n\n⚠️ RECUERDA: Para que el usuario pueda iniciar sesión con la clave "${requestedPassword}", ve a tu panel de Supabase > Authentication > Users, pulsa en "Update user" para ${targetEmail} y asígnale esta nueva contraseña.`);
+      alert(`✅ Solicitud aprobada para ${targetEmail}.\n\n⚠️ RECUERDA: Ve a Supabase > Authentication > Users, pulsa en "Update user" para ${targetEmail} y asígnale la clave "${requestedPassword}".`);
       fetchPasswordRequests();
     } catch (err) {
       alert('Error al aprobar la solicitud: ' + err.message);
@@ -283,6 +287,14 @@ export default function App() {
       setSelectedFriends(selectedFriends.filter(f => f !== friendName));
     } else {
       setSelectedFriends([...selectedFriends, friendName]);
+    }
+  };
+
+  const toggleExpenseParticipant = (memberName) => {
+    if (expenseParticipants.includes(memberName)) {
+      setExpenseParticipants(expenseParticipants.filter(m => m !== memberName));
+    } else {
+      setExpenseParticipants([...expenseParticipants, memberName]);
     }
   };
 
@@ -328,7 +340,6 @@ export default function App() {
       await fetchAppData();
 
     } catch (err) {
-      console.error('Error al crear evento:', err.message);
       alert('Error al crear el evento: ' + err.message);
     }
   };
@@ -401,7 +412,6 @@ export default function App() {
         setShowGpsModal(true);
       },
       (error) => {
-        console.error('Error obteniendo GPS:', error);
         alert('No se pudo obtener tu ubicación GPS.');
         setIsGettingLocation(false);
       },
@@ -411,10 +421,7 @@ export default function App() {
 
   const handleSaveGpsSpot = async (e) => {
     e.preventDefault();
-    if (!gpsCustomName.trim() || !tempCoords || !activeEvent) {
-      alert('El nombre del sitio GPS es obligatorio.');
-      return;
-    }
+    if (!gpsCustomName.trim() || !tempCoords || !activeEvent) return;
 
     const finalSpotName = `${gpsCustomName.trim()} (${tempCoords.lat.toFixed(4)}, ${tempCoords.lon.toFixed(4)})`;
 
@@ -475,13 +482,19 @@ export default function App() {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
 
+    if (expenseParticipants.length === 0) {
+      alert('Debes seleccionar al menos un participante para este gasto.');
+      return;
+    }
+
     const { error } = await supabase.from('expenses').insert([{
       event_id: activeEvent.id,
       description: expenseDesc.trim(),
       amount: parseFloat(expenseAmount),
       paid_by: currentUser.name,
       spot_id: expenseSpotId || null,
-      receipt_url: expenseReceiptUrl || null
+      receipt_url: expenseReceiptUrl || null,
+      participants: expenseParticipants
     }]);
 
     if (error) {
@@ -493,6 +506,7 @@ export default function App() {
     setExpenseAmount('');
     setExpenseSpotId('');
     setExpenseReceiptUrl('');
+    setExpenseParticipants(activeEvent.members);
     await fetchAppData();
   };
 
@@ -641,13 +655,12 @@ export default function App() {
      u.email.toLowerCase().includes(friendSearchInput.toLowerCase()))
   );
 
-  const calculateDebts = (members = [], expenses = [], spots = []) => {
+  // ALGORITMO DE REPARTO BASADO ESTRICTAMENTE EN LOS PARTICIPANTES DE CADA GASTO
+  const calculateDebts = (members = [], expenses = []) => {
     if (members.length === 0) return [];
 
     const balancesMap = {};
     members.forEach(m => { balancesMap[m] = 0; });
-
-    const sortedSpots = [...spots].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
 
     expenses.forEach(exp => {
       const amount = Number(exp.amount) || 0;
@@ -656,14 +669,8 @@ export default function App() {
       if (!balancesMap[payer]) balancesMap[payer] = 0;
       balancesMap[payer] += amount;
 
-      let participants = [...members];
-
-      if (exp.spot_id && sortedSpots.length > 0) {
-        const spotIndex = sortedSpots.findIndex(s => s.id === exp.spot_id);
-        if (spotIndex === 0 && members.length > 2) {
-          participants = members.slice(0, 2);
-        }
-      }
+      // Si el gasto tiene participantes específicos guardados, se divide solo entre ellos. Si es antiguo o no tiene, se divide entre todos.
+      let participants = (exp.participants && exp.participants.length > 0) ? exp.participants : members;
 
       if (participants.length === 0) participants = [...members];
 
@@ -768,7 +775,6 @@ export default function App() {
             target="_blank" 
             rel="noreferrer" 
             className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-xl flex items-center justify-center transition shadow-sm"
-            title="Cómo llegar en Google Maps"
           >
             <Navigation size={14} />
           </a>
@@ -802,7 +808,6 @@ export default function App() {
             <button 
               type="button"
               onClick={() => handleAddSpotComment(spot.id)}
-              aria-label="Enviar comentario de sitio"
               className="bg-sky-600 hover:bg-sky-700 text-white px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-center"
             >
               <Send size={12} />
@@ -816,7 +821,7 @@ export default function App() {
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 flex flex-col items-center justify-center p-4 text-slate-800 relative overflow-hidden">
-        <div className="absolute top-10 left-1/2 -translate-x-1/2 w-96 h-96 bg-sky-300/30 rounded-full blur-3xl pointer-events-none" aria-hidden="true"></div>
+        <div className="absolute top-10 left-1/2 -translate-x-1/2 w-96 h-96 bg-sky-300/30 rounded-full blur-3xl pointer-events-none"></div>
 
         <div className="max-w-md w-full bg-white/90 backdrop-blur-2xl p-8 rounded-[2.5rem] shadow-xl border border-sky-100 relative z-10 space-y-6">
           <div className="text-center space-y-3">
@@ -840,7 +845,7 @@ export default function App() {
               role="tab"
               aria-selected={authMode === 'login'}
               onClick={() => { setAuthMode('login'); setPasswordError(''); }}
-              className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all focus:outline-none ${authMode === 'login' ? 'bg-sky-600 text-white shadow-md shadow-sky-600/30' : 'text-slate-600 hover:text-slate-900'}`}
+              className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all ${authMode === 'login' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}
             >
               Iniciar Sesión
             </button>
@@ -848,7 +853,7 @@ export default function App() {
               role="tab"
               aria-selected={authMode === 'register'}
               onClick={() => { setAuthMode('register'); setPasswordError(''); }}
-              className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all focus:outline-none ${authMode === 'register' ? 'bg-sky-600 text-white shadow-md shadow-sky-600/30' : 'text-slate-600 hover:text-slate-900'}`}
+              className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all ${authMode === 'register' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}
             >
               Crear Cuenta
             </button>
@@ -857,16 +862,15 @@ export default function App() {
           <form onSubmit={handleAuth} className="space-y-4">
             {authMode === 'register' && (
               <div className="space-y-1">
-                <label htmlFor="reg-name" className="block text-xs font-bold text-slate-700 ml-1">Nombre Completo</label>
+                <label className="block text-xs font-bold text-slate-700 ml-1">Nombre Completo</label>
                 <div className="relative flex items-center">
                   <User className="absolute left-3.5 text-slate-400" size={18} />
                   <input 
-                    id="reg-name"
                     type="text" 
                     placeholder="Tu nombre en el grupo" 
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-sky-500 focus:bg-white text-slate-800 transition-all shadow-inner"
+                    className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-sky-500 text-slate-800 shadow-inner"
                     required
                   />
                 </div>
@@ -874,40 +878,33 @@ export default function App() {
             )}
 
             <div className="space-y-1">
-              <label htmlFor="auth-email" className="block text-xs font-bold text-slate-700 ml-1">Correo Electrónico</label>
+              <label className="block text-xs font-bold text-slate-700 ml-1">Correo Electrónico</label>
               <div className="relative flex items-center">
                 <Mail className="absolute left-3.5 text-slate-400" size={18} />
                 <input 
-                  id="auth-email"
                   type="email" 
                   placeholder="correo@ejemplo.com" 
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-sky-500 focus:bg-white text-slate-800 transition-all shadow-inner"
+                  className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-sky-500 text-slate-800 shadow-inner"
                   required
                 />
               </div>
             </div>
 
             <div className="space-y-1">
-              <label htmlFor="auth-password" className="block text-xs font-bold text-slate-700 ml-1">Contraseña</label>
+              <label className="block text-xs font-bold text-slate-700 ml-1">Contraseña</label>
               <div className="relative flex items-center">
                 <Lock className="absolute left-3.5 text-slate-400" size={18} />
                 <input 
-                  id="auth-password"
                   type="password" 
                   placeholder="••••••••" 
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-sky-500 focus:bg-white text-slate-800 transition-all shadow-inner"
+                  className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-sky-500 text-slate-800 shadow-inner"
                   required
                 />
               </div>
-              {authMode === 'register' && (
-                <p className="text-[10px] text-slate-500 ml-1 mt-1">
-                  Mínimo 8 caracteres, 1 mayúscula, 1 número y 1 símbolo.
-                </p>
-              )}
               {passwordError && (
                 <div className="flex items-center space-x-1 text-red-600 text-[11px] font-bold mt-1 ml-1 bg-red-50 p-2 rounded-xl border border-red-200">
                   <AlertCircle size={14} className="shrink-0" />
@@ -918,7 +915,7 @@ export default function App() {
 
             <button 
               type="submit" 
-              className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-bold py-3.5 rounded-2xl text-sm transition shadow-lg shadow-sky-500/25 active:scale-[0.98] focus:outline-none focus:ring-2 focus:ring-sky-500 mt-2"
+              className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-bold py-3.5 rounded-2xl text-sm transition shadow-lg mt-2"
             >
               {authMode === 'login' ? 'Entrar a mi cuenta' : 'Registrarme'}
             </button>
@@ -937,14 +934,13 @@ export default function App() {
           </form>
         </div>
 
-        {/* MODAL DE SOLICITUD DE CAMBIO DE CLAVE AL ADMIN */}
         {showResetModal && (
           <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white max-w-sm w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-sky-100">
               <div className="text-center space-y-1">
                 <KeyRound className="w-8 h-8 text-sky-600 mx-auto" />
                 <h3 className="font-black text-slate-800 text-base">Solicitar Cambio de Contraseña</h3>
-                <p className="text-xs text-slate-500">Envía tu propuesta de nueva contraseña al administrador para que la valide</p>
+                <p className="text-xs text-slate-500">Envía tu propuesta de nueva contraseña al administrador</p>
               </div>
 
               <form onSubmit={handleRequestPasswordChange} className="space-y-3">
@@ -953,7 +949,7 @@ export default function App() {
                   placeholder="Tu correo electrónico..." 
                   value={resetEmailInput} 
                   onChange={(e) => setResetEmailInput(e.target.value)} 
-                  className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-3 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-3 text-xs text-slate-800 focus:outline-none"
                   required
                 />
                 <input 
@@ -961,20 +957,20 @@ export default function App() {
                   placeholder="Nueva contraseña deseada..." 
                   value={resetNewPasswordInput} 
                   onChange={(e) => setResetNewPasswordInput(e.target.value)} 
-                  className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-3 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-3 text-xs text-slate-800 focus:outline-none"
                   required
                 />
                 <div className="flex gap-2 pt-1">
                   <button 
                     type="button" 
                     onClick={() => setShowResetModal(false)}
-                    className="w-1/2 bg-sky-50 text-slate-700 font-bold py-2.5 rounded-2xl text-xs hover:bg-sky-100 transition border border-sky-200"
+                    className="w-1/2 bg-sky-50 text-slate-700 font-bold py-2.5 rounded-2xl text-xs hover:bg-sky-100 border border-sky-200"
                   >
                     Cancelar
                   </button>
                   <button 
                     type="submit" 
-                    className="w-1/2 bg-sky-600 hover:bg-sky-700 text-white font-bold py-2.5 rounded-2xl text-xs shadow transition"
+                    className="w-1/2 bg-sky-600 hover:bg-sky-700 text-white font-bold py-2.5 rounded-2xl text-xs shadow"
                   >
                     Enviar al Admin
                   </button>
@@ -994,7 +990,7 @@ export default function App() {
     const selectedSpots = (activeEvent.spots || []).filter(s => s.active_now);
     const pendingSpots = (activeEvent.spots || []).filter(s => !s.active_now);
 
-    const calculatedDebts = calculateDebts(activeEvent.members, activeEvent.expenses, activeEvent.spots);
+    const calculatedDebts = calculateDebts(activeEvent.members, activeEvent.expenses);
     const isCreator = activeEvent.creator_name === currentUser.name;
     const isClosed = activeEvent.status === 'closed';
 
@@ -1006,8 +1002,7 @@ export default function App() {
         <div className="fixed top-3 left-4 z-50">
           <button 
             onClick={() => setActiveEvent(null)} 
-            aria-label="Volver a mis salidas"
-            className="flex items-center text-xs font-bold text-slate-800 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-full hover:bg-white transition shadow-lg border border-sky-200 active:scale-95"
+            className="flex items-center text-xs font-bold text-slate-800 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-full hover:bg-white transition shadow-lg border border-sky-200"
           >
             <ArrowLeft size={16} className="mr-1 text-sky-600" /> Volver
           </button>
@@ -1021,7 +1016,7 @@ export default function App() {
             </div>
             <div className="flex items-center space-x-2">
               {isClosed && <span className="text-[9px] font-bold bg-amber-500 text-white px-2 py-0.5 rounded-full shadow">🔒 Cerrada</span>}
-              <span className="text-[10px] font-bold text-sky-800 bg-white/80 px-2.5 py-0.5 rounded-full border border-sky-200 shadow-2xs">
+              <span className="text-[10px] font-bold text-sky-800 bg-white/80 px-2.5 py-0.5 rounded-full border border-sky-200">
                 Org: {activeEvent.creator_name}
               </span>
             </div>
@@ -1033,7 +1028,7 @@ export default function App() {
           {isCreator && !isClosed && (
             <button 
               onClick={handleCloseEvent}
-              className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow-lg shadow-amber-600/25 flex items-center justify-center space-x-2 transition hover:opacity-95 border border-amber-500/30"
+              className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow-lg flex items-center justify-center space-x-2 border border-amber-500/30"
             >
               <Flag size={16} /> <span>Cerrar Salida y Generar Línea Temporal</span>
             </button>
@@ -1045,7 +1040,7 @@ export default function App() {
                 <div className="text-center space-y-1">
                   <span className="text-2xl">⏳</span>
                   <h2 className="text-base font-black text-slate-800">Línea Temporal e Historial del Día</h2>
-                  <p className="text-[11px] text-slate-500">Pulsa sobre cada parada para consultar sus gastos, tickets, fotos y recomendaciones</p>
+                  <p className="text-[11px] text-slate-500">Pulsa sobre cada parada para consultar sus gastos y fotos</p>
                 </div>
 
                 <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-gradient-to-b before:from-sky-500 before:via-indigo-500 before:to-sky-300">
@@ -1055,7 +1050,6 @@ export default function App() {
                     const spotPhotos = (activeEvent.photos || []).filter(p => p.spot_id === spot.id);
                     const spotComments = (activeEvent.comments || []).filter(c => c.spot_id === spot.id);
                     const isExpanded = expandedTimelineSpotId === spot.id;
-                    const estimatedTime = `${12 + idx}:30`;
 
                     return (
                       <div key={spot.id} className="relative group">
@@ -1063,105 +1057,30 @@ export default function App() {
 
                         <div 
                           onClick={() => setExpandedTimelineSpotId(isExpanded ? null : spot.id)}
-                          className={`p-4 rounded-3xl border transition cursor-pointer backdrop-blur-xl ${isExpanded ? 'bg-sky-50/90 border-sky-300 shadow-lg' : 'bg-white/90 border-sky-100 hover:border-sky-300 shadow-sm'}`}
+                          className={`p-4 rounded-3xl border transition cursor-pointer backdrop-blur-xl ${isExpanded ? 'bg-sky-50/90 border-sky-300 shadow-lg' : 'bg-white/90 border-sky-100'}`}
                         >
                           <div className="flex justify-between items-center">
                             <div className="space-y-0.5">
                               <span className="text-[10px] font-black uppercase tracking-wider text-sky-600 flex items-center">
-                                <Clock size={12} className="mr-1" /> Parada {idx + 1} • Aprox. {estimatedTime}
+                                <Clock size={12} className="mr-1" /> Parada {idx + 1}
                               </span>
                               <h3 className="font-bold text-sm text-slate-800">{spot.name}</h3>
                             </div>
-                            <div className="flex items-center space-x-1.5 text-xs font-bold text-slate-500">
-                              <span className="bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full text-[10px] border border-sky-200">
-                                {spotExpenses.length}g • {spotPhotos.length}f • {spotComments.length}c
-                              </span>
-                              <ChevronRight size={16} className={`transition-transform ${isExpanded ? 'rotate-90 text-sky-600' : ''}`} />
-                            </div>
+                            <ChevronRight size={16} className={`transition-transform ${isExpanded ? 'rotate-90 text-sky-600' : ''}`} />
                           </div>
 
                           {isExpanded && (
-                            <div className="mt-4 pt-4 border-t border-sky-200/60 space-y-4 animate-fadeIn">
-                              <a 
-                                href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(spot.name)}`} 
-                                target="_blank" 
-                                rel="noreferrer" 
-                                onClick={(e) => e.stopPropagation()}
-                                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-3 rounded-xl flex items-center justify-center space-x-1 shadow transition"
-                              >
-                                <Navigation size={14} /> <span>Abrir navegación en Google Maps</span>
-                              </a>
-
-                              <div className="space-y-2">
-                                <div className="flex justify-between items-center text-xs font-bold text-slate-700">
-                                  <span className="flex items-center"><Receipt size={14} className="mr-1 text-emerald-600" /> Gastos y Tickets</span>
-                                  <span className="text-emerald-700">{spotSpent.toFixed(2)}€</span>
-                                </div>
-                                {spotExpenses.length === 0 ? (
-                                  <p className="text-[11px] text-slate-400 italic">No hay gastos registrados en esta parada.</p>
-                                ) : (
-                                  <div className="space-y-1.5">
-                                    {spotExpenses.map(exp => (
-                                      <div key={exp.id} className="flex justify-between items-center text-xs bg-white p-2.5 rounded-2xl border border-sky-100 shadow-2xs">
-                                        <div>
-                                          <span className="font-bold text-slate-800">{exp.description}</span>
-                                          <span className="text-[10px] text-slate-500 ml-1.5">(Pagado por: {exp.paid_by})</span>
-                                        </div>
-                                        <div className="flex items-center space-x-2">
-                                          <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
-                                          {exp.receipt_url && (
-                                            <button 
-                                              type="button"
-                                              onClick={(e) => { e.stopPropagation(); setViewingReceiptUrl(exp.receipt_url); }}
-                                              className="bg-sky-50 hover:bg-sky-100 text-sky-700 p-1.5 rounded-xl border border-sky-200" 
-                                              title="Ver ticket"
-                                            >
-                                              <Receipt size={14} />
-                                            </button>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-
+                            <div className="mt-4 pt-4 border-t border-sky-200/60 space-y-4">
                               <div className="space-y-2">
                                 <span className="text-xs font-bold text-slate-700 flex items-center">
-                                  <Camera size={14} className="mr-1 text-indigo-600" /> Álbum de este momento
+                                  <Receipt size={14} className="mr-1 text-emerald-600" /> Gastos ({spotSpent.toFixed(2)}€)
                                 </span>
-                                {spotPhotos.length === 0 ? (
-                                  <p className="text-[11px] text-slate-400 italic">No hay fotos en esta parada.</p>
-                                ) : (
-                                  <div className="grid grid-cols-3 gap-2">
-                                    {spotPhotos.map(photo => (
-                                      <div key={photo.id} className="relative group aspect-square rounded-2xl overflow-hidden border border-sky-100 shadow-sm bg-sky-50">
-                                        <img src={photo.url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition" />
-                                        <span className="absolute bottom-1 left-1 right-1 bg-black/60 backdrop-blur-xs text-white text-[9px] font-bold px-1.5 py-0.5 rounded truncate text-center">
-                                          {photo.user_name}
-                                        </span>
-                                      </div>
-                                    ))}
+                                {spotExpenses.map(exp => (
+                                  <div key={exp.id} className="flex justify-between items-center text-xs bg-white p-2.5 rounded-2xl border border-sky-100">
+                                    <span className="font-bold text-slate-800">{exp.description}</span>
+                                    <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
                                   </div>
-                                )}
-                              </div>
-
-                              <div className="space-y-2">
-                                <span className="text-xs font-bold text-slate-700 flex items-center">
-                                  <MessageSquare size={14} className="mr-1 text-sky-600" /> Comentarios y Recomendaciones
-                                </span>
-                                {spotComments.length === 0 ? (
-                                  <p className="text-[11px] text-slate-400 italic">Sin comentarios en este sitio.</p>
-                                ) : (
-                                  <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
-                                    {spotComments.map(c => (
-                                      <div key={c.id} className="bg-white p-2 rounded-xl border border-sky-100 text-xs space-y-0.5">
-                                        <p className="text-slate-800">{c.content}</p>
-                                        <p className="text-[10px] font-bold text-sky-600">— {c.user_name}</p>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
+                                ))}
                               </div>
                             </div>
                           )}
@@ -1175,11 +1094,9 @@ export default function App() {
           ) : (
             <>
               <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
-                    <Users size={14} className="mr-1.5 text-sky-600" /> Asistentes Confirmados ({activeEvent.members.length})
-                  </span>
-                </div>
+                <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
+                  <Users size={14} className="mr-1.5 text-sky-600" /> Asistentes Confirmados ({activeEvent.members.length})
+                </span>
                 <div className="flex flex-wrap gap-2">
                   {activeEvent.members.map((member) => {
                     const canRemove = isCreator || member === currentUser.name;
@@ -1190,8 +1107,7 @@ export default function App() {
                           <button 
                             type="button"
                             onClick={() => handleRemoveMember(member)}
-                            className="text-slate-400 hover:text-red-600 transition p-0.5"
-                            title={member === currentUser.name ? "Salir del plan" : "Eliminar asistente"}
+                            className="text-slate-400 hover:text-red-600 transition"
                           >
                             <UserMinus size={13} />
                           </button>
@@ -1202,160 +1118,48 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="bg-gradient-to-br from-sky-600 to-indigo-600 text-white p-4 rounded-3xl shadow-lg relative overflow-hidden border border-sky-400/30 space-y-2.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-0.5 rounded-full flex items-center">
-                     Ruta Seleccionada ({selectedSpots.length})
-                  </span>
-                </div>
-
-                {selectedSpots.length === 0 ? (
-                  <p className="text-xs text-sky-100">Aún no hay sitios en la ruta. ¡Selecciona alguna propuesta abajo!</p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {selectedSpots.map((spot, idx) => (
-                      <div key={spot.id} className="bg-white/10 backdrop-blur-md p-2.5 rounded-2xl border border-white/20 flex justify-between items-center text-xs">
-                        <div className="flex items-center space-x-2">
-                          <span className="bg-white text-sky-800 w-5 h-5 rounded-full flex items-center justify-center font-black text-[10px]">
-                            {idx + 1}
-                          </span>
-                          <span className="font-bold text-white truncate max-w-[170px]">{spot.name}</span>
-                        </div>
-                        <a 
-                          href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(spot.name)}`} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="bg-white text-sky-800 font-bold text-[10px] px-2.5 py-1.5 rounded-xl shadow hover:bg-sky-50 transition flex items-center space-x-1 shrink-0"
-                        >
-                          <Navigation size={12} /> <span>Maps</span>
-                        </a>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
-                  <MessageSquare size={14} className="mr-1.5 text-sky-600" /> Comentarios Generales del Plan ({generalComments.length})
-                </h3>
-
-                <form onSubmit={handleAddGeneralComment} className="flex gap-2">
-                  <input 
-                    type="text" 
-                    placeholder="Escribe un comentario o aviso general..." 
-                    value={generalCommentInput} 
-                    onChange={(e) => setGeneralCommentInput(e.target.value)}
-                    className="flex-1 bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-inner"
-                  />
-                  <button type="submit" aria-label="Enviar comentario" className="bg-sky-600 hover:bg-sky-700 text-white p-2.5 rounded-2xl shadow transition flex items-center justify-center shrink-0">
-                    <Send size={14} />
-                  </button>
-                </form>
-
-                {generalComments.length > 0 && (
-                  <div className="space-y-1.5 pt-1 max-h-32 overflow-y-auto pr-1">
-                    {generalComments.map((c) => (
-                      <div key={c.id} className="bg-sky-50/60 p-2.5 rounded-2xl border border-sky-100 text-xs space-y-0.5">
-                        <p className="text-slate-800 font-medium">{c.content}</p>
-                        <p className="text-[10px] font-bold text-sky-700">— {c.user_name}</p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
               <div className="flex bg-white/90 backdrop-blur-xl p-1 rounded-2xl border border-sky-100 shadow-sm" role="tablist">
-                <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>Sitios</button>
-                <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>Gastos</button>
-                <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>Fotos</button>
+                <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>Sitios</button>
+                <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>Gastos</button>
+                <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>Fotos</button>
               </div>
 
               {eventSubTab === 'spots' && (
                 <div className="space-y-4">
-                  <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3 relative">
+                  <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
                     <h3 className="text-xs font-black text-slate-800">Proponer nuevo sitio</h3>
-                    
                     <button 
                       type="button"
                       onClick={handleStartGpsCapture}
                       disabled={isGettingLocation}
-                      className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold py-2.5 px-4 rounded-2xl text-xs shadow hover:opacity-95 flex items-center justify-center space-x-2 transition"
+                      className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold py-2.5 px-4 rounded-2xl text-xs shadow flex items-center justify-center space-x-2"
                     >
-                      <Compass size={16} className={isGettingLocation ? "animate-spin" : ""} />
-                      <span>{isGettingLocation ? 'Obteniendo GPS...' : '📍 Marcar mi ubicación GPS actual'}</span>
+                      <Compass size={16} />
+                      <span>📍 Marcar mi ubicación GPS actual</span>
                     </button>
 
-                    <div className="relative pt-0.5">
-                      <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-sky-100"></div></div>
-                      <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400 font-bold">o busca tu sitio</span></div>
-                    </div>
-
-                    <form onSubmit={handleAddSpot} className="space-y-2.5 relative">
-                      <div className="relative flex items-center">
-                        <Search className="absolute left-3.5 text-slate-400" size={16} />
-                        <input 
-                          type="text" 
-                          placeholder="Ej. Bar Shiko, Valdelagrana..." 
-                          value={newSpotName} 
-                          onChange={(e) => setNewSpotName(e.target.value)} 
-                          className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-inner" 
-                        />
-                        {isSearchingMaps && (
-                          <div className="absolute right-3.5 text-xs text-sky-600 animate-pulse font-bold">Buscando...</div>
-                        )}
-                      </div>
-
-                      {mapSuggestions.length > 0 && (
-                        <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-sky-100 rounded-2xl shadow-xl z-50 overflow-hidden max-h-56 overflow-y-auto">
-                          {mapSuggestions.map((place) => (
-                            <button
-                              key={place.place_id}
-                              type="button"
-                              onClick={() => handleSelectSuggestion(place.display_name)}
-                              className="w-full text-left px-4 py-2.5 text-xs text-slate-700 hover:bg-sky-50 hover:text-sky-700 border-b border-sky-50 last:border-b-0 transition flex items-center space-x-2"
-                            >
-                              <MapPin size={14} className="text-sky-600 shrink-0" />
-                              <span className="truncate">{place.display_name}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow transition mt-1">
-                        🔍 Añadir "{newSpotName || 'propuesta'}" a la ruta
+                    <form onSubmit={handleAddSpot} className="space-y-2.5">
+                      <input 
+                        type="text" 
+                        placeholder="Ej. Bar Shiko..." 
+                        value={newSpotName} 
+                        onChange={(e) => setNewSpotName(e.target.value)} 
+                        className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" 
+                      />
+                      <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow">
+                        🔍 Añadir a la ruta
                       </button>
                     </form>
                   </div>
 
                   <div className="space-y-3">
-                    <div className="flex justify-between items-center px-1">
-                      <h4 className="text-xs font-black uppercase text-sky-800 flex items-center">
-                        <CheckSquare size={14} className="mr-1 text-sky-600" /> Sitios Seleccionados en la Ruta ({selectedSpots.length})
-                      </h4>
-                    </div>
-
-                    {selectedSpots.length === 0 ? (
-                      <div className="bg-white/60 p-4 rounded-3xl border border-sky-100 text-center">
-                        <p className="text-xs text-slate-400">Aún no hay sitios seleccionados para la ruta. Selecciona una propuesta abajo 👇</p>
-                      </div>
-                    ) : (
-                      selectedSpots.map((spot) => renderSpotCard(spot, true, maxVotes))
-                    )}
+                    <h4 className="text-xs font-black uppercase text-sky-800">Sitios Seleccionados ({selectedSpots.length})</h4>
+                    {selectedSpots.map((spot) => renderSpotCard(spot, true, maxVotes))}
                   </div>
 
                   <div className="space-y-3 pt-2">
-                    <div className="flex justify-between items-center px-1">
-                      <h4 className="text-xs font-black uppercase text-slate-700 flex items-center">
-                        <ListPlus size={14} className="mr-1 text-slate-500" /> Propuestas Pendientes ({pendingSpots.length})
-                      </h4>
-                    </div>
-
-                    {pendingSpots.length === 0 ? (
-                      <p className="text-xs text-slate-400 px-1 italic">No hay más propuestas pendientes.</p>
-                    ) : (
-                      pendingSpots.map((spot) => renderSpotCard(spot, false, maxVotes))
-                    )}
+                    <h4 className="text-xs font-black uppercase text-slate-700">Propuestas Pendientes ({pendingSpots.length})</h4>
+                    {pendingSpots.map((spot) => renderSpotCard(spot, false, maxVotes))}
                   </div>
                 </div>
               )}
@@ -1369,11 +1173,11 @@ export default function App() {
 
                   <div className="bg-gradient-to-br from-slate-900 to-sky-950 text-white p-5 rounded-3xl shadow-lg space-y-3 border border-sky-400/20">
                     <h3 className="text-xs font-black uppercase tracking-wider text-sky-300 flex items-center">
-                      <DollarSign size={16} className="mr-1 text-emerald-400" /> Reparto y Liquidación de Deudas
+                      <DollarSign size={16} className="mr-1 text-emerald-400" /> Reparto y Liquidación de Deudas (Real)
                     </h3>
                     
                     {calculatedDebts.length === 0 ? (
-                      <p className="text-xs text-sky-200">¡Cuentas saldadas! Nadie debe dinero a nadie en este momento.</p>
+                      <p className="text-xs text-sky-200">¡Cuentas saldadas!</p>
                     ) : (
                       <div className="space-y-2">
                         {calculatedDebts.map((debt, index) => (
@@ -1383,7 +1187,7 @@ export default function App() {
                               <span className="text-sky-200 mx-1.5">debe pagar a</span>
                               <span className="font-bold text-emerald-300">{debt.to}</span>
                             </div>
-                            <span className="font-black text-emerald-400 text-sm bg-emerald-950/80 px-3 py-1 rounded-xl border border-emerald-500/30">
+                            <span className="font-black text-emerald-400 text-sm bg-emerald-950/80 px-3 py-1 rounded-xl">
                               {debt.amount.toFixed(2)}€
                             </span>
                           </div>
@@ -1392,27 +1196,26 @@ export default function App() {
                     )}
                   </div>
 
+                  {/* FORMULARIO DE GASTO CON SELECCIÓN DE PARTICIPANTES */}
                   <form onSubmit={handleAddExpense} className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
-                    <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto vinculado a un sitio</h4>
+                    <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto</h4>
                     
                     <input 
                       type="text" 
-                      aria-label="Concepto" 
                       placeholder="Concepto (ej. Cervezas, Comida...)" 
                       value={expenseDesc} 
                       onChange={(e) => setExpenseDesc(e.target.value)} 
-                      className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-inner" 
+                      className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" 
                       required
                     />
 
                     <input 
                       type="number" 
                       step="0.01" 
-                      aria-label="Importe" 
                       placeholder="Importe (€)" 
                       value={expenseAmount} 
                       onChange={(e) => setExpenseAmount(e.target.value)} 
-                      className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-inner" 
+                      className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" 
                       required
                     />
 
@@ -1421,7 +1224,7 @@ export default function App() {
                       <select 
                         value={expenseSpotId} 
                         onChange={(e) => setExpenseSpotId(e.target.value)}
-                        className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-inner"
+                        className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none"
                       >
                         <option value="">Selecciona un sitio del plan...</option>
                         {(activeEvent.spots || []).map((spot) => (
@@ -1430,435 +1233,127 @@ export default function App() {
                       </select>
                     </div>
 
+                    {/* SELECCIÓN DE QUIÉNES PAGAN ESTE GASTO */}
+                    <div className="space-y-1.5 pt-1">
+                      <label className="block text-[11px] font-bold text-slate-700">¿Quiénes participan en este gasto? (Desmarca a los ausentes)</label>
+                      <div className="flex flex-wrap gap-1.5 bg-sky-50/50 p-2.5 rounded-2xl border border-sky-200">
+                        {activeEvent.members.map((member) => {
+                          const isParticipant = expenseParticipants.includes(member);
+                          return (
+                            <button
+                              key={member}
+                              type="button"
+                              onClick={() => toggleExpenseParticipant(member)}
+                              className={`text-xs px-2.5 py-1.5 rounded-xl font-bold border transition flex items-center space-x-1 ${isParticipant ? 'bg-sky-600 text-white border-sky-600' : 'bg-white text-slate-500 border-sky-200'}`}
+                            >
+                              <span>{member}</span>
+                              {isParticipant && <Check size={12} />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div className="space-y-1.5">
                       <label className="block text-[11px] font-bold text-slate-700">Foto del Ticket (Opcional)</label>
-                      <label className="flex items-center justify-center space-x-2 border-2 border-dashed border-sky-200 bg-sky-50/50 rounded-2xl p-3 cursor-pointer hover:bg-sky-50 transition">
+                      <label className="flex items-center justify-center space-x-2 border-2 border-dashed border-sky-200 bg-sky-50/50 rounded-2xl p-3 cursor-pointer hover:bg-sky-50">
                         <Receipt size={16} className="text-sky-600" />
                         <span className="text-xs font-bold text-slate-700">
-                          {isUploadingReceipt ? 'Cargando...' : expenseReceiptUrl ? '✓ Ticket adjuntado correctamente' : 'Subir foto del ticket'}
+                          {isUploadingReceipt ? 'Cargando...' : expenseReceiptUrl ? '✓ Ticket adjuntado' : 'Subir foto del ticket'}
                         </span>
                         <input type="file" accept="image/*" onChange={handleReceiptUpload} className="hidden" />
                       </label>
-                      {expenseReceiptUrl && (
-                        <div className="w-16 h-16 rounded-xl overflow-hidden border border-sky-200 mt-1">
-                          <img src={expenseReceiptUrl} alt="Vista previa ticket" className="w-full h-full object-cover" />
-                        </div>
-                      )}
                     </div>
 
-                    <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow transition mt-1">
+                    <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow mt-1">
                       Añadir Gasto al Sitio
                     </button>
                   </form>
 
                   <div className="space-y-2">
                     <h4 className="text-xs font-bold text-slate-700 px-1">Historial de Gastos ({activeEvent.expenses.length})</h4>
-                    {(activeEvent.expenses || []).length === 0 ? (
-                      <p className="text-xs text-slate-400 px-1">No hay gastos registrados todavía.</p>
-                    ) : (
-                      (activeEvent.expenses || []).map((exp) => {
-                        const spotObj = (activeEvent.spots || []).find(s => s.id === exp.spot_id);
-                        return (
-                          <div key={exp.id} className="bg-white/90 backdrop-blur-2xl p-3.5 rounded-2xl border border-sky-100 flex justify-between items-center text-xs shadow-sm">
-                            <div>
-                              <p className="font-bold text-slate-800">{exp.description}</p>
-                              <p className="text-[10px] text-slate-500">
-                                Pagado por <span className="font-bold text-sky-600">{exp.paid_by}</span>
-                                {spotObj && <span className="ml-1 text-slate-600">• 📍 {spotObj.name}</span>}
-                              </p>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <span className="font-black text-emerald-700 text-sm">{Number(exp.amount).toFixed(2)}€</span>
-                              {exp.receipt_url && (
-                                <button 
-                                  type="button"
-                                  onClick={() => setViewingReceiptUrl(exp.receipt_url)}
-                                  className="w-7 h-7 bg-sky-50 hover:bg-sky-100 rounded-xl flex items-center justify-center text-sky-700 transition border border-sky-200" 
-                                  title="Ver ticket"
-                                >
-                                  <Receipt size={14} />
-                                </button>
-                              )}
-                            </div>
+                    {(activeEvent.expenses || []).map((exp) => {
+                      const spotObj = (activeEvent.spots || []).find(s => s.id === exp.spot_id);
+                      const parts = exp.participants || activeEvent.members;
+                      return (
+                        <div key={exp.id} className="bg-white/90 backdrop-blur-2xl p-3.5 rounded-2xl border border-sky-100 flex justify-between items-center text-xs shadow-sm">
+                          <div>
+                            <p className="font-bold text-slate-800">{exp.description}</p>
+                            <p className="text-[10px] text-slate-500">
+                              Pagado por <span className="font-bold text-sky-600">{exp.paid_by}</span> • Repartido entre: <span className="font-bold text-slate-700">{parts.join(', ')}</span>
+                              {spotObj && <span className="ml-1 text-slate-600">• 📍 {spotObj.name}</span>}
+                            </p>
                           </div>
-                        );
-                      })
-                    )}
+                          <span className="font-black text-emerald-700 text-sm">{Number(exp.amount).toFixed(2)}€</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
               {eventSubTab === 'gallery' && (
                 <div className="space-y-4">
-                  <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-2">
-                    <label className="block text-xs font-bold text-slate-800">1. Selecciona el sitio de la foto</label>
-                    <select 
-                      value={photoSpotId} 
-                      onChange={(e) => setPhotoSpotId(e.target.value)}
-                      className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500 shadow-inner"
-                      required
-                    >
-                      <option value="">Selecciona dónde se ha tomado...</option>
-                      {(activeEvent.spots || []).map((spot) => (
-                        <option key={spot.id} value={spot.id}>{spot.name}</option>
-                      ))}
-                    </select>
-                  </div>
+                  <select 
+                    value={photoSpotId} 
+                    onChange={(e) => setPhotoSpotId(e.target.value)}
+                    className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800"
+                    required
+                  >
+                    <option value="">Selecciona el sitio de la foto...</option>
+                    {(activeEvent.spots || []).map((spot) => (
+                      <option key={spot.id} value={spot.id}>{spot.name}</option>
+                    ))}
+                  </select>
 
-                  <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-3xl p-6 transition shadow-sm ${photoSpotId ? 'border-sky-300 bg-sky-50/60 cursor-pointer hover:bg-sky-50' : 'border-sky-200 bg-sky-50/20 opacity-60 cursor-not-allowed'}`}>
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-sky-300 bg-sky-50/60 rounded-3xl p-6 cursor-pointer">
                     <Camera className="w-6 h-6 text-sky-600 mb-1" />
-                    <span className="text-xs font-bold text-sky-900">
-                      {isUploadingPhoto ? 'Subiendo foto...' : '2. Tomar / Subir foto para este sitio'}
-                    </span>
-                    <span className="text-[10px] text-slate-500 mt-0.5">{photoSpotId ? 'Listo para capturar el momento' : 'Selecciona primero el sitio arriba 👆'}</span>
-                    <input 
-                      type="file" 
-                      accept="image/*" 
-                      capture="environment" 
-                      onChange={handlePhotoUploadWithGPS} 
-                      disabled={!photoSpotId || isUploadingPhoto} 
-                      className="hidden" 
-                    />
+                    <span className="text-xs font-bold text-sky-900">Tomar / Subir foto para este sitio</span>
+                    <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUploadWithGPS} className="hidden" />
                   </label>
-
-                  <div className="space-y-2 pt-2">
-                    <h4 className="text-xs font-bold text-slate-700 px-1">Álbum de Fotos por Ubicación ({activeEvent.photos.length})</h4>
-                    {(activeEvent.photos || []).length === 0 ? (
-                      <p className="text-xs text-slate-400 px-1">No hay fotos subidas todavía.</p>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-3">
-                        {(activeEvent.photos || []).map((photo) => {
-                          const spotObj = (activeEvent.spots || []).find(s => s.id === photo.spot_id);
-                          return (
-                            <div key={photo.id} className="bg-white border border-sky-100 rounded-2xl overflow-hidden shadow-sm flex flex-col">
-                              <div className="aspect-square w-full bg-sky-50">
-                                <img src={photo.url} alt="" className="w-full h-full object-cover" />
-                              </div>
-                              <div className="p-2 text-[10px] text-slate-600 text-center space-y-0.5">
-                                <p className="font-bold truncate">{photo.user_name}</p>
-                                {spotObj && <p className="text-sky-600 truncate">📍 {spotObj.name}</p>}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
                 </div>
               )}
             </>
           )}
         </main>
-
-        {showGpsModal && (
-          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white max-w-sm w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-sky-100">
-              <div className="text-center space-y-1">
-                <Compass className="w-8 h-8 text-emerald-600 mx-auto" />
-                <h3 className="font-black text-slate-800 text-base">Guardar Ubicación GPS</h3>
-                <p className="text-xs text-slate-500">Es obligatorio indicar el nombre del sitio</p>
-              </div>
-
-              <form onSubmit={handleSaveGpsSpot} className="space-y-3">
-                <input 
-                  type="text" 
-                  placeholder="Ej. Chiringuito La Ola (Obligatorio)..." 
-                  value={gpsCustomName} 
-                  onChange={(e) => setGpsCustomName(e.target.value)} 
-                  className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-3 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                  required
-                  autoFocus
-                />
-                <div className="flex gap-2">
-                  <button 
-                    type="button" 
-                    onClick={() => { setShowGpsModal(false); setTempCoords(null); }}
-                    className="w-1/2 bg-sky-50 text-slate-700 font-bold py-2.5 rounded-2xl text-xs hover:bg-sky-100 transition border border-sky-200"
-                  >
-                    Cancelar
-                  </button>
-                  <button 
-                    type="submit" 
-                    className="w-1/2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-2xl text-xs shadow transition"
-                  >
-                    Guardar Sitio
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {viewingReceiptUrl && (
-          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white max-w-sm w-full p-4 rounded-[2rem] shadow-2xl space-y-4 border border-sky-100 text-center">
-              <div className="flex justify-between items-center px-1">
-                <h3 className="font-black text-slate-800 text-sm">Ticket de Gasto</h3>
-                <button onClick={() => setViewingReceiptUrl(null)} className="p-1 bg-sky-50 rounded-full text-slate-600 hover:text-red-600">
-                  <X size={18} />
-                </button>
-              </div>
-              <div className="w-full max-h-96 rounded-2xl overflow-hidden border border-sky-200 bg-sky-50 flex items-center justify-center">
-                <img src={viewingReceiptUrl} alt="Ticket completo" className="w-full h-auto object-contain max-h-96" />
-              </div>
-              <button onClick={() => setViewingReceiptUrl(null)} className="w-full bg-sky-600 text-white font-bold py-2.5 rounded-xl text-xs">
-                Cerrar
-              </button>
-            </div>
-          </div>
-        )}
       </div>
     );
   }
 
-  const myEventsAll = events.filter(e => 
-    e.members.includes(currentUser.name) && 
-    (e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
-
-  const activeMyEvents = myEventsAll.filter(e => e.status !== 'closed');
-  const closedMyEvents = myEventsAll.filter(e => e.status === 'closed');
-
-  const filteredSearchEvents = events.filter(e => 
-    e.status !== 'closed' &&
-    (e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-72 bg-sky-300/20 rounded-b-full blur-3xl pointer-events-none" aria-hidden="true"></div>
-
       <header className="bg-white/90 backdrop-blur-2xl border-b border-sky-100 p-4 sticky top-0 z-40 flex justify-between items-center shadow-sm">
         <div className="flex items-center space-x-2">
-          <div className="w-9 h-9 bg-gradient-to-tr from-sky-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white font-black text-sm shadow-md shadow-sky-500/35" aria-hidden="true">N</div>
-          <span className="font-extrabold text-slate-800 text-base tracking-tight">Nosotros</span>
+          <div className="w-9 h-9 bg-gradient-to-tr from-sky-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white font-black text-sm shadow-md">N</div>
+          <span className="font-extrabold text-slate-800 text-base">Nosotros</span>
         </div>
         <div className="flex items-center space-x-3">
           <span className="text-xs font-bold text-slate-700">Hola, {currentUser.name}</span>
-          <button onClick={() => setCurrentUser(null)} className="text-xs bg-sky-50 hover:bg-red-50 text-slate-600 hover:text-red-600 px-3 py-1.5 rounded-full font-bold transition border border-sky-200">Salir</button>
+          <button onClick={() => setCurrentUser(null)} className="text-xs bg-sky-50 hover:bg-red-50 text-slate-600 px-3 py-1.5 rounded-full font-bold border border-sky-200">Salir</button>
         </div>
       </header>
 
-      <main className="max-w-md mx-auto p-4 space-y-4 relative z-10">
-        {activeTab === 'my-events' && (
-          <div className="space-y-4">
-            <button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-bold py-3 px-4 rounded-2xl text-sm shadow-lg shadow-sky-500/25 flex items-center justify-center space-x-2 transition hover:opacity-95">
-              <Plus size={18} /> <span>Crear Nueva Salida / Plan</span>
-            </button>
+      <main className="max-w-md mx-auto p-4 space-y-4">
+        <button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-bold py-3 px-4 rounded-2xl text-sm shadow-lg flex items-center justify-center space-x-2">
+          <Plus size={18} /> <span>Crear Nueva Salida / Plan</span>
+        </button>
 
-            <div className="relative flex items-center">
-              <Search className="absolute left-3.5 text-slate-400" size={16} />
-              <input 
-                type="text" 
-                placeholder="Buscar planes por título o creador..." 
-                value={searchQuery} 
-                onChange={(e) => setSearchQuery(e.target.value)} 
-                className="w-full bg-white/90 backdrop-blur-2xl border border-sky-200 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500" 
-              />
-            </div>
-
-            <div className="space-y-3">
-              <h2 className="text-sm font-black text-slate-800 px-1 flex items-center">
-                <Calendar size={16} className="mr-1.5 text-sky-600" /> Salidas Activas ({activeMyEvents.length})
-              </h2>
-              
-              {activeMyEvents.length === 0 ? (
-                <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2rem] border border-sky-100 text-center shadow-sm">
-                  <p className="text-xs text-slate-500 font-medium">No tienes salidas activas en este momento.</p>
-                </div>
-              ) : (
-                activeMyEvents.map((event) => (
-                  <article 
-                    key={event.id} 
-                    onClick={() => setActiveEvent(event)} 
-                    className="bg-white/90 backdrop-blur-2xl rounded-2xl border border-sky-100 overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer group p-3.5 flex justify-between items-center"
-                  >
-                    <div className="space-y-1 pr-2">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-[10px] font-bold bg-sky-50 text-sky-700 px-2.5 py-0.5 rounded-full border border-sky-200">
-                          📅 {event.date}
-                        </span>
-                      </div>
-                      <h3 className="font-black text-slate-800 text-sm">{event.title}</h3>
-                      <p className="text-[11px] text-slate-500">Organiza: <span className="font-bold text-slate-700">{event.creator_name}</span></p>
-                    </div>
-
-                    <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200 group-hover:bg-sky-600 group-hover:text-white transition shrink-0">
-                      Entrar →
-                    </span>
-                  </article>
-                ))
-              )}
-            </div>
-
-            {closedMyEvents.length > 0 && (
-              <div className="space-y-3 pt-4 border-t border-sky-200/60">
-                <h2 className="text-sm font-black text-slate-600 px-1 flex items-center">
-                  <Archive size={16} className="mr-1.5 text-amber-600" /> Salidas Finalizadas / Archivo ({closedMyEvents.length})
-                </h2>
-                
-                {closedMyEvents.map((event) => (
-                  <article 
-                    key={event.id} 
-                    onClick={() => setActiveEvent(event)} 
-                    className="bg-amber-50/40 backdrop-blur-2xl rounded-2xl border border-amber-200/70 overflow-hidden shadow-xs hover:shadow-sm transition cursor-pointer group p-3.5 flex justify-between items-center opacity-85 hover:opacity-100"
-                  >
-                    <div className="space-y-1 pr-2">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-[10px] font-bold bg-amber-500 text-white px-2.5 py-0.5 rounded-full">
-                          🔒 Cerrada • 📅 {event.date}
-                        </span>
-                      </div>
-                      <h3 className="font-bold text-slate-800 text-sm">{event.title}</h3>
-                      <p className="text-[11px] text-slate-500">Organizó: <span className="font-bold text-slate-700">{event.creator_name}</span></p>
-                    </div>
-
-                    <span className="text-xs font-bold text-amber-800 bg-amber-100/80 px-3 py-2 rounded-xl border border-amber-300 group-hover:bg-amber-600 group-hover:text-white transition shrink-0">
-                      Timeline →
-                    </span>
-                  </article>
-                ))}
+        <div className="space-y-3">
+          <h2 className="text-sm font-black text-slate-800 px-1">Mis Salidas Activas</h2>
+          {events.filter(e => e.members.includes(currentUser.name) && e.status !== 'closed').map((event) => (
+            <article 
+              key={event.id} 
+              onClick={() => setActiveEvent(event)} 
+              className="bg-white/90 rounded-2xl border border-sky-100 p-3.5 flex justify-between items-center cursor-pointer shadow-sm hover:shadow"
+            >
+              <div>
+                <span className="text-[10px] font-bold bg-sky-50 text-sky-700 px-2.5 py-0.5 rounded-full">📅 {event.date}</span>
+                <h3 className="font-black text-slate-800 text-sm mt-1">{event.title}</h3>
               </div>
-            )}
-          </div>
-        )}
-
-        {activeTab === 'search' && (
-          <div className="space-y-4">
-            <input type="text" aria-label="Buscar salida" placeholder="Buscar por título o creador..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-white/90 backdrop-blur-2xl border border-sky-200 rounded-2xl px-4 py-3 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
-            
-            <div className="space-y-3">
-              <h2 className="text-sm font-black text-slate-800 px-1">Salidas Disponibles</h2>
-              {filteredSearchEvents.length === 0 ? (
-                <p className="text-xs text-slate-400 px-1 italic">No hay salidas activas disponibles para unirse.</p>
-              ) : (
-                filteredSearchEvents.map((event) => {
-                  const isMember = event.members.includes(currentUser.name);
-                  const isPending = event.pendingInvitations.includes(currentUser.name);
-                  const hasRequested = event.pendingRequests.includes(currentUser.name);
-
-                  return (
-                    <article key={event.id} className="bg-white/90 backdrop-blur-2xl rounded-2xl border border-sky-100 p-4 shadow-sm flex justify-between items-center">
-                      <div className="space-y-0.5 pr-2">
-                        <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200">
-                          📅 {event.date} • {event.creator_name}
-                        </span>
-                        <h3 className="font-bold text-sm text-slate-800">{event.title}</h3>
-                      </div>
-
-                      {isMember ? (
-                        <button onClick={() => setActiveEvent(event)} className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200">Ver Plan</button>
-                      ) : hasRequested ? (
-                        <span className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-2 rounded-xl border border-amber-200">Solicitado</span>
-                      ) : isPending ? (
-                        <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200">Invitado</span>
-                      ) : (
-                        <button onClick={() => handleRequestJoin(event.id)} className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl shadow">Unirme</button>
-                      )}
-                    </article>
-                  );
-                })
-              )}
-            </div>
-          </div>
-        )}
-
-        {activeTab === 'notifications' && (
-          <div className="space-y-4">
-            <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
-              <h2 className="text-sm font-black text-slate-800">Invitaciones Recibidas ({myInvitations.length})</h2>
-              {myInvitations.length === 0 ? <p className="text-xs text-slate-500">Sin invitaciones pendientes.</p> : myInvitations.map((event) => (
-                <div key={event.id} className="p-3.5 rounded-2xl border border-sky-200 bg-sky-50/60 flex justify-between items-center">
-                  <p className="text-xs font-bold text-slate-800">{event.title}</p>
-                  <div className="flex gap-2">
-                    <button onClick={() => handleAcceptInvitation(event.id)} aria-label="Aceptar" className="bg-emerald-600 text-white p-2 rounded-xl text-xs"><Check size={14} /></button>
-                    <button onClick={() => handleRejectInvitation(event.id)} aria-label="Rechazar" className="bg-slate-200 text-slate-700 p-2 rounded-xl text-xs"><X size={14} /></button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
-              <h2 className="text-sm font-black text-slate-800">Solicitudes para tus Eventos</h2>
-              {myApprovalRequests.length === 0 ? <p className="text-xs text-slate-500">Sin solicitudes pendientes.</p> : myApprovalRequests.map((event) => (
-                <div key={event.id} className="space-y-2">
-                  <p className="text-xs font-bold text-slate-700">{event.title}</p>
-                  {event.pendingRequests.map((userName) => (
-                    <div key={userName} className="p-3.5 rounded-2xl border border-indigo-200 bg-indigo-50/60 flex justify-between items-center">
-                      <p className="text-xs font-bold text-slate-800">{userName} quiere unirse</p>
-                      <div className="flex gap-2">
-                        <button onClick={() => handleApproveRequest(event.id, userName)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold">Aprobar</button>
-                        <button onClick={() => handleRejectRequest(event.id, userName)} aria-label="Rechazar" className="bg-slate-200 text-slate-700 p-1.5 rounded-xl text-xs"><X size={14} /></button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-            </div>
-
-            {isAdmin && (
-              <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-indigo-100 shadow-sm space-y-3">
-                <h2 className="text-sm font-black text-slate-800 flex items-center">
-                  <KeyRound size={16} className="mr-1.5 text-indigo-600" /> Solicitudes de Cambio de Contraseña ({passwordRequests.length})
-                </h2>
-                {passwordRequests.length === 0 ? (
-                  <p className="text-xs text-slate-500">No hay solicitudes de nueva contraseña pendientes.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {passwordRequests.map(req => (
-                      <div key={req.id} className="p-3 rounded-2xl border border-indigo-100 bg-indigo-50/40 flex justify-between items-center text-xs">
-                        <div>
-                          <p className="font-bold text-slate-800">{req.email}</p>
-                          <p className="text-[10px] text-slate-500">Nueva clave solicitada: <span className="font-bold text-indigo-600">{req.new_password}</span></p>
-                        </div>
-                        <div className="flex gap-1.5">
-                          <button 
-                            onClick={() => handleApprovePasswordRequest(req.id, req.email, req.new_password)}
-                            className="px-2.5 py-1.5 rounded-xl font-bold text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white transition"
-                          >
-                            Aprobar
-                          </button>
-                          <button 
-                            onClick={() => handleRejectPasswordRequest(req.id)}
-                            className="px-2.5 py-1.5 rounded-xl font-bold text-[10px] bg-red-600 hover:bg-red-700 text-white transition"
-                          >
-                            Rechazar
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {isAdmin && (
-              <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-red-100 shadow-sm space-y-3">
-                <h2 className="text-sm font-black text-slate-800 flex items-center">
-                  <ShieldAlert size={16} className="mr-1.5 text-red-600" /> Panel de Administrador (Gestión de Usuarios)
-                </h2>
-                <div className="space-y-2">
-                  {registeredUsers.map(u => (
-                    <div key={u.id} className="p-3 rounded-2xl border border-sky-100 bg-sky-50/40 flex justify-between items-center text-xs">
-                      <div>
-                        <p className="font-bold text-slate-800">{u.name} {u.is_blocked && <span className="text-red-600">(Bloqueado)</span>}</p>
-                        <p className="text-[10px] text-slate-500">{u.email}</p>
-                      </div>
-                      <div className="flex gap-1.5">
-                        <button 
-                          onClick={() => handleToggleBlockUser(u.id, u.is_blocked)}
-                          className={`px-2.5 py-1.5 rounded-xl font-bold text-[10px] transition ${u.is_blocked ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}
-                        >
-                          {u.is_blocked ? 'Desbloquear' : 'Bloquear'}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+              <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200">Entrar →</span>
+            </article>
+          ))}
+        </div>
       </main>
 
       {showCreateModal && (
@@ -1867,72 +1362,31 @@ export default function App() {
             <h2 className="font-black text-slate-800 text-lg">Organizar Nueva Salida</h2>
             <form onSubmit={handleCreateEvent} className="space-y-4">
               <div>
-                <label htmlFor="plan-title" className="block text-xs font-bold text-slate-700 mb-1">Título del Plan</label>
-                <input id="plan-title" type="text" placeholder="Ej. Cervecitas en Valdelagrana" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-sm text-slate-800" required />
+                <label className="block text-xs font-bold text-slate-700 mb-1">Título del Plan</label>
+                <input type="text" placeholder="Ej. Ruta de Tapas" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-sm" required />
               </div>
               <div>
-                <label htmlFor="plan-date" className="block text-xs font-bold text-slate-700 mb-1">Fecha</label>
-                <input id="plan-date" type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-sm text-slate-800" required />
-              </div>
-              
-              <div>
-                <label htmlFor="friend-search" className="block text-xs font-bold text-slate-700 mb-1">Invitar Usuarios Registrados</label>
-                <div className="relative mb-2">
-                  <Search className="absolute left-3.5 top-2.5 text-slate-400" size={16} />
-                  <input 
-                    id="friend-search"
-                    type="text" 
-                    placeholder="Buscar por nombre o email..." 
-                    value={friendSearchInput} 
-                    onChange={(e) => setFriendSearchInput(e.target.value)} 
-                    className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl pl-9 pr-4 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500" 
-                  />
-                </div>
-
-                <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto p-1 bg-sky-50/50 rounded-2xl border border-sky-200">
-                  {filteredUsersToInvite.length === 0 ? (
-                    <p className="text-[11px] text-slate-400 p-2 text-center w-full">No se encontraron usuarios registrados.</p>
-                  ) : (
-                    filteredUsersToInvite.map((u) => {
-                      const isSelected = selectedFriends.includes(u.name);
-                      return (
-                        <button 
-                          type="button" 
-                          key={u.email} 
-                          onClick={() => toggleFriendSelection(u.name)} 
-                          className={`text-xs px-3 py-1.5 rounded-xl font-bold border transition flex items-center space-x-1 ${isSelected ? 'bg-sky-600 text-white border-sky-600' : 'bg-white text-slate-700 border-sky-200 hover:border-sky-400'}`}
-                        >
-                          <span>{u.name}</span>
-                          {isSelected && <Check size={12} className="ml-1" />}
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Fecha</label>
+                <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-sm" required />
               </div>
 
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowCreateModal(false)} className="w-1/2 bg-sky-50 text-slate-700 font-bold py-2.5 rounded-2xl text-xs hover:bg-sky-100 transition border border-sky-200">Cancelar</button>
-                <button type="submit" className="w-1/2 bg-sky-600 hover:bg-sky-700 text-white font-bold py-2.5 rounded-2xl text-xs shadow transition">Crear Plan</button>
+                <button type="button" onClick={() => setShowCreateModal(false)} className="w-1/2 bg-sky-50 text-slate-700 font-bold py-2.5 rounded-2xl text-xs border border-sky-200">Cancelar</button>
+                <button type="submit" className="w-1/2 bg-sky-600 text-white font-bold py-2.5 rounded-2xl text-xs shadow">Crear Plan</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      <nav className="fixed bottom-3 left-4 right-4 bg-white/95 backdrop-blur-xl border border-sky-200 py-3 px-6 flex justify-around items-center z-40 rounded-[2rem] shadow-lg max-w-md mx-auto" aria-label="Navegación principal">
-        <button onClick={() => setActiveTab('my-events')} className={`flex flex-col items-center ${activeTab === 'my-events' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'}`}>
+      <nav className="fixed bottom-3 left-4 right-4 bg-white/95 backdrop-blur-xl border border-sky-200 py-3 px-6 flex justify-around items-center z-40 rounded-[2rem] shadow-lg max-w-md mx-auto">
+        <button onClick={() => setActiveTab('my-events')} className="flex flex-col items-center text-sky-600 font-bold">
           <Calendar size={20} />
           <span className="text-[10px] mt-0.5">Mis Salidas</span>
         </button>
-        <button onClick={() => setActiveTab('search')} className={`flex flex-col items-center ${activeTab === 'search' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'}`}>
-          <Search size={20} />
-          <span className="text-[10px] mt-0.5">Buscar</span>
-        </button>
-        <button onClick={() => setActiveTab('notifications')} className={`flex flex-col items-center relative ${activeTab === 'notifications' ? 'text-sky-600 font-bold' : 'text-slate-500 hover:text-slate-800'}`}>
+        <button onClick={() => setActiveTab('notifications')} className="flex flex-col items-center text-slate-500">
           <Inbox size={20} />
           <span className="text-[10px] mt-0.5">Aprobaciones</span>
-          {totalNotifications > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold shadow">{totalNotifications}</span>}
         </button>
       </nav>
     </div>
