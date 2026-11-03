@@ -61,7 +61,7 @@ export default function App() {
   const [expenseSpotId, setExpenseSpotId] = useState('');
   const [expenseReceiptUrl, setExpenseReceiptUrl] = useState('');
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
-  const [expenseParticipants, setExpenseParticipants] = useState(null); // Empezamos en null para controlarlo explícitamente
+  const [expenseParticipants, setExpenseParticipants] = useState([]);
   const [viewingReceiptUrl, setViewingReceiptUrl] = useState(null);
 
   // Fotos y Comentarios
@@ -100,6 +100,13 @@ export default function App() {
       setEditEmailInput(currentUser.email || '');
     }
   }, [currentUser]);
+
+  // Inicializar o sincronizar los participantes del gasto de forma limpia al cambiar de evento
+  useEffect(() => {
+    if (activeEvent && Array.isArray(activeEvent.members)) {
+      setExpenseParticipants([...activeEvent.members]);
+    }
+  }, [activeEvent?.id]);
 
   // Búsqueda en OpenStreetMap (Nominatim) al escribir
   useEffect(() => {
@@ -692,32 +699,30 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  // OBTENER PARTICIPANTES ACTUALES (SI ES NULL, INICIALIZA CON TODOS LOS MIEMBROS)
-  const getCurrentExpenseParticipants = () => {
-    const validMembers = activeEvent && Array.isArray(activeEvent.members) ? activeEvent.members : [];
-    if (expenseParticipants === null) {
-      return [...validMembers];
-    }
-    return expenseParticipants;
-  };
-
   const handleToggleExpenseParticipant = (memberName) => {
-    const current = getCurrentExpenseParticipants();
-    if (current.includes(memberName)) {
-      setExpenseParticipants(current.filter(m => m !== memberName));
-    } else {
-      setExpenseParticipants([...current, memberName]);
-    }
+    setExpenseParticipants(prev => {
+      const current = Array.isArray(prev) ? prev : [];
+      if (current.includes(memberName)) {
+        if (current.length === 1) return current; // Evitar desmarcar a todos
+        return current.filter(m => m !== memberName);
+      } else {
+        return [...current, memberName];
+      }
+    });
   };
 
-  // ENVIAR ESTRICTAMENTE LOS SELECCIONADOS ACTUALES
+  // ---------------------------------------------------------------------------
+  // MANEJADOR DE GASTOS BLINDADO: Asegura array de JavaScript puro y nativo
+  // ---------------------------------------------------------------------------
   const handleAddExpense = async (e) => {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
     
-    const finalParticipants = getCurrentExpenseParticipants();
-    
-    console.log("-> ENVIANDO A SUPABASE PARTICIPANTES:", finalParticipants);
+    const finalParticipants = (Array.isArray(expenseParticipants) && expenseParticipants.length > 0)
+      ? [...expenseParticipants]
+      : [...activeEvent.members];
+
+    console.log("🚀 [GASTO] Guardando participantes:", finalParticipants);
 
     const { error } = await supabase.from('expenses').insert([{
       event_id: activeEvent.id,
@@ -726,7 +731,7 @@ export default function App() {
       paid_by: currentUser.name,
       spot_id: expenseSpotId || null,
       receipt_url: expenseReceiptUrl || null,
-      participants: finalParticipants
+      participants: finalParticipants // Array nativo compatible con jsonb / text[] de Supabase
     }]);
 
     if (error) {
@@ -738,7 +743,7 @@ export default function App() {
     setExpenseAmount('');
     setExpenseSpotId('');
     setExpenseReceiptUrl('');
-    // Mantenemos la última selección exacta para el siguiente gasto
+    // Mantenemos la última selección del usuario activa para su comodidad
     await refreshAllData();
   };
 
@@ -781,25 +786,35 @@ export default function App() {
     await refreshAllData();
   };
 
-  // CÁLCULO INTELIGENTE DE DEUDAS
+  // ---------------------------------------------------------------------------
+  // ALGORITMO DE LIQUIDACIÓN Y REPARTO INTELIGENTE DE DEUDAS PERFECTO
+  // ---------------------------------------------------------------------------
   const calculateDebts = (members = [], expenses = []) => {
     if (!Array.isArray(members) || members.length === 0) return [];
+    
     const balancesMap = {};
     members.forEach(m => { balancesMap[m] = 0; });
 
     (expenses || []).forEach(exp => {
       const amount = Number(exp.amount) || 0;
-      balancesMap[exp.paid_by] = (balancesMap[exp.paid_by] || 0) + amount;
+      const paidBy = exp.paid_by;
+      
+      // Quien paga suma saldo a favor
+      if (balancesMap[paidBy] !== undefined) {
+        balancesMap[paidBy] += amount;
+      }
 
-      const parts = (Array.isArray(exp.participants) && exp.participants.length > 0) 
-        ? exp.participants 
+      // Obtener participantes reales de este gasto (si no viene definido o está vacío, reparte entre todos los miembros)
+      const parts = (Array.isArray(exp.participants) && exp.participants.length > 0)
+        ? exp.participants
         : members;
 
       const share = amount / parts.length;
 
-      parts.forEach(p => { 
+      // Cada participante del gasto asume su parte proporcional
+      parts.forEach(p => {
         if (balancesMap[p] !== undefined) {
-          balancesMap[p] -= share; 
+          balancesMap[p] -= share;
         }
       });
     });
@@ -810,6 +825,7 @@ export default function App() {
     
     const transactions = [];
     let dIndex = 0, cIndex = 0;
+
     while (dIndex < debtors.length && cIndex < creditors.length) {
       const amount = Math.min(debtors[dIndex].balance, creditors[cIndex].balance);
       if (amount > 0.01) {
@@ -1428,8 +1444,7 @@ export default function App() {
                       <label className="block text-[11px] font-bold text-slate-700">¿Entre quiénes se reparte este gasto?</label>
                       <div className="flex flex-wrap gap-1.5">
                         {validMembers.map(member => {
-                          const currentSelected = getCurrentExpenseParticipants();
-                          const isSelected = currentSelected.includes(member);
+                          const isSelected = Array.isArray(expenseParticipants) && expenseParticipants.includes(member);
                           return (
                             <button
                               key={member}
@@ -1558,7 +1573,7 @@ export default function App() {
             <div className="space-y-3">
               <h2 className="text-sm font-black text-slate-800 px-1">Mis Salidas Activas ({activeMyEvents.length})</h2>
               {activeMyEvents.map((event) => (
-                <article key={event.id} onClick={() => { setActiveEvent(event); setExpenseParticipants(null); }} className="bg-white/90 rounded-2xl border border-sky-100 p-3.5 flex justify-between items-center cursor-pointer shadow-sm hover:shadow">
+                <article key={event.id} onClick={() => setActiveEvent(event)} className="bg-white/90 rounded-2xl border border-sky-100 p-3.5 flex justify-between items-center cursor-pointer shadow-sm hover:shadow">
                   <div>
                     <span className="text-[10px] font-bold bg-sky-50 text-sky-700 px-2.5 py-0.5 rounded-full">📅 {event.date}</span>
                     <h3 className="font-black text-slate-800 text-sm mt-1">{event.title}</h3>
@@ -1573,7 +1588,7 @@ export default function App() {
                 <Archive size={16} className="mr-1.5 text-amber-600" /> Histórico de Salidas Cerradas ({closedMyEvents.length})
               </h2>
               {closedMyEvents.map((event) => (
-                <article key={event.id} onClick={() => { setActiveEvent(event); setExpenseParticipants(null); }} className="bg-amber-50/60 rounded-2xl border border-amber-200 p-3.5 flex justify-between items-center cursor-pointer shadow-xs hover:shadow">
+                <article key={event.id} onClick={() => setActiveEvent(event)} className="bg-amber-50/60 rounded-2xl border border-amber-200 p-3.5 flex justify-between items-center cursor-pointer shadow-xs hover:shadow">
                   <div>
                     <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">🔒 Cerrada • {event.date}</span>
                     <h3 className="font-black text-slate-800 text-sm mt-1">{event.title}</h3>
@@ -1609,7 +1624,7 @@ export default function App() {
                       <h3 className="font-bold text-sm text-slate-800 mt-1">{event.title}</h3>
                     </div>
                     {isMember ? (
-                      <button onClick={() => { setActiveEvent(event); setExpenseParticipants(null); }} className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200">Ver Plan</button>
+                      <button onClick={() => setActiveEvent(event)} className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200">Ver Plan</button>
                     ) : hasRequested ? (
                       <div className="flex items-center space-x-1.5">
                         <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1.5 rounded-xl border border-amber-200">Solicitado</span>
