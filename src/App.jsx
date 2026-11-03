@@ -717,10 +717,20 @@ export default function App() {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
     
-    // Tomamos exactamente los participantes marcados en el state o por defecto todos
-    const finalParticipants = (Array.isArray(expenseParticipants) && expenseParticipants.length > 0)
-      ? expenseParticipants
-      : [...activeEvent.members];
+    // Guardamos únicamente los miembros del plan que estén marcados.
+    const eventMembers = Array.isArray(activeEvent.members) ? activeEvent.members : [];
+    const finalParticipants = eventMembers.filter(member =>
+      Array.isArray(expenseParticipants) && expenseParticipants.includes(member)
+    );
+    const amount = Number(expenseAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert('Introduce un importe válido mayor que cero.');
+      return;
+    }
+    if (finalParticipants.length === 0) {
+      alert('Selecciona al menos una persona para repartir el gasto.');
+      return;
+    }
 
     console.log("💰 ENVIANDO GASTO A SUPABASE:", {
       description: expenseDesc.trim(),
@@ -731,7 +741,7 @@ export default function App() {
     const { error } = await supabase.from('expenses').insert([{
       event_id: activeEvent.id,
       description: expenseDesc.trim(),
-      amount: parseFloat(expenseAmount),
+      amount,
       paid_by: currentUser.name,
       spot_id: expenseSpotId || null,
       receipt_url: expenseReceiptUrl || null,
@@ -747,6 +757,8 @@ export default function App() {
     setExpenseAmount('');
     setExpenseSpotId('');
     setExpenseReceiptUrl('');
+    // El siguiente gasto comienza de nuevo con todos los miembros seleccionados.
+    setExpenseParticipants([...eventMembers]);
     await refreshAllData();
   };
 
@@ -1443,20 +1455,26 @@ export default function App() {
                       ))}
                     </select>
 
-                    <div className="space-y-1.5 pt-1">
-                      <label className="block text-[11px] font-bold text-slate-700">¿Entre quiénes se reparte este gasto?</label>
-                      <div className="flex flex-wrap gap-1.5">
+                    <div className="space-y-2 pt-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="block text-[11px] font-bold text-slate-700">¿Quién participa en este gasto?</label>
+                        <span className="text-[10px] font-semibold text-sky-700">{expenseParticipants.length} de {validMembers.length} seleccionados</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500">Por defecto están todos incluidos. Desmarca a quien no haya participado.</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {validMembers.map(member => {
                           const isSelected = Array.isArray(expenseParticipants) && expenseParticipants.includes(member);
                           return (
-                            <button
-                              key={member}
-                              type="button"
-                              onClick={() => handleToggleExpenseParticipant(member)}
-                              className={`text-xs font-bold px-3 py-1.5 rounded-xl border transition ${isSelected ? 'bg-sky-600 text-white border-sky-600 shadow-xs' : 'bg-sky-50 text-slate-600 border-sky-200'}`}
-                            >
-                              {isSelected ? '✓ ' : '+ '} {member}
-                            </button>
+                            <label key={member} className={`flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-xs font-semibold cursor-pointer transition ${isSelected ? 'bg-sky-50 border-sky-300 text-sky-900' : 'bg-white border-slate-200 text-slate-600'}`}>
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => handleToggleExpenseParticipant(member)}
+                                className="h-4 w-4 accent-sky-600"
+                              />
+                              <span>{member}</span>
+                              {isSelected && <span className="ml-auto text-[10px] font-bold text-sky-700">Participa</span>}
+                            </label>
                           );
                         })}
                       </div>
