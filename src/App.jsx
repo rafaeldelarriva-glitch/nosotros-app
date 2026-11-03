@@ -55,13 +55,14 @@ export default function App() {
   const [customQrLabel, setCustomQrLabel] = useState('');
   const [customQrUrl, setCustomQrUrl] = useState('');
 
-  // Gastos
+  // Gastos y Tickets
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseSpotId, setExpenseSpotId] = useState('');
   const [expenseReceiptUrl, setExpenseReceiptUrl] = useState('');
   const [isUploadingReceipt, setIsUploadingReceipt] = useState(false);
   const [expenseParticipants, setExpenseParticipants] = useState([]);
+  const [viewingReceiptUrl, setViewingReceiptUrl] = useState(null);
 
   // Fotos y Comentarios
   const [photoSpotId, setPhotoSpotId] = useState('');
@@ -395,11 +396,10 @@ export default function App() {
     }
   };
 
-  // FUNCIÓN PARA QUE EL ADMIN BORRE UN PLAN COMPLETO
-  const handleAdminDeleteEvent = async (eventId, eventTitle) => {
+  // BORRAR PLAN (DISPONIBLE PARA EL ADMINISTRADOR O EL CREADOR DEL PLAN)
+  const handleDeleteEvent = async (eventId, eventTitle) => {
     if (!confirm(`⚠️ ¿Estás seguro de ELIMINAR por completo el plan "${eventTitle}"? Esta acción borrará sus sitios, gastos y fotos asociados.`)) return;
     try {
-      // Borrar registros relacionados primero o confiar en cascada
       await supabase.from('spots').delete().eq('event_id', eventId);
       await supabase.from('expenses').delete().eq('event_id', eventId);
       await supabase.from('photos').delete().eq('event_id', eventId);
@@ -652,6 +652,18 @@ export default function App() {
     await refreshAllData();
   };
 
+  const handleReceiptUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setIsUploadingReceipt(true);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setExpenseReceiptUrl(reader.result);
+      setIsUploadingReceipt(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleAddExpense = async (e) => {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
@@ -739,12 +751,16 @@ export default function App() {
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.email === 'rafa@ejemplo.com';
 
-  // RECOPILAR SOLICITUDES EXCLUYENDO LAS DEL PROPIO CREADOR (para que no se auto-apruebe)
+  // RECOPILAR SOLICITUDES: Solo mostrar si el usuario actual es el CREADOR del plan o ADMIN
   const allPendingPlanRequests = events.flatMap(ev => {
     const rawMembers = Array.isArray(ev.rawEventMembers) ? ev.rawEventMembers : [];
+    const isUserCreator = ev.creator_name === currentUser?.name;
+    
+    if (!isUserCreator && !isAdmin) return [];
+
     return rawMembers
       .filter(m => m.status === 'pending_request' && m.user_name !== ev.creator_name)
-      .map(m => ({ eventId: ev.id, eventTitle: ev.title, userName: m.user_name }));
+      .map(m => ({ eventId: ev.id, eventTitle: ev.title, userName: m.user_name, creatorName: ev.creator_name }));
   });
 
   const renderSpotCard = (spot, isSelected, maxVotes, selectedSpotsList = []) => {
@@ -1016,6 +1032,9 @@ export default function App() {
     const isClosed = activeEvent.status === 'closed';
     const maxVotes = Math.max(0, ...validSpots.map(s => s.votes || 0));
 
+    // Permitir borrar plan al administrador o al creador del plan
+    const canDeleteEvent = isAdmin || isCreator;
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
         <div className="fixed top-3 left-4 z-50">
@@ -1056,10 +1075,10 @@ export default function App() {
         </div>
 
         <main className="max-w-md mx-auto p-4 space-y-4 relative z-10">
-          {/* BOTÓN DE BORRAR PLAN (SOLO ADMIN) */}
-          {isAdmin && (
-            <button onClick={() => handleAdminDeleteEvent(activeEvent.id, activeEvent.title)} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow-lg flex items-center justify-center space-x-2 transition">
-              <Trash2 size={16} /> <span>Eliminar este Plan por completo (Admin)</span>
+          {/* BOTÓN DE BORRAR PLAN (ADMIN O CREADOR) */}
+          {canDeleteEvent && (
+            <button onClick={() => handleDeleteEvent(activeEvent.id, activeEvent.title)} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow-lg flex items-center justify-center space-x-2 transition">
+              <Trash2 size={16} /> <span>Eliminar este Plan por completo</span>
             </button>
           )}
 
@@ -1151,7 +1170,14 @@ export default function App() {
                                         <p className="font-bold text-slate-800">{exp.description}</p>
                                         <p className="text-[10px] text-slate-500">Pagado por {exp.paid_by}</p>
                                       </div>
-                                      <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
+                                      <div className="flex items-center space-x-2">
+                                        <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
+                                        {exp.receipt_url && (
+                                          <button onClick={(e) => { e.stopPropagation(); setViewingReceiptUrl(exp.receipt_url); }} className="bg-sky-50 text-sky-700 p-1.5 rounded-lg border border-sky-200 text-[10px] font-bold flex items-center">
+                                            <Receipt size={12} className="mr-1" /> Ticket
+                                          </button>
+                                        )}
+                                      </div>
                                     </div>
                                   ))
                                 )}
@@ -1303,7 +1329,14 @@ export default function App() {
                             <p className="font-bold text-slate-800">{exp.description}</p>
                             <p className="text-[10px] text-slate-500">Pagado por <span className="font-bold text-sky-600">{exp.paid_by}</span></p>
                           </div>
-                          <span className="font-black text-emerald-600 text-sm">{Number(exp.amount).toFixed(2)}€</span>
+                          <div className="flex items-center space-x-2">
+                            <span className="font-black text-emerald-600 text-sm">{Number(exp.amount).toFixed(2)}€</span>
+                            {exp.receipt_url && (
+                              <button onClick={() => setViewingReceiptUrl(exp.receipt_url)} className="bg-sky-50 text-sky-700 px-2 py-1 rounded-xl border border-sky-200 text-[10px] font-bold flex items-center">
+                                <Receipt size={12} className="mr-1" /> Ver Ticket
+                              </button>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1321,8 +1354,14 @@ export default function App() {
                       ))}
                     </select>
 
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-bold text-slate-700">Adjuntar Ticket / Recibo (Opcional)</label>
+                      <input type="file" accept="image/*" onChange={handleReceiptUpload} className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100" />
+                      {expenseReceiptUrl && <p className="text-[10px] text-emerald-600 font-bold mt-1">✓ Ticket adjuntado correctamente</p>}
+                    </div>
+
                     <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow mt-1">
-                      Añadir Gasto
+                      {isUploadingReceipt ? 'Procesando ticket...' : 'Añadir Gasto'}
                     </button>
                   </form>
                 </div>
@@ -1378,6 +1417,21 @@ export default function App() {
                 <img src={viewingPhotoUrl} alt="Foto" className="w-full h-auto object-contain max-h-96" />
               </div>
               <button onClick={() => setViewingPhotoUrl(null)} className="w-full bg-sky-600 text-white font-bold py-2.5 rounded-xl text-xs">Cerrar</button>
+            </div>
+          </div>
+        )}
+
+        {viewingReceiptUrl && (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white max-w-sm w-full p-4 rounded-[2rem] shadow-2xl space-y-4 border border-sky-100 text-center">
+              <div className="flex justify-between items-center px-1">
+                <h3 className="font-black text-slate-800 text-sm">Ticket / Recibo</h3>
+                <button onClick={() => setViewingReceiptUrl(null)} className="p-1 bg-sky-50 rounded-full text-slate-600"><X size={18} /></button>
+              </div>
+              <div className="w-full max-h-96 rounded-2xl overflow-hidden border border-sky-200 bg-sky-50 flex items-center justify-center">
+                <img src={viewingReceiptUrl} alt="Ticket" className="w-full h-auto object-contain max-h-96" />
+              </div>
+              <button onClick={() => setViewingReceiptUrl(null)} className="w-full bg-sky-600 text-white font-bold py-2.5 rounded-xl text-xs">Cerrar</button>
             </div>
           </div>
         )}
@@ -1461,7 +1515,7 @@ export default function App() {
                 return (
                   <article key={event.id} className="bg-white/90 rounded-2xl border border-sky-100 p-4 shadow-sm flex justify-between items-center">
                     <div>
-                      <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">📅 {event.date} • {event.creator_name}</span>
+                      <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">📅 {event.date} • Organiza: {event.creator_name}</span>
                       <h3 className="font-bold text-sm text-slate-800 mt-1">{event.title}</h3>
                     </div>
                     {isMember ? (
@@ -1543,10 +1597,10 @@ export default function App() {
           <div className="space-y-4">
             <div className="bg-white/90 p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
               <h2 className="text-sm font-black text-slate-800 flex items-center">
-                <UserPlus size={16} className="mr-1.5 text-sky-600" /> Solicitudes para unirse a Planes ({allPendingPlanRequests.length})
+                <UserPlus size={16} className="mr-1.5 text-sky-600" /> Solicitudes para unirse a mis Planes ({allPendingPlanRequests.length})
               </h2>
               {allPendingPlanRequests.length === 0 ? (
-                <p className="text-xs text-slate-400">No hay solicitudes pendientes de otros usuarios.</p>
+                <p className="text-xs text-slate-400">No hay solicitudes pendientes de otros usuarios para tus planes.</p>
               ) : (
                 <div className="space-y-2">
                   {allPendingPlanRequests.map((req, idx) => (
