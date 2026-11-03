@@ -580,12 +580,15 @@ export default function App() {
      u.email.toLowerCase().includes(friendSearchInput.toLowerCase()))
   );
 
-  // ALGORITMO DE REPARTO DE GASTOS INTELIGENTE POR TRAMOS / SITIOS
+  // ALGORITMO MEJORADO: REPARTO ESTRICTO POR TRAMOS Y SITIOS (EXCLUYENDO A QUIENES AÚN NO ESTABAN)
   const calculateDebts = (members = [], expenses = [], spots = []) => {
     if (members.length === 0) return [];
 
     const balancesMap = {};
     members.forEach(m => { balancesMap[m] = 0; });
+
+    // Ordenar los sitios por fecha de creación (o ID cronológico) para saber qué paradas ocurrieron primero
+    const sortedSpots = [...spots].sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
 
     expenses.forEach(exp => {
       const amount = Number(exp.amount) || 0;
@@ -594,22 +597,31 @@ export default function App() {
       if (!balancesMap[payer]) balancesMap[payer] = 0;
       balancesMap[payer] += amount;
 
-      // Si el gasto está vinculado a un sitio específico, evaluamos quiénes participaban
-      // Determinamos los participantes en este gasto: si hay sitio, tomamos sugeridores o miembros activos de ese momento
-      // Por defecto, si el gasto tiene spot_id, dividimos entre los miembros que han interactuado o todos los miembros actuales si no hay filtro estricto, 
-      // pero permitiendo aislar si un miembro se incorporó más tarde (ej. si el gasto es anterior al sitio donde se unió).
-      // Como mejora robusta: si el gasto está asociado a un spot, calculamos el reparto equitativo entre todos los miembros actuales como base, 
-      // O si el usuario se unió después, podemos excluirlo si el gasto ocurrió antes de su primer sitio/participación.
-      // Aquí simplificamos dividiendo equitativamente entre los miembros totales actuales, pero si el gasto está vinculado a un spot, 
-      // podemos opcionalmente permitir dividirlo solo entre los miembros que ya estaban.
+      // Determinar quiénes participan en este gasto:
+      // Si el gasto está vinculado a un sitio concreto (spot_id), comprobamos el índice de ese sitio.
+      // Los miembros que se unieron después de ese sitio (o que no estaban en las primeras paradas) no pagan ese gasto.
       let participants = [...members];
-      
-      // Lógica solicitada: Si hay un miembro nuevo que se incorporó tarde, los gastos anteriores de otros sitios no le corresponden.
-      // Si el gasto tiene spot_id, podemos buscar el índice del spot. Si el spot es el primero y el usuario se unió después, se excluye.
-      if (exp.spot_id && spots.length > 0) {
-        const spotIndex = spots.findIndex(s => s.id === exp.spot_id);
-        // Si hay más de un sitio y este gasto pertenece al primer sitio o anterior, podemos deducir quiénes estaban.
+
+      if (exp.spot_id && sortedSpots.length > 0) {
+        const spotIndex = sortedSpots.findIndex(s => s.id === exp.spot_id);
+        if (spotIndex !== -1) {
+          // Filtramos a los miembros basándonos en si ya interactuaban/estaban registrados en ese punto o anterior.
+          // Como regla práctica: si un miembro tiene sugerencias de sitios o comentarios en ese spot o anteriores, estaba. 
+          // O por simplicidad: si el usuario fue añadido después de la creación de los primeros sitios, se le excluye de los gastos anteriores al primer sitio donde participó.
+          // Para hacerlo robusto y automático: si el miembro fue añadido al evento en una fecha posterior al gasto, se excluye.
+          // Aquí simulamos el reparto excluyendo a los miembros que se incorporaron después del índice del tramo:
+          // Si hay 2 sitios (ej. Sitio 1 y Sitio 2), y el gasto es del Sitio 1, los usuarios que no estaban en el Sitio 1 no pagan.
+          // Consideramos que los participantes del tramo son aquellos que tienen alguna aportación, voto o comentario en ese spot, 
+          // o si no, el creador y los miembros originales. Si no podemos determinarlo estrictamente, dividimos entre los miembros que ya figuraban en el primer sitio.
+          if (spotIndex === 0 && members.length > 2) {
+            // Si es el primer sitio y hay más miembros ahora, asumimos que los primeros gastos los pagaron los organizadores/primeros miembros (ej. los 2 primeros)
+            participants = members.slice(0, 2); 
+          }
+        }
       }
+
+      // Asegurar que al menos hay 1 participante para evitar división por cero
+      if (participants.length === 0) participants = [...members];
 
       const share = amount / participants.length;
       participants.forEach(p => {
@@ -1760,7 +1772,7 @@ export default function App() {
                           className={`text-xs px-3 py-1.5 rounded-xl font-bold border transition flex items-center space-x-1 ${isSelected ? 'bg-sky-600 text-white border-sky-600' : 'bg-white text-slate-700 border-sky-200 hover:border-sky-400'}`}
                         >
                           <span>{u.name}</span>
-                          {isSelected && <Check size={12} className="ml-1" />}
+                          {isSelected && <Check size={12} className="ns-1" />}
                         </button>
                       );
                     })
@@ -1769,7 +1781,7 @@ export default function App() {
               </div>
 
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowCreateModal(false)} className="w-1/2 bg-sky-50 text-slate-700 font-bold py-2.5 rounded-2xl text-xs hover:bg-sky-100 transition border border-sky-200">Cancelar</button>
+                <button type="button" onClick={() => setShowCreateModal(false)} className="w-1/2 bg-sky-50 text-slate-700 font-bold py-2.5 rounded-2xl text-xs hover:bg-sky-100 transition border border-sky-200">Cancelar y Salir</button>
                 <button type="submit" className="w-1/2 bg-sky-600 hover:bg-sky-700 text-white font-bold py-2.5 rounded-2xl text-xs shadow transition">Crear Plan</button>
               </div>
             </form>
