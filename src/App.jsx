@@ -97,6 +97,9 @@ export default function App() {
   // Modales y formularios
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newTitle, setNewTitle] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [additionalInviteSearch, setAdditionalInviteSearch] = useState('');
+  const [invitingToPlan, setInvitingToPlan] = useState(false);
   const [newDate, setNewDate] = useState('');
   const [newInvitees, setNewInvitees] = useState([]);
   const [inviteSearch, setInviteSearch] = useState('');
@@ -857,7 +860,7 @@ export default function App() {
     try {
       const { data: newEv, error: eventError } = await supabase
         .from('events')
-        .insert([{ title: newTitle.trim(), date: newDate, creator_id: currentUser.id, creator_name: currentUser.name, status: 'active' }])
+        .insert([{ title: newTitle.trim(), description: newDescription.trim(), date: newDate, creator_id: currentUser.id, creator_name: currentUser.name, status: 'active' }])
         .select()
         .single();
       if (eventError) throw eventError;
@@ -870,6 +873,7 @@ export default function App() {
       const { error: memberError } = await supabase.from('event_members').insert(rows);
       if (memberError) throw memberError;
       setNewTitle('');
+      setNewDescription('');
       setNewDate('');
       setNewInvitees([]);
       setInviteSearch('');
@@ -881,6 +885,23 @@ export default function App() {
     } finally {
       setIsCreatingEvent(false);
     }
+  };
+
+  // Solo quien organiza puede invitar nuevos participantes, también después de crear el plan.
+  const handleInviteToExistingPlan = async (person) => {
+    if (!activeEvent || !currentUser || invitingToPlan || activeEvent.status === 'closed') return;
+    if (activeEvent.creator_id !== currentUser.id && !( !activeEvent.creator_id && activeEvent.creator_name === currentUser.name)) return;
+    const already = (activeEvent.rawEventMembers || []).some(m => m.user_name === person.name);
+    if (already) { alert('Esta persona ya figura en el plan o tiene una invitación pendiente.'); return; }
+    setInvitingToPlan(true);
+    try {
+      const { error } = await supabase.from('event_members').insert([{ event_id: activeEvent.id, user_name: person.name, status: 'pending_invite' }]);
+      if (error) throw error;
+      setAdditionalInviteSearch('');
+      await refreshAllData();
+      alert(`Invitación enviada a ${person.name}.`);
+    } catch (err) { alert('No se pudo enviar la invitación: ' + (err.message || 'Error desconocido')); }
+    finally { setInvitingToPlan(false); }
   };
 
   const handleRemoveMember = async (memberName) => {
@@ -1543,6 +1564,7 @@ export default function App() {
             <div className="flex justify-between items-start">
               <div>
                 <h1 className="text-xl font-black text-slate-900 tracking-tight">{activeEvent.title}</h1>
+                {activeEvent.description && <p className="text-xs text-slate-700 mt-2 whitespace-pre-wrap break-words">{activeEvent.description}</p>}
                 <p className="text-xs text-slate-600 font-medium flex items-center mt-0.5">
                   <Calendar size={13} className="mr-1 text-sky-600" /> Fecha del plan: {activeEvent.date}
                 </p>
@@ -1712,6 +1734,22 @@ export default function App() {
                   })}
                 </div>
               </div>
+
+              {isCreator && (
+                <section className="bg-white/90 p-4 rounded-3xl border border-sky-100 space-y-3" aria-label="Invitar más personas">
+                  <h3 className="text-xs font-black text-slate-800">Invitar más personas al plan</h3>
+                  <p className="text-[11px] text-slate-500">Puedes invitar a usuarios registrados en cualquier momento mientras el plan esté abierto.</p>
+                  <input type="search" aria-label="Buscar usuarios para invitar" value={additionalInviteSearch} onChange={e => setAdditionalInviteSearch(e.target.value)} placeholder="Buscar por nombre o correo..." className="w-full rounded-xl border border-sky-200 p-3 text-sm" />
+                  {additionalInviteSearch.trim() && (
+                    <div className="space-y-1 max-h-44 overflow-y-auto">
+                      {registeredUsers.filter(u => u.name && u.id !== currentUser.id && u.is_approved !== false && !u.is_blocked && !(activeEvent.rawEventMembers || []).some(m => m.user_name === u.name) && (u.name.toLocaleLowerCase('es').includes(additionalInviteSearch.trim().toLocaleLowerCase('es')) || (u.email || '').toLocaleLowerCase('es').includes(additionalInviteSearch.trim().toLocaleLowerCase('es')))).slice(0, 15).map(u => (
+                        <button type="button" disabled={invitingToPlan} key={u.id} onClick={() => handleInviteToExistingPlan(u)} className="w-full flex justify-between items-center text-left rounded-xl bg-sky-50 p-2 text-xs font-bold text-sky-800 disabled:opacity-50"><span>{u.name}</span><span>+ Invitar</span></button>
+                      ))}
+                    </div>
+                  )}
+                  {(activeEvent.pendingInvitations || []).length > 0 && <p className="text-xs text-amber-700">Invitaciones pendientes: {activeEvent.pendingInvitations.join(', ')}</p>}
+                </section>
+              )}
 
               <div className="flex bg-white/90 backdrop-blur-xl p-1 rounded-2xl border border-sky-100 shadow-sm" role="tablist">
                 <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>Ruta y Sitios</button>
@@ -2040,7 +2078,7 @@ export default function App() {
   const matchesPlanFilters = (e, query, from, to) => {
     const q = query.trim().toLocaleLowerCase('es');
     const date = String(e.date || '').slice(0, 10);
-    return (!q || String(e.title || '').toLocaleLowerCase('es').includes(q) || String(e.creator_name || '').toLocaleLowerCase('es').includes(q))
+    return (!q || String(e.title || '').toLocaleLowerCase('es').includes(q) || String(e.creator_name || '').toLocaleLowerCase('es').includes(q) || String(e.description || '').toLocaleLowerCase('es').includes(q))
       && (!from || (date && date >= from)) && (!to || (date && date <= to));
   };
   const filteredSearchEvents = validEvents.filter(e => e.status !== 'closed' && matchesPlanFilters(e, searchQuery, searchPlanFrom, searchPlanTo));
@@ -2189,7 +2227,7 @@ export default function App() {
           <div className="space-y-4">
             <input 
               type="text" 
-              placeholder="Buscar por título o creador..." 
+              placeholder="Buscar por título, descripción o creador..." 
               value={searchQuery} 
               onChange={(e) => { setSearchQuery(e.target.value); setSearchPlanPage(1); }} 
               className="w-full bg-white/90 border border-sky-200 rounded-2xl px-4 py-3 text-sm text-slate-800" 
@@ -2207,22 +2245,24 @@ export default function App() {
                 const pendingReq = Array.isArray(event.pendingRequests) ? event.pendingRequests : [];
                 const isMember = membersList.includes(currentUser?.name);
                 const hasRequested = pendingReq.includes(currentUser?.name);
+                const isInvited = (event.pendingInvitations || []).includes(currentUser?.name);
 
                 return (
                   <article key={event.id} className="bg-white/90 rounded-2xl border border-sky-100 p-4 shadow-sm flex justify-between items-center">
                     <div>
                       <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">📅 {event.date} • Organiza: {event.creator_name}</span>
                       <h3 className="font-bold text-sm text-slate-800 mt-1">{event.title}</h3>
+                      {event.description && <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap break-words">{event.description}</p>}
                     </div>
                     {isMember ? (
                       <button onClick={() => setActiveEvent(event)} className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200">Ver Plan</button>
-                    ) : hasRequested ? (
-                      <div className="flex items-center space-x-1.5">
-                        <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1.5 rounded-xl border border-amber-200">Solicitado</span>
-                        <button onClick={() => handleCancelRequestJoin(event.id)} className="p-1.5 bg-red-50 text-red-600 rounded-xl border border-red-200"><X size={14} /></button>
+                    ) : isInvited ? (
+                      <div className="flex flex-col gap-1.5">
+                        <button type="button" disabled={processingInvitationId === event.id} onClick={() => handleCalendarInvitation(event.id, true)} className="bg-emerald-600 text-white text-xs font-bold px-3 py-2 rounded-xl">Aceptar invitación</button>
+                        <button type="button" disabled={processingInvitationId === event.id} onClick={() => handleCalendarInvitation(event.id, false)} className="text-xs font-bold text-red-700 border border-red-200 px-3 py-2 rounded-xl">Rechazar</button>
                       </div>
                     ) : (
-                      <button onClick={() => handleRequestJoin(event.id)} className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl shadow">Unirme</button>
+                      <span className="text-xs text-slate-500">Solo por invitación</span>
                     )}
                   </article>
                 );
@@ -2453,6 +2493,10 @@ export default function App() {
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Título del Plan</label>
                 <input type="text" placeholder="Ej. Cervecitas" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-sm" required />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Descripción del plan</label>
+                <textarea value={newDescription} onChange={e => setNewDescription(e.target.value)} rows={3} maxLength={1200} placeholder="¿En qué consiste? ¿Qué tenéis pensado hacer?" className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-sm" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Fecha</label>
