@@ -22,6 +22,15 @@ export default function App() {
   const [calendarMonth, setCalendarMonth] = useState(() => new Date().getMonth());
   const [calendarYear, setCalendarYear] = useState(() => new Date().getFullYear());
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
+  const [calendarExpanded, setCalendarExpanded] = useState(false);
+  const [myPlanQuery, setMyPlanQuery] = useState('');
+  const [myPlanFrom, setMyPlanFrom] = useState('');
+  const [myPlanTo, setMyPlanTo] = useState('');
+  const [myPlanStatus, setMyPlanStatus] = useState('active');
+  const [myPlanPage, setMyPlanPage] = useState(1);
+  const [searchPlanFrom, setSearchPlanFrom] = useState('');
+  const [searchPlanTo, setSearchPlanTo] = useState('');
+  const [searchPlanPage, setSearchPlanPage] = useState(1);
   const [processingInvitationId, setProcessingInvitationId] = useState(null);
   const [activeEvent, setActiveEvent] = useState(null);
   const [eventSubTab, setEventSubTab] = useState('spots');
@@ -30,6 +39,8 @@ export default function App() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDate, setNewDate] = useState('');
+  const [newInvitees, setNewInvitees] = useState([]);
+  const [isCreatingEvent, setIsCreatingEvent] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
   // Perfiles, solicitudes y administración
@@ -674,24 +685,34 @@ export default function App() {
 
   const handleCreateEvent = async (e) => {
     e.preventDefault();
-    if (!newTitle.trim() || !newDate || !currentUser) return;
-
+    if (isCreatingEvent || !newTitle.trim() || !newDate || !currentUser) return;
+    setIsCreatingEvent(true);
+    let createdEventId = null;
     try {
       const { data: newEv, error: eventError } = await supabase
         .from('events')
-        .insert([{ title: newTitle, date: newDate, creator_id: currentUser.id, creator_name: currentUser.name, status: 'active' }])
+        .insert([{ title: newTitle.trim(), date: newDate, creator_id: currentUser.id, creator_name: currentUser.name, status: 'active' }])
         .select()
         .single();
-
       if (eventError) throw eventError;
-      await supabase.from('event_members').insert([{ event_id: newEv.id, user_name: currentUser.name, status: 'member' }]);
-
+      createdEventId = newEv.id;
+      const invitees = [...new Set(newInvitees)].filter(n => n !== currentUser.name);
+      const rows = [
+        { event_id: newEv.id, user_name: currentUser.name, status: 'member' },
+        ...invitees.map(user_name => ({ event_id: newEv.id, user_name, status: 'pending_invite' }))
+      ];
+      const { error: memberError } = await supabase.from('event_members').insert(rows);
+      if (memberError) throw memberError;
       setNewTitle('');
       setNewDate('');
+      setNewInvitees([]);
       setShowCreateModal(false);
       await refreshAllData();
     } catch (err) {
-      alert('Error: ' + err.message);
+      alert((createdEventId ? 'El plan se ha creado, pero no se pudieron registrar correctamente sus participantes/invitaciones. Revisa el plan antes de volver a intentarlo. ' : 'No se pudo crear el plan. ') + (err.message || 'Error desconocido'));
+      await refreshAllData();
+    } finally {
+      setIsCreatingEvent(false);
     }
   };
 
@@ -1036,6 +1057,10 @@ export default function App() {
   };
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.email === 'rafa@ejemplo.com';
+
+  const myPendingInvitations = events
+    .filter(ev => ev.status !== 'closed' && ev.pendingInvitations?.includes(currentUser?.name))
+    .map(ev => ({ eventId: ev.id, eventTitle: ev.title, date: ev.date, creatorName: ev.creator_name }));
 
   const allPendingPlanRequests = events.flatMap(ev => {
     const rawMembers = Array.isArray(ev.rawEventMembers) ? ev.rawEventMembers : [];
@@ -1828,7 +1853,29 @@ export default function App() {
   const myEventsAll = validEvents.filter(e => Array.isArray(e.members) && e.members.includes(currentUser?.name));
   const activeMyEvents = myEventsAll.filter(e => e.status !== 'closed');
   const closedMyEvents = myEventsAll.filter(e => e.status === 'closed');
-  const filteredSearchEvents = validEvents.filter(e => e.status !== 'closed' && (e.title?.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name?.toLowerCase().includes(searchQuery.toLowerCase())));
+  const matchesPlanFilters = (e, query, from, to) => {
+    const q = query.trim().toLocaleLowerCase('es');
+    const date = String(e.date || '').slice(0, 10);
+    return (!q || String(e.title || '').toLocaleLowerCase('es').includes(q) || String(e.creator_name || '').toLocaleLowerCase('es').includes(q))
+      && (!from || (date && date >= from)) && (!to || (date && date <= to));
+  };
+  const filteredSearchEvents = validEvents.filter(e => e.status !== 'closed' && matchesPlanFilters(e, searchQuery, searchPlanFrom, searchPlanTo));
+  const filteredMyEvents = myEventsAll.filter(e => (myPlanStatus === 'all' || (myPlanStatus === 'closed' ? e.status === 'closed' : e.status !== 'closed')) && matchesPlanFilters(e, myPlanQuery, myPlanFrom, myPlanTo));
+  const PLAN_PAGE_SIZE = 6;
+  const paginatePlans = (items, page) => items.slice((page - 1) * PLAN_PAGE_SIZE, page * PLAN_PAGE_SIZE);
+  const myPlanPages = Math.max(1, Math.ceil(filteredMyEvents.length / PLAN_PAGE_SIZE));
+  const searchPlanPages = Math.max(1, Math.ceil(filteredSearchEvents.length / PLAN_PAGE_SIZE));
+  const currentMyPage = Math.min(myPlanPage, myPlanPages);
+  const currentSearchPage = Math.min(searchPlanPage, searchPlanPages);
+  const visibleMyEvents = paginatePlans(filteredMyEvents, currentMyPage);
+  const visibleSearchEvents = paginatePlans(filteredSearchEvents, currentSearchPage);
+  const renderPlanPagination = (page, pages, onPageChange) => pages <= 1 ? null : (
+    <nav aria-label="Paginación de planes" className="flex items-center justify-between gap-2 pt-2">
+      <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)} className="rounded-xl border border-sky-200 px-3 py-2 text-xs font-bold text-sky-700 disabled:opacity-40">← Anterior</button>
+      <span className="text-xs font-bold text-slate-600">Página {page} de {pages}</span>
+      <button type="button" disabled={page >= pages} onClick={() => onPageChange(page + 1)} className="rounded-xl border border-sky-200 px-3 py-2 text-xs font-bold text-sky-700 disabled:opacity-40">Siguiente →</button>
+    </nav>
+  );
 
   // Calendario personal: únicamente planes activos confirmados o invitaciones recibidas.
   const calendarEvents = validEvents.filter(e => e.status !== 'closed' &&
@@ -1876,8 +1923,10 @@ export default function App() {
             <section className="bg-white/95 rounded-3xl border border-sky-100 p-4 shadow-sm space-y-3" aria-label="Mi calendario de planes">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-black text-slate-800 flex items-center gap-2"><Calendar size={17} className="text-sky-600" /> Mi calendario</h2>
-                <button type="button" onClick={() => { const d = new Date(); setCalendarYear(d.getFullYear()); setCalendarMonth(d.getMonth()); setSelectedCalendarDate(todayKey); }} className="text-xs font-bold text-sky-700 px-2 py-1 rounded-lg bg-sky-50">Hoy</button>
+                <button type="button" aria-expanded={calendarExpanded} aria-controls="personal-calendar-content" onClick={() => setCalendarExpanded(v => !v)} className="text-xs font-bold text-sky-700 px-3 py-2 rounded-xl bg-sky-50 border border-sky-200">{calendarExpanded ? 'Ocultar ▲' : 'Mostrar calendario ▼'}</button>
               </div>
+              {calendarExpanded && <div id="personal-calendar-content" className="space-y-3">
+              <div className="flex justify-end"><button type="button" onClick={() => { const d = new Date(); setCalendarYear(d.getFullYear()); setCalendarMonth(d.getMonth()); setSelectedCalendarDate(todayKey); }} className="text-xs font-bold text-sky-700 px-2 py-1 rounded-lg bg-sky-50">Hoy</button></div>
               {upcomingEvent && <button type="button" onClick={() => setActiveEvent(upcomingEvent)} className="w-full text-left rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-900">
                 <span className="font-black">Próximo encuentro:</span> {upcomingEvent.title} · {eventDateKey(upcomingEvent)} →
               </button>}
@@ -1920,35 +1969,35 @@ export default function App() {
                     </div>;
                   })}
               </div>}
+              </div>}
             </section>
 
-            <div className="space-y-3">
-              <h2 className="text-sm font-black text-slate-800 px-1">Mis Salidas Activas ({activeMyEvents.length})</h2>
-              {activeMyEvents.map((event) => (
-                <article key={event.id} onClick={() => setActiveEvent(event)} className="bg-white/90 rounded-2xl border border-sky-100 p-3.5 flex justify-between items-center cursor-pointer shadow-sm hover:shadow">
-                  <div>
-                    <span className="text-[10px] font-bold bg-sky-50 text-sky-700 px-2.5 py-0.5 rounded-full">📅 {event.date}</span>
-                    <h3 className="font-black text-slate-800 text-sm mt-1">{event.title}</h3>
-                  </div>
-                  <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200">Entrar →</span>
-                </article>
+            <section className="space-y-3">
+              <h2 className="text-sm font-black text-slate-800 px-1">Mis planes ({filteredMyEvents.length})</h2>
+              <div className="bg-white rounded-2xl border border-sky-100 p-3 space-y-3">
+                <label className="block text-xs font-bold text-slate-700">Buscar por nombre u organizador
+                  <input type="search" value={myPlanQuery} onChange={e => { setMyPlanQuery(e.target.value); setMyPlanPage(1); }} placeholder="Buscar mis planes..." className="mt-1 w-full rounded-xl border border-sky-200 p-2.5 text-sm" />
+                </label>
+                <label className="block text-xs font-bold text-slate-700">Estado
+                  <select value={myPlanStatus} onChange={e => { setMyPlanStatus(e.target.value); setMyPlanPage(1); }} className="mt-1 w-full rounded-xl border border-sky-200 p-2.5 text-sm">
+                    <option value="active">Activos</option><option value="closed">Cerrados</option><option value="all">Todos</option>
+                  </select>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-xs font-bold text-slate-700">Desde<input type="date" value={myPlanFrom} onChange={e => { setMyPlanFrom(e.target.value); setMyPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
+                  <label className="text-xs font-bold text-slate-700">Hasta<input type="date" value={myPlanTo} onChange={e => { setMyPlanTo(e.target.value); setMyPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
+                </div>
+                <button type="button" onClick={() => { setMyPlanQuery(''); setMyPlanStatus('active'); setMyPlanFrom(''); setMyPlanTo(''); setMyPlanPage(1); }} className="text-xs font-bold text-sky-700">Limpiar filtros</button>
+              </div>
+              {visibleMyEvents.length === 0 && <p className="rounded-xl bg-slate-50 p-4 text-xs text-slate-600">No hay planes que coincidan con los filtros.</p>}
+              {visibleMyEvents.map(event => (
+                <button key={event.id} type="button" onClick={() => setActiveEvent(event)} className={`w-full text-left rounded-2xl border p-3.5 flex justify-between items-center gap-2 shadow-sm ${event.status === 'closed' ? 'bg-amber-50/60 border-amber-200' : 'bg-white/90 border-sky-100'}`}>
+                  <span className="min-w-0"><span className="block text-[10px] font-bold text-sky-700">{event.status === 'closed' ? '🔒 Cerrado' : '📅 Activo'} · {event.date}</span><span className="block font-black text-slate-800 text-sm mt-1 break-words">{event.title}</span></span>
+                  <span className="shrink-0 text-xs font-bold text-sky-700">{event.status === 'closed' ? 'Historial →' : 'Entrar →'}</span>
+                </button>
               ))}
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <h2 className="text-sm font-black text-slate-700 px-1 flex items-center">
-                <Archive size={16} className="mr-1.5 text-amber-600" /> Histórico de Salidas Cerradas ({closedMyEvents.length})
-              </h2>
-              {closedMyEvents.map((event) => (
-                <article key={event.id} onClick={() => setActiveEvent(event)} className="bg-amber-50/60 rounded-2xl border border-amber-200 p-3.5 flex justify-between items-center cursor-pointer shadow-xs hover:shadow">
-                  <div>
-                    <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">🔒 Cerrada • {event.date}</span>
-                    <h3 className="font-black text-slate-800 text-sm mt-1">{event.title}</h3>
-                  </div>
-                  <span className="text-xs font-bold text-amber-800 bg-amber-100 px-3 py-2 rounded-xl border border-amber-300">Ver Historial →</span>
-                </article>
-              ))}
-            </div>
+              {renderPlanPagination(currentMyPage, myPlanPages, setMyPlanPage)}
+            </section>
           </div>
         )}
 
@@ -1958,12 +2007,18 @@ export default function App() {
               type="text" 
               placeholder="Buscar por título o creador..." 
               value={searchQuery} 
-              onChange={(e) => setSearchQuery(e.target.value)} 
+              onChange={(e) => { setSearchQuery(e.target.value); setSearchPlanPage(1); }} 
               className="w-full bg-white/90 border border-sky-200 rounded-2xl px-4 py-3 text-sm text-slate-800" 
             />
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-xs font-bold text-slate-700">Desde<input type="date" value={searchPlanFrom} onChange={e => { setSearchPlanFrom(e.target.value); setSearchPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
+              <label className="text-xs font-bold text-slate-700">Hasta<input type="date" value={searchPlanTo} onChange={e => { setSearchPlanTo(e.target.value); setSearchPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
+            </div>
+            <button type="button" onClick={() => { setSearchQuery(''); setSearchPlanFrom(''); setSearchPlanTo(''); setSearchPlanPage(1); }} className="text-xs font-bold text-sky-700">Limpiar filtros</button>
             <div className="space-y-3">
               <h2 className="text-sm font-black text-slate-800 px-1">Salidas Disponibles ({filteredSearchEvents.length})</h2>
-              {filteredSearchEvents.map((event) => {
+              {filteredSearchEvents.length === 0 && <p className="text-xs text-slate-600">No hay planes que coincidan con los filtros.</p>}
+              {visibleSearchEvents.map((event) => {
                 const membersList = Array.isArray(event.members) ? event.members : [];
                 const pendingReq = Array.isArray(event.pendingRequests) ? event.pendingRequests : [];
                 const isMember = membersList.includes(currentUser?.name);
@@ -1988,6 +2043,7 @@ export default function App() {
                   </article>
                 );
               })}
+              {renderPlanPagination(currentSearchPage, searchPlanPages, setSearchPlanPage)}
             </div>
           </div>
         )}
@@ -2052,6 +2108,21 @@ export default function App() {
         {/* PESTAÑA APROBACIONES / PANEL DE ADMINISTRADOR Y SOLICITUDES DE PLANES */}
         {activeTab === 'notifications' && (
           <div className="space-y-4">
+            <div className="bg-white/90 p-5 rounded-[2.5rem] border border-amber-200 shadow-sm space-y-3">
+              <h2 className="text-sm font-black text-slate-800 flex items-center"><Mail size={16} className="mr-1.5 text-amber-600" /> Invitaciones que he recibido ({myPendingInvitations.length})</h2>
+              {myPendingInvitations.length === 0 ? <p className="text-xs text-slate-500">No tienes invitaciones pendientes.</p> : (
+                <div className="space-y-2">{myPendingInvitations.map(inv => (
+                  <div key={inv.eventId} className="p-3 rounded-2xl bg-amber-50 border border-amber-200 space-y-2">
+                    <p className="text-xs font-bold text-slate-800">{inv.eventTitle}</p>
+                    <p className="text-[11px] text-slate-600">{inv.date} · Te invita {inv.creatorName}</p>
+                    <div className="flex gap-2">
+                      <button type="button" disabled={processingInvitationId === inv.eventId} onClick={() => handleCalendarInvitation(inv.eventId, true)} className="rounded-xl px-3 py-2 bg-emerald-600 text-white text-xs font-bold disabled:opacity-50">Aceptar</button>
+                      <button type="button" disabled={processingInvitationId === inv.eventId} onClick={() => handleCalendarInvitation(inv.eventId, false)} className="rounded-xl px-3 py-2 bg-white border border-red-200 text-red-700 text-xs font-bold disabled:opacity-50">Rechazar</button>
+                    </div>
+                  </div>
+                ))}</div>
+              )}
+            </div>
             <div className="bg-white/90 p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
               <h2 className="text-sm font-black text-slate-800 flex items-center">
                 <UserPlus size={16} className="mr-1.5 text-sky-600" /> Solicitudes para unirse a mis Planes ({allPendingPlanRequests.length})
@@ -2202,9 +2273,24 @@ export default function App() {
                 <label className="block text-xs font-bold text-slate-700 mb-1">Fecha</label>
                 <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-sm" required />
               </div>
+              <fieldset className="space-y-2">
+                <legend className="text-xs font-bold text-slate-700">Invitar usuarios ahora (opcional)</legend>
+                <p className="text-[11px] text-slate-500">Recibirán una invitación pendiente en Aprobaciones y podrán aceptarla o rechazarla.</p>
+                <div className="max-h-40 overflow-y-auto rounded-2xl border border-sky-200 bg-sky-50/50 p-2 space-y-1">
+                  {registeredUsers.filter(u => u.name && u.id !== currentUser?.id && u.name !== currentUser?.name && u.is_approved !== false && !u.is_blocked).length === 0 ? (
+                    <p className="text-xs text-slate-500 p-2">No hay otros usuarios disponibles.</p>
+                  ) : registeredUsers.filter(u => u.name && u.id !== currentUser?.id && u.name !== currentUser?.name && u.is_approved !== false && !u.is_blocked).map(u => (
+                    <label key={u.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-white text-xs text-slate-800 cursor-pointer">
+                      <input type="checkbox" checked={newInvitees.includes(u.name)} onChange={e => setNewInvitees(prev => e.target.checked ? [...new Set([...prev, u.name])] : prev.filter(n => n !== u.name))} className="w-4 h-4 accent-sky-600" />
+                      <span className="font-semibold">{u.name}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-[11px] text-sky-700 font-semibold">{newInvitees.length} invitación(es) seleccionada(s)</p>
+              </fieldset>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setShowCreateModal(false)} className="w-1/2 bg-sky-50 text-slate-700 font-bold py-2.5 rounded-2xl text-xs border border-sky-200">Cancelar</button>
-                <button type="submit" className="w-1/2 bg-sky-600 text-white font-bold py-2.5 rounded-2xl text-xs shadow">Crear Plan</button>
+                <button type="button" disabled={isCreatingEvent} onClick={() => { setShowCreateModal(false); setNewInvitees([]); }} className="w-1/2 bg-sky-50 text-slate-700 font-bold py-2.5 rounded-2xl text-xs border border-sky-200">Cancelar</button>
+                <button type="submit" disabled={isCreatingEvent} className="w-1/2 bg-sky-600 text-white font-bold py-2.5 rounded-2xl text-xs shadow disabled:opacity-50">{isCreatingEvent ? 'Creando...' : 'Crear Plan'}</button>
               </div>
             </form>
           </div>
