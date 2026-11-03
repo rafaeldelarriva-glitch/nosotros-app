@@ -101,7 +101,6 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Al cambiar de evento activo, marcar por defecto a todos los miembros actuales como participantes del nuevo gasto
   useEffect(() => {
     if (activeEvent && Array.isArray(activeEvent.members)) {
       setExpenseParticipants(activeEvent.members);
@@ -699,7 +698,6 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  // Selector inteligente de participantes para cada gasto
   const handleToggleExpenseParticipant = (memberName) => {
     if (expenseParticipants.includes(memberName)) {
       setExpenseParticipants(expenseParticipants.filter(m => m !== memberName));
@@ -712,7 +710,6 @@ export default function App() {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
     
-    // Si no se marcó ningún participante de forma manual, por defecto se reparte entre todos los actuales
     const finalParticipants = (expenseParticipants.length > 0) ? expenseParticipants : activeEvent.members;
 
     await supabase.from('expenses').insert([{
@@ -772,7 +769,7 @@ export default function App() {
     await refreshAllData();
   };
 
-  // CÁLCULO INTELIGENTE DE DEUDAS BASADO EN PARTICIPANTES REALES POR GASTO
+  // CÁLCULO INTELIGENTE DE DEUDAS (COMPATIBLE CON GASTOS ANTIGUOS SIN PARTICIPANTES)
   const calculateDebts = (members = [], expenses = []) => {
     if (!Array.isArray(members) || members.length === 0) return [];
     const balancesMap = {};
@@ -782,7 +779,6 @@ export default function App() {
       const amount = Number(exp.amount) || 0;
       balancesMap[exp.paid_by] = (balancesMap[exp.paid_by] || 0) + amount;
 
-      // Usar los participantes específicos guardados en el gasto, o los miembros si no estuvieran definidos
       const parts = (Array.isArray(exp.participants) && exp.participants.length > 0) ? exp.participants : members;
       const share = amount / parts.length;
 
@@ -1084,8 +1080,6 @@ export default function App() {
     const validPhotos = Array.isArray(activeEvent.photos) ? activeEvent.photos : [];
 
     const totalSpent = validExpenses.reduce((acc, c) => acc + Number(c.amount), 0);
-    
-    // Gasto medio orientativo por persona (informativo)
     const averagePerPerson = validMembers.length > 0 ? (totalSpent / validMembers.length) : 0;
     
     const selectedSpots = validSpots.filter(s => s.active_now);
@@ -1230,7 +1224,7 @@ export default function App() {
                                     <div key={exp.id} className="flex justify-between items-center text-xs bg-white p-3 rounded-2xl border border-sky-100">
                                       <div>
                                         <p className="font-bold text-slate-800">{exp.description}</p>
-                                        <p className="text-[10px] text-slate-500">Pagado por {exp.paid_by} (Reparto: {(exp.participants || []).join(', ')})</p>
+                                        <p className="text-[10px] text-slate-500">Pagado por {exp.paid_by}</p>
                                       </div>
                                       <div className="flex items-center space-x-2">
                                         <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
@@ -1389,7 +1383,7 @@ export default function App() {
                         <div key={exp.id} className="bg-white/90 p-3.5 rounded-2xl border border-sky-100 flex justify-between items-center text-xs">
                           <div>
                             <p className="font-bold text-slate-800">{exp.description}</p>
-                            <p className="text-[10px] text-slate-500">Pagado por <span className="font-bold text-sky-600">{exp.paid_by}</span> • Reparto: <span className="text-slate-700 font-bold">{(exp.participants || []).join(', ')}</span></p>
+                            <p className="text-[10px] text-slate-500">Pagado por <span className="font-bold text-sky-600">{exp.paid_by}</span> • Reparto: <span className="text-slate-700 font-bold">{Array.isArray(exp.participants) && exp.participants.length > 0 ? exp.participants.join(', ') : validMembers.join(', ')}</span></p>
                           </div>
                           <div className="flex items-center space-x-2">
                             <span className="font-black text-emerald-600 text-sm">{Number(exp.amount).toFixed(2)}€</span>
@@ -1416,7 +1410,6 @@ export default function App() {
                       ))}
                     </select>
 
-                    {/* SELECTOR DE PARTICIPANTES PARA ESTE GASTO */}
                     <div className="space-y-1.5 pt-1">
                       <label className="block text-[11px] font-bold text-slate-700">¿Entre quiénes se reparte este gasto?</label>
                       <div className="flex flex-wrap gap-1.5">
