@@ -79,7 +79,6 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Cuando cambia el evento activo o sus miembros, por defecto seleccionamos a todos para nuevos gastos
   useEffect(() => {
     if (activeEvent && activeEvent.members) {
       setExpenseParticipants(activeEvent.members);
@@ -655,7 +654,7 @@ export default function App() {
      u.email.toLowerCase().includes(friendSearchInput.toLowerCase()))
   );
 
-  // ALGORITMO DE REPARTO BASADO ESTRICTAMENTE EN LOS PARTICIPANTES DE CADA GASTO
+  // ALGORITMO DE REPARTO BASADO EN LOS PARTICIPANTES SELECCIONADOS DE CADA GASTO
   const calculateDebts = (members = [], expenses = []) => {
     if (members.length === 0) return [];
 
@@ -669,9 +668,7 @@ export default function App() {
       if (!balancesMap[payer]) balancesMap[payer] = 0;
       balancesMap[payer] += amount;
 
-      // Si el gasto tiene participantes específicos guardados, se divide solo entre ellos. Si es antiguo o no tiene, se divide entre todos.
       let participants = (exp.participants && exp.participants.length > 0) ? exp.participants : members;
-
       if (participants.length === 0) participants = [...members];
 
       const share = amount / participants.length;
@@ -1196,7 +1193,6 @@ export default function App() {
                     )}
                   </div>
 
-                  {/* FORMULARIO DE GASTO CON SELECCIÓN DE PARTICIPANTES */}
                   <form onSubmit={handleAddExpense} className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
                     <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto</h4>
                     
@@ -1233,7 +1229,6 @@ export default function App() {
                       </select>
                     </div>
 
-                    {/* SELECCIÓN DE QUIÉNES PAGAN ESTE GASTO */}
                     <div className="space-y-1.5 pt-1">
                       <label className="block text-[11px] font-bold text-slate-700">¿Quiénes participan en este gasto? (Desmarca a los ausentes)</label>
                       <div className="flex flex-wrap gap-1.5 bg-sky-50/50 p-2.5 rounded-2xl border border-sky-200">
@@ -1320,6 +1315,15 @@ export default function App() {
     );
   }
 
+  // FILTROS PRINCIPALES: Salidas activas y salidas cerradas donde el usuario participe
+  const myEventsAll = events.filter(e => 
+    e.members.includes(currentUser.name) && 
+    (e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  const activeMyEvents = myEventsAll.filter(e => e.status !== 'closed');
+  const closedMyEvents = myEventsAll.filter(e => e.status === 'closed');
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
       <header className="bg-white/90 backdrop-blur-2xl border-b border-sky-100 p-4 sticky top-0 z-40 flex justify-between items-center shadow-sm">
@@ -1339,21 +1343,46 @@ export default function App() {
         </button>
 
         <div className="space-y-3">
-          <h2 className="text-sm font-black text-slate-800 px-1">Mis Salidas Activas</h2>
-          {events.filter(e => e.members.includes(currentUser.name) && e.status !== 'closed').map((event) => (
-            <article 
-              key={event.id} 
-              onClick={() => setActiveEvent(event)} 
-              className="bg-white/90 rounded-2xl border border-sky-100 p-3.5 flex justify-between items-center cursor-pointer shadow-sm hover:shadow"
-            >
-              <div>
-                <span className="text-[10px] font-bold bg-sky-50 text-sky-700 px-2.5 py-0.5 rounded-full">📅 {event.date}</span>
-                <h3 className="font-black text-slate-800 text-sm mt-1">{event.title}</h3>
-              </div>
-              <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200">Entrar →</span>
-            </article>
-          ))}
+          <h2 className="text-sm font-black text-slate-800 px-1">Mis Salidas Activas ({activeMyEvents.length})</h2>
+          {activeMyEvents.length === 0 ? (
+            <p className="text-xs text-slate-400 px-1">No tienes salidas activas.</p>
+          ) : (
+            activeMyEvents.map((event) => (
+              <article 
+                key={event.id} 
+                onClick={() => setActiveEvent(event)} 
+                className="bg-white/90 rounded-2xl border border-sky-100 p-3.5 flex justify-between items-center cursor-pointer shadow-sm hover:shadow"
+              >
+                <div>
+                  <span className="text-[10px] font-bold bg-sky-50 text-sky-700 px-2.5 py-0.5 rounded-full">📅 {event.date}</span>
+                  <h3 className="font-black text-slate-800 text-sm mt-1">{event.title}</h3>
+                </div>
+                <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200">Entrar →</span>
+              </article>
+            ))
+          )}
         </div>
+
+        {closedMyEvents.length > 0 && (
+          <div className="space-y-3 pt-4 border-t border-sky-200/60">
+            <h2 className="text-sm font-black text-slate-600 px-1 flex items-center">
+              <Archive size={16} className="mr-1.5 text-amber-600" /> Historial de Salidas Cerradas ({closedMyEvents.length})
+            </h2>
+            {closedMyEvents.map((event) => (
+              <article 
+                key={event.id} 
+                onClick={() => setActiveEvent(event)} 
+                className="bg-amber-50/50 rounded-2xl border border-amber-200 p-3.5 flex justify-between items-center cursor-pointer shadow-xs hover:shadow"
+              >
+                <div>
+                  <span className="text-[10px] font-bold bg-amber-500 text-white px-2.5 py-0.5 rounded-full">🔒 Cerrada • 📅 {event.date}</span>
+                  <h3 className="font-bold text-slate-800 text-sm mt-1">{event.title}</h3>
+                </div>
+                <span className="text-xs font-bold text-amber-800 bg-amber-100 px-3 py-2 rounded-xl border border-amber-300">Ver Timeline →</span>
+              </article>
+            ))}
+          </div>
+        )}
       </main>
 
       {showCreateModal && (
