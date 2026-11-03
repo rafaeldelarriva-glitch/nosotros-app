@@ -717,7 +717,9 @@ export default function App() {
       ? expenseParticipants 
       : [currentUser.name];
 
-    const { error } = await supabase.from('expenses').insert([{
+    console.log("Enviando participantes a Supabase:", finalParticipants);
+
+    const { data, error } = await supabase.from('expenses').insert([{
       event_id: activeEvent.id,
       description: expenseDesc.trim(),
       amount: parseFloat(expenseAmount),
@@ -725,12 +727,14 @@ export default function App() {
       spot_id: expenseSpotId || null,
       receipt_url: expenseReceiptUrl || null,
       participants: finalParticipants
-    }]);
+    }]).select();
 
     if (error) {
-      alert('Error al guardar el gasto: ' + error.message);
+      alert('❌ Error de Supabase al guardar participantes: ' + error.message);
       return;
     }
+
+    console.log("Gasto guardado con éxito en BD:", data);
 
     setExpenseDesc('');
     setExpenseAmount('');
