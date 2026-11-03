@@ -51,6 +51,8 @@ export default function App() {
   const [osmSuggestions, setOsmSuggestions] = useState([]);
   const [isSearchingOsm, setIsSearchingOsm] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [searchLocation, setSearchLocation] = useState(null);
+  const [isSettingSearchLocation, setIsSettingSearchLocation] = useState(false);
   const [activeQrSpotId, setActiveQrSpotId] = useState(null);
   const [customQrLabel, setCustomQrLabel] = useState('');
   const [customQrUrl, setCustomQrUrl] = useState('');
@@ -108,29 +110,71 @@ export default function App() {
     }
   }, [activeEvent?.id]);
 
-  // Búsqueda en OpenStreetMap (Nominatim) al escribir
+  // Búsqueda de sitios con Photon (OpenStreetMap), priorizando la ubicación GPS del usuario cuando la autoriza.
   useEffect(() => {
-    if (!newSpotName.trim() || newSpotName.length < 3) {
+    const query = newSpotName.trim();
+    if (query.length < 3) {
       setOsmSuggestions([]);
+      setIsSearchingOsm(false);
       return;
     }
 
+    let cancelled = false;
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       setIsSearchingOsm(true);
       try {
-        const query = `${newSpotName}, El Puerto de Santa María, Cadiz, Spain`;
-        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`);
+        const params = new URLSearchParams({
+          q: query,
+          zoom: searchLocation ? '14' : '12',
+          limit: '8',
+          lang: 'es',
+          countrycode: 'es'
+        });
+        // Photon usa lat/lon como sesgo geográfico: acerca los primeros resultados a la ubicación del usuario.
+        if (searchLocation?.lat && searchLocation?.lon) {
+          params.set('lat', String(searchLocation.lat));
+          params.set('lon', String(searchLocation.lon));
+        }
+        const res = await fetch(`https://photon.komoot.io/api/?${params.toString()}`, {
+          signal: controller.signal,
+          headers: { Accept: 'application/json' }
+        });
+        if (!res.ok) throw new Error(`Error de búsqueda (${res.status})`);
         const data = await res.json();
-        setOsmSuggestions(Array.isArray(data) ? data : []);
+        const features = Array.isArray(data?.features) ? data.features : [];
+        const suggestions = features.map((feature, index) => {
+          const props = feature.properties || {};
+          const mainName = props.name || props.street || props.city || 'Lugar sin nombre';
+          const locality = [props.district, props.city, props.state, props.country]
+            .filter((value, i, arr) => value && arr.indexOf(value) === i && value !== mainName)
+            .join(', ');
+          return {
+            id: props.osm_id || `${mainName}-${index}`,
+            name: mainName,
+            display_name: locality ? `${mainName} · ${locality}` : mainName,
+            lat: feature.geometry?.coordinates?.[1],
+            lon: feature.geometry?.coordinates?.[0],
+            properties: props
+          };
+        });
+        if (!cancelled) setOsmSuggestions(suggestions);
       } catch (err) {
-        console.error('Error buscando en OpenStreetMap:', err);
+        if (err.name !== 'AbortError') {
+          console.error('Error buscando sitios con Photon:', err);
+          if (!cancelled) setOsmSuggestions([]);
+        }
       } finally {
-        setIsSearchingOsm(false);
+        if (!cancelled) setIsSearchingOsm(false);
       }
-    }, 400);
+    }, 450);
 
-    return () => clearTimeout(timer);
-  }, [newSpotName]);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [newSpotName, searchLocation]);
 
   const refreshAllData = async () => {
     await Promise.all([
@@ -452,6 +496,27 @@ export default function App() {
     }
   };
 
+  const handleSetSearchLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Tu navegador no soporta geolocalización.');
+      return;
+    }
+    setIsSettingSearchLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setSearchLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude });
+        setIsSettingSearchLocation(false);
+      },
+      (err) => {
+        setIsSettingSearchLocation(false);
+        alert(err.code === 1
+          ? 'No has permitido el acceso a tu ubicación. Puedes habilitarlo en los permisos del navegador.'
+          : 'No se ha podido obtener tu ubicación. Comprueba el GPS o los permisos del navegador.');
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 300000 }
+    );
+  };
+
   const handleProposeCurrentGpsLocation = () => {
     if (!navigator.geolocation) {
       alert('Tu navegador no soporta geolocalización GPS.');
@@ -461,6 +526,7 @@ export default function App() {
     navigator.geolocation.getCurrentPosition(async (pos) => {
       try {
         const { latitude, longitude } = pos.coords;
+        setSearchLocation({ lat: latitude, lon: longitude });
         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
         const data = await res.json();
         const detectedName = data.display_name ? data.display_name.split(',')[0] : `Sitio GPS (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
@@ -710,6 +776,31 @@ export default function App() {
         return [...list, memberName];
       }
     });
+  };
+
+  // Eliminar cualquier gasto del plan (por ejemplo, si alguien lo registra por error).
+  const handleDeleteExpense = async (expense) => {
+    if (!expense?.id || !activeEvent?.id) return;
+
+    const confirmed = window.confirm(
+      `¿Quieres eliminar el gasto \"${expense.description}\" de ${Number(expense.amount || 0).toFixed(2)}€?\n\nSe actualizarán automáticamente el total y la liquidación de deudas. Esta acción no se puede deshacer.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const { error } = await supabase
+        .from('expenses')
+        .delete()
+        .eq('id', expense.id)
+        .eq('event_id', activeEvent.id);
+
+      if (error) throw error;
+
+      await refreshAllData();
+    } catch (err) {
+      console.error('Error eliminando gasto:', err);
+      alert('No se ha podido eliminar el gasto: ' + (err.message || 'Error desconocido.'));
+    }
   };
 
   // ENVIAR GASTO CON REPARTO INTELIGENTE REAL
@@ -1364,15 +1455,26 @@ export default function App() {
                   <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3 relative">
                     <div className="flex justify-between items-center">
                       <h3 className="text-xs font-black text-slate-800">Proponer nuevo sitio</h3>
-                      <button 
-                        type="button" 
-                        onClick={handleProposeCurrentGpsLocation} 
-                        disabled={isGettingLocation}
-                        className="text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-xl flex items-center transition"
-                      >
-                        <Crosshair size={12} className="mr-1 text-emerald-600" />
-                        {isGettingLocation ? 'Obteniendo GPS...' : 'Marcar con mi GPS'}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSetSearchLocation}
+                          disabled={isSettingSearchLocation}
+                          className="text-[10px] font-bold text-sky-800 bg-sky-50 hover:bg-sky-100 border border-sky-200 px-2.5 py-1 rounded-xl flex items-center transition"
+                        >
+                          <Crosshair size={12} className="mr-1 text-sky-600" />
+                          {isSettingSearchLocation ? 'Localizando...' : searchLocation ? 'Cerca de mí ✓' : 'Buscar cerca de mí'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleProposeCurrentGpsLocation}
+                          disabled={isGettingLocation}
+                          className="text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-xl flex items-center transition"
+                        >
+                          <Crosshair size={12} className="mr-1 text-emerald-600" />
+                          {isGettingLocation ? 'Obteniendo GPS...' : 'Marcar con mi GPS'}
+                        </button>
+                      </div>
                     </div>
 
                     <form onSubmit={handleAddSpot} className="space-y-2.5 relative">
@@ -1385,7 +1487,7 @@ export default function App() {
                           className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" 
                         />
                         {isSearchingOsm && (
-                          <span className="absolute right-3 top-2.5 text-[10px] text-sky-600 font-bold animate-pulse">Buscando mapa...</span>
+                          <span className="absolute right-3 top-2.5 text-[10px] text-sky-600 font-bold animate-pulse">Buscando sitios...</span>
                         )}
                       </div>
 
@@ -1395,7 +1497,7 @@ export default function App() {
                             <div 
                               key={idx} 
                               onClick={() => {
-                                setNewSpotName(item.display_name);
+                                setNewSpotName(item.name || item.display_name);
                                 setOsmSuggestions([]);
                               }}
                               className="p-2.5 text-xs text-slate-700 hover:bg-sky-50 cursor-pointer transition flex items-start space-x-2"
@@ -1406,6 +1508,14 @@ export default function App() {
                           ))}
                         </div>
                       )}
+                      {newSpotName.trim().length >= 3 && !isSearchingOsm && osmSuggestions.length === 0 && (
+                        <p className="text-[10px] text-slate-500 px-1">
+                          No hay coincidencias. Puedes añadir el nombre manualmente.
+                        </p>
+                      )}
+                      <p className="text-[10px] text-slate-400 px-1">
+                        Búsqueda con Photon · Datos de OpenStreetMap. {searchLocation ? 'Resultados priorizados cerca de tu ubicación.' : 'Pulsa «Buscar cerca de mí» para priorizar los resultados según tu ubicación.'}
+                      </p>
 
                       <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow">
                         🔍 Añadir a la ruta
@@ -1475,6 +1585,15 @@ export default function App() {
                                 <Receipt size={12} className="mr-1" /> Ver Ticket
                               </button>
                             )}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteExpense(exp)}
+                              title="Eliminar gasto"
+                              aria-label={`Eliminar gasto ${exp.description}`}
+                              className="bg-red-50 hover:bg-red-100 text-red-600 p-2 rounded-xl border border-red-200 transition"
+                            >
+                              <Trash2 size={14} />
+                            </button>
                           </div>
                         </div>
                       ))}
