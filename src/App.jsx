@@ -42,6 +42,8 @@ export default function App() {
   const [newDate, setNewDate] = useState('');
   const [selectedFriends, setSelectedFriends] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 4;
 
   // Búsqueda dinámica de usuarios y perfiles
   const [friendSearchInput, setFriendSearchInput] = useState('');
@@ -86,7 +88,6 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Búsqueda acotada a España/Cádiz
   useEffect(() => {
     const timer = setTimeout(async () => {
       if (newSpotName.trim().length > 2) {
@@ -145,6 +146,9 @@ export default function App() {
         photos: ev.photos || [],
         comments: ev.comments || []
       }));
+
+      // Ordenar por fecha descendiente (más reciente primero)
+      formattedEvents.sort((a, b) => new Date(b.date) - new Date(a.date));
 
       setEvents(formattedEvents);
 
@@ -300,7 +304,6 @@ export default function App() {
     const targetName = customName || newSpotName;
     if (!targetName.trim() || !activeEvent) return;
 
-    // Asegurar contexto local en el nombre si no lo incluye
     const formattedSpotName = targetName.toLowerCase().includes('valdelagrana') || targetName.toLowerCase().includes('el puerto') 
       ? targetName.trim() 
       : `${targetName.trim()}, Valdelagrana, El Puerto de Santa María`;
@@ -328,7 +331,6 @@ export default function App() {
     handleAddSpot(null, displayName);
   };
 
-  // Capturar coordenadas GPS primero y abrir modal de asignación de nombre
   const handleStartGpsCapture = () => {
     if (!navigator.geolocation) {
       alert('Tu navegador no soporta geolocalización GPS.');
@@ -692,7 +694,7 @@ export default function App() {
           </a>
         </div>
 
-        {/* COMENTARIOS Y RECOMENDACIONES EN EL SITIO */}
+        {/* COMENTARIOS Y RECOMENDACIONES EN EL SITIO CON SCROLL COMPACTO */}
         <div className="pt-2 border-t border-sky-100 space-y-2">
           <div className="flex items-center space-x-1 text-[11px] font-bold text-slate-700">
             <MessageSquare size={12} className="text-sky-600" />
@@ -700,7 +702,7 @@ export default function App() {
           </div>
 
           {spotComments.length > 0 && (
-            <div className="space-y-1.5 max-h-32 overflow-y-auto">
+            <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
               {spotComments.map(c => (
                 <div key={c.id} className="bg-white p-2 rounded-xl border border-sky-100 text-xs space-y-0.5">
                   <p className="text-slate-800">{c.content}</p>
@@ -870,37 +872,41 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-60 bg-sky-300/20 rounded-b-full blur-3xl pointer-events-none" aria-hidden="true"></div>
-
-        <div className="relative h-44 w-full bg-sky-900">
-          <img src={coverImage} alt="" className="w-full h-full object-cover opacity-60" aria-hidden="true" />
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-900/90 via-slate-900/40 to-transparent"></div>
-          
+        {/* BOTÓN DE VOLVER FLOTANTE (FIJO EN PANTALLA) PARA NO TENER QUE SUBIR ARRIBA */}
+        <div className="fixed top-3 left-4 z-50">
           <button 
             onClick={() => setActiveEvent(null)} 
             aria-label="Volver a mis salidas"
-            className="absolute top-4 left-4 flex items-center text-xs font-bold text-slate-800 bg-white/90 backdrop-blur-md px-3.5 py-2 rounded-full hover:bg-white transition shadow-md border border-sky-200"
+            className="flex items-center text-xs font-bold text-slate-800 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-full hover:bg-white transition shadow-lg border border-sky-200 active:scale-95"
           >
             <ArrowLeft size={16} className="mr-1 text-sky-600" /> Volver
           </button>
+        </div>
+
+        {/* CABECERA ESTRECHA Y CLARA */}
+        <div className="relative h-28 w-full bg-sky-900 mt-0">
+          <img src={coverImage} alt="" className="w-full h-full object-cover opacity-40 brightness-115" aria-hidden="true" />
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/20 to-transparent"></div>
           
-          <div className="absolute bottom-4 left-4 right-4 text-white">
-            <div className="flex items-center space-x-2 mb-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-white/20 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-white/20 text-sky-100">
-                📅 {activeEvent.date}
-              </span>
-              {isClosed && (
-                <span className="text-[10px] font-black uppercase tracking-wider bg-amber-500 text-white px-2.5 py-0.5 rounded-full shadow">
-                  🔒 Quedada Cerrada
+          <div className="absolute bottom-3 left-4 right-4 text-white flex justify-between items-end">
+            <div>
+              <div className="flex items-center space-x-2 mb-0.5">
+                <span className="text-[9px] font-bold uppercase tracking-wider bg-white/20 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/20 text-sky-100">
+                  📅 {activeEvent.date}
                 </span>
-              )}
+                {isClosed && (
+                  <span className="text-[9px] font-black uppercase tracking-wider bg-amber-500 text-white px-2 py-0.5 rounded-full shadow">
+                    🔒 Cerrada
+                  </span>
+                )}
+              </div>
+              <h1 className="text-xl font-black leading-tight drop-shadow-sm truncate max-w-[260px]">{activeEvent.title}</h1>
             </div>
-            <h1 className="text-2xl font-black leading-tight drop-shadow-sm">{activeEvent.title}</h1>
-            <p className="text-xs text-sky-200 mt-0.5">Organiza: <span className="font-semibold text-white">{activeEvent.creator_name}</span></p>
+            <p className="text-[11px] text-sky-200 font-medium shrink-0">Org: <span className="font-bold text-white">{activeEvent.creator_name}</span></p>
           </div>
         </div>
 
-        <main className="max-w-md mx-auto p-4 space-y-5 relative z-10">
+        <main className="max-w-md mx-auto p-4 space-y-4 relative z-10">
           
           {isCreator && !isClosed && (
             <button 
@@ -911,14 +917,14 @@ export default function App() {
             </button>
           )}
 
-          {/* LÍNEA TEMPORAL (CUANDO ESTÁ CERRADO O MODO HISTÓRICO) */}
+          {/* LÍNEA TEMPORAL */}
           {isClosed ? (
             <div className="space-y-6">
-              <div className="bg-white/90 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-sky-100 shadow-xl space-y-5">
+              <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-sky-100 shadow-xl space-y-4">
                 <div className="text-center space-y-1">
                   <span className="text-2xl">⏳</span>
-                  <h2 className="text-lg font-black text-slate-800">Línea Temporal e Historial del Día</h2>
-                  <p className="text-xs text-slate-500">Pulsa sobre cada parada para consultar sus gastos, tickets, fotos y recomendaciones</p>
+                  <h2 className="text-base font-black text-slate-800">Línea Temporal e Historial del Día</h2>
+                  <p className="text-[11px] text-slate-500">Pulsa sobre cada parada para consultar sus gastos, tickets, fotos y recomendaciones</p>
                 </div>
 
                 <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-gradient-to-b before:from-sky-500 before:via-indigo-500 before:to-sky-300">
@@ -954,7 +960,6 @@ export default function App() {
                             </div>
                           </div>
 
-                          {/* DETALLE DESPLEGABLE EN LA LÍNEA TEMPORAL */}
                           {isExpanded && (
                             <div className="mt-4 pt-4 border-t border-sky-200/60 space-y-4 animate-fadeIn">
                               <a 
@@ -1028,9 +1033,9 @@ export default function App() {
                                 {spotComments.length === 0 ? (
                                   <p className="text-[11px] text-slate-400 italic">Sin comentarios en este sitio.</p>
                                 ) : (
-                                  <div className="space-y-1.5">
+                                  <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
                                     {spotComments.map(c => (
-                                      <div key={c.id} className="bg-white p-2.5 rounded-2xl border border-sky-100 text-xs space-y-1">
+                                      <div key={c.id} className="bg-white p-2 rounded-xl border border-sky-100 text-xs space-y-0.5">
                                         <p className="text-slate-800">{c.content}</p>
                                         <p className="text-[10px] font-bold text-sky-600">— {c.user_name}</p>
                                       </div>
@@ -1078,20 +1083,20 @@ export default function App() {
                 </div>
               </div>
 
-              {/* RUTA DEL PLAN: RESUMEN CABECERA CON MAPS */}
-              <div className="bg-gradient-to-br from-sky-600 to-indigo-600 text-white p-5 rounded-3xl shadow-lg relative overflow-hidden border border-sky-400/30 space-y-3">
+              {/* RUTA SELECCIONADA */}
+              <div className="bg-gradient-to-br from-sky-600 to-indigo-600 text-white p-4 rounded-3xl shadow-lg relative overflow-hidden border border-sky-400/30 space-y-2.5">
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-1 rounded-full flex items-center">
+                  <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-0.5 rounded-full flex items-center">
                      Ruta Seleccionada ({selectedSpots.length})
                   </span>
                 </div>
 
                 {selectedSpots.length === 0 ? (
-                  <p className="text-xs text-sky-100">Aún no hay sitios añadidos a la ruta. ¡Selecciona alguna propuesta abajo!</p>
+                  <p className="text-xs text-sky-100">Aún no hay sitios en la ruta. ¡Selecciona alguna propuesta abajo!</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-1.5">
                     {selectedSpots.map((spot, idx) => (
-                      <div key={spot.id} className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/20 flex justify-between items-center text-xs">
+                      <div key={spot.id} className="bg-white/10 backdrop-blur-md p-2.5 rounded-2xl border border-white/20 flex justify-between items-center text-xs">
                         <div className="flex items-center space-x-2">
                           <span className="bg-white text-sky-800 w-5 h-5 rounded-full flex items-center justify-center font-black text-[10px]">
                             {idx + 1}
@@ -1112,7 +1117,7 @@ export default function App() {
                 )}
               </div>
 
-              {/* COMENTARIOS GENERALES DEL PLAN */}
+              {/* COMENTARIOS GENERALES CON SCROLL COMPACTO */}
               <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
                   <MessageSquare size={14} className="mr-1.5 text-sky-600" /> Comentarios Generales del Plan ({generalComments.length})
@@ -1132,9 +1137,9 @@ export default function App() {
                 </form>
 
                 {generalComments.length > 0 && (
-                  <div className="space-y-2 pt-1 max-h-44 overflow-y-auto">
+                  <div className="space-y-1.5 pt-1 max-h-32 overflow-y-auto pr-1">
                     {generalComments.map((c) => (
-                      <div key={c.id} className="bg-sky-50/60 p-3 rounded-2xl border border-sky-100 text-xs space-y-1">
+                      <div key={c.id} className="bg-sky-50/60 p-2.5 rounded-2xl border border-sky-100 text-xs space-y-0.5">
                         <p className="text-slate-800 font-medium">{c.content}</p>
                         <p className="text-[10px] font-bold text-sky-700">— {c.user_name}</p>
                       </div>
@@ -1144,9 +1149,9 @@ export default function App() {
               </div>
 
               <div className="flex bg-white/90 backdrop-blur-xl p-1 rounded-2xl border border-sky-100 shadow-sm" role="tablist">
-                <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>Sitios y Votación</button>
-                <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>Gastos y Deudas</button>
-                <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2.5 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>Fotos</button>
+                <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>Sitios</button>
+                <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>Gastos</button>
+                <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}>Fotos</button>
               </div>
 
               {eventSubTab === 'spots' && (
@@ -1158,15 +1163,15 @@ export default function App() {
                       type="button"
                       onClick={handleStartGpsCapture}
                       disabled={isGettingLocation}
-                      className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow hover:opacity-95 flex items-center justify-center space-x-2 transition"
+                      className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold py-2.5 px-4 rounded-2xl text-xs shadow hover:opacity-95 flex items-center justify-center space-x-2 transition"
                     >
                       <Compass size={16} className={isGettingLocation ? "animate-spin" : ""} />
                       <span>{isGettingLocation ? 'Obteniendo GPS...' : '📍 Marcar mi ubicación GPS actual'}</span>
                     </button>
 
-                    <div className="relative pt-1">
+                    <div className="relative pt-0.5">
                       <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-sky-100"></div></div>
-                      <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400 font-bold">o busca o añade tu sitio</span></div>
+                      <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400 font-bold">o busca tu sitio</span></div>
                     </div>
 
                     <form onSubmit={handleAddSpot} className="space-y-2.5 relative">
@@ -1200,7 +1205,7 @@ export default function App() {
                         </div>
                       )}
 
-                      <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow transition mt-2">
+                      <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow transition mt-1">
                         🔍 Añadir "{newSpotName || 'propuesta'}" a la ruta
                       </button>
                     </form>
@@ -1426,7 +1431,7 @@ export default function App() {
           )}
         </main>
 
-        {/* MODAL PARA NOMBRE DE UBICACIÓN GPS */}
+        {/* MODAL GPS */}
         {showGpsModal && (
           <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white max-w-sm w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-sky-100">
@@ -1466,7 +1471,7 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL PARA VISUALIZAR TICKET EN GRANDE */}
+        {/* MODAL TICKET */}
         {viewingReceiptUrl && (
           <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white max-w-sm w-full p-4 rounded-[2rem] shadow-2xl space-y-4 border border-sky-100 text-center">
@@ -1489,8 +1494,18 @@ export default function App() {
     );
   }
 
-  const filteredEvents = events.filter(e => e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase()));
-  const myEvents = events.filter(e => e.members.includes(currentUser.name));
+  // Filtrado y Paginación para "Mis Salidas"
+  const filteredMyEvents = events.filter(e => 
+    e.members.includes(currentUser.name) && 
+    (e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
+
+  const totalPages = Math.ceil(filteredMyEvents.length / itemsPerPage) || 1;
+  const paginatedEvents = filteredMyEvents.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const filteredSearchEvents = events.filter(e => 
+    e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   // -------------------------------------------------------------
   // ÁREA PERSONAL (DASHBOARD)
@@ -1510,22 +1525,34 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-md mx-auto p-4 space-y-5 relative z-10">
+      <main className="max-w-md mx-auto p-4 space-y-4 relative z-10">
         {activeTab === 'my-events' && (
           <div className="space-y-4">
-            <button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-bold py-3.5 px-4 rounded-2xl text-sm shadow-lg shadow-sky-500/25 flex items-center justify-center space-x-2 transition hover:opacity-95">
+            <button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-bold py-3 px-4 rounded-2xl text-sm shadow-lg shadow-sky-500/25 flex items-center justify-center space-x-2 transition hover:opacity-95">
               <Plus size={18} /> <span>Crear Nueva Salida / Plan</span>
             </button>
 
+            {/* BUSCADOR DE PLANES */}
+            <div className="relative flex items-center">
+              <Search className="absolute left-3.5 text-slate-400" size={16} />
+              <input 
+                type="text" 
+                placeholder="Buscar planes por título o creador..." 
+                value={searchQuery} 
+                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }} 
+                className="w-full bg-white/90 backdrop-blur-2xl border border-sky-200 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500" 
+              />
+            </div>
+
             <div className="space-y-3">
-              <h2 className="text-base font-black text-slate-800 px-1">Tus Salidas Confirmadas ({myEvents.length})</h2>
+              <h2 className="text-sm font-black text-slate-800 px-1">Tus Salidas Confirmadas ({filteredMyEvents.length})</h2>
               
-              {myEvents.length === 0 ? (
+              {paginatedEvents.length === 0 ? (
                 <div className="bg-white/90 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-sky-100 text-center shadow-sm">
-                  <p className="text-xs text-slate-500 font-medium">No estás participando en ninguna salida aún.</p>
+                  <p className="text-xs text-slate-500 font-medium">No se encontraron salidas con ese criterio.</p>
                 </div>
               ) : (
-                myEvents.map((event) => {
+                paginatedEvents.map((event) => {
                   const cover = getPlanCover(event.title);
                   const isClosed = event.status === 'closed';
                   return (
@@ -1534,25 +1561,47 @@ export default function App() {
                       onClick={() => setActiveEvent(event)} 
                       className="bg-white/90 backdrop-blur-2xl rounded-[2.5rem] border border-sky-100 overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer group"
                     >
-                      <div className="h-32 w-full relative bg-sky-100">
-                        <img src={cover} alt="" className="w-full h-full object-cover opacity-60 group-hover:scale-105 transition duration-300" aria-hidden="true" />
-                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-transparent to-transparent"></div>
-                        <div className="absolute top-3 right-3 flex gap-1">
-                          {isClosed && <span className="text-[10px] font-bold bg-amber-500 text-white px-2 py-0.5 rounded-full shadow">🔒 Cerrada</span>}
-                          <span className="text-[10px] font-bold bg-white/95 backdrop-blur-md text-slate-800 px-2.5 py-1 rounded-full shadow border border-sky-100">📅 {event.date}</span>
+                      {/* CABECERA DE TARJETA MÁS ESTRECHA Y CLARA (h-20 en vez de h-32) */}
+                      <div className="h-20 w-full relative bg-sky-100">
+                        <img src={cover} alt="" className="w-full h-full object-cover opacity-50 brightness-110 group-hover:scale-105 transition duration-300" aria-hidden="true" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent"></div>
+                        <div className="absolute top-2 right-3 flex gap-1">
+                          {isClosed && <span className="text-[9px] font-bold bg-amber-500 text-white px-2 py-0.5 rounded-full shadow">🔒 Cerrada</span>}
+                          <span className="text-[9px] font-bold bg-white/95 backdrop-blur-md text-slate-800 px-2.5 py-0.5 rounded-full shadow border border-sky-100">📅 {event.date}</span>
                         </div>
-                        <h3 className="absolute bottom-3 left-3 right-3 text-white font-black text-lg drop-shadow">{event.title}</h3>
+                        <h3 className="absolute bottom-2.5 left-4 right-4 text-white font-black text-sm drop-shadow truncate">{event.title}</h3>
                       </div>
                       
-                      <div className="p-4 flex justify-between items-center">
-                        <p className="text-xs text-slate-600 font-medium">Organiza: <span className="font-bold text-slate-800">{event.creator_name}</span></p>
-                        <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-1.5 rounded-xl border border-sky-200 group-hover:bg-sky-600 group-hover:text-white transition">
+                      <div className="p-3.5 flex justify-between items-center bg-white/50">
+                        <p className="text-[11px] text-slate-600 font-medium">Organiza: <span className="font-bold text-slate-800">{event.creator_name}</span></p>
+                        <span className="text-[11px] font-bold text-sky-700 bg-sky-50 px-3 py-1 rounded-xl border border-sky-200 group-hover:bg-sky-600 group-hover:text-white transition">
                           {isClosed ? 'Ver Timeline →' : 'Entrar →'}
                         </span>
                       </div>
                     </article>
                   );
                 })
+              )}
+
+              {/* PAGINACIÓN */}
+              {totalPages > 1 && (
+                <div className="flex justify-center items-center space-x-2 pt-2">
+                  <button 
+                    onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1.5 rounded-xl bg-white border border-sky-200 text-xs font-bold text-slate-700 disabled:opacity-40 shadow-2xs"
+                  >
+                    Anterior
+                  </button>
+                  <span className="text-xs font-bold text-slate-600">Pág. {currentPage} de {totalPages}</span>
+                  <button 
+                    onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1.5 rounded-xl bg-white border border-sky-200 text-xs font-bold text-slate-700 disabled:opacity-40 shadow-2xs"
+                  >
+                    Siguiente
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -1563,8 +1612,8 @@ export default function App() {
             <input type="text" aria-label="Buscar salida" placeholder="Buscar por título o creador..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-white/90 backdrop-blur-2xl border border-sky-200 rounded-2xl px-4 py-3 text-sm text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500" />
             
             <div className="space-y-3">
-              <h2 className="text-base font-black text-slate-800 px-1">Salidas Disponibles</h2>
-              {filteredEvents.map((event) => {
+              <h2 className="text-sm font-black text-slate-800 px-1">Salidas Disponibles</h2>
+              {filteredSearchEvents.map((event) => {
                 const isMember = event.members.includes(currentUser.name);
                 const isPending = event.pendingInvitations.includes(currentUser.name);
                 const hasRequested = event.pendingRequests.includes(currentUser.name);
@@ -1572,22 +1621,22 @@ export default function App() {
 
                 return (
                   <article key={event.id} className="bg-white/90 backdrop-blur-2xl rounded-[2.5rem] border border-sky-100 overflow-hidden shadow-sm flex flex-col">
-                    <div className="h-24 w-full relative bg-sky-100">
-                      <img src={cover} alt="" className="w-full h-full object-cover opacity-60" aria-hidden="true" />
-                      <div className="absolute inset-0 bg-black/40"></div>
-                      <h3 className="absolute bottom-2.5 left-3 text-white font-bold text-sm drop-shadow">{event.title}</h3>
+                    <div className="h-20 w-full relative bg-sky-100">
+                      <img src={cover} alt="" className="w-full h-full object-cover opacity-50 brightness-110" aria-hidden="true" />
+                      <div className="absolute inset-0 bg-black/30"></div>
+                      <h3 className="absolute bottom-2.5 left-4 text-white font-bold text-sm drop-shadow truncate max-w-[260px]">{event.title}</h3>
                     </div>
                     
-                    <div className="p-3.5 flex justify-between items-center">
-                      <span className="text-xs text-slate-600 font-medium">{event.date} • {event.creator_name}</span>
+                    <div className="p-3.5 flex justify-between items-center bg-white/50">
+                      <span className="text-[11px] text-slate-600 font-medium">{event.date} • {event.creator_name}</span>
                       {isMember ? (
-                        <button onClick={() => setActiveEvent(event)} className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-1.5 rounded-xl border border-sky-200">Ver Plan</button>
+                        <button onClick={() => setActiveEvent(event)} className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-1 rounded-xl border border-sky-200">Ver Plan</button>
                       ) : hasRequested ? (
-                        <span className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200">Solicitado</span>
+                        <span className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1 rounded-xl border border-amber-200">Solicitado</span>
                       ) : isPending ? (
-                        <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-1.5 rounded-xl border border-sky-200">Invitado</span>
+                        <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-1 rounded-xl border border-sky-200">Invitado</span>
                       ) : (
-                        <button onClick={() => handleRequestJoin(event.id)} className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow">Unirme</button>
+                        <button onClick={() => handleRequestJoin(event.id)} className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-3 py-1 rounded-xl shadow">Unirme</button>
                       )}
                     </div>
                   </article>
@@ -1600,7 +1649,7 @@ export default function App() {
         {activeTab === 'notifications' && (
           <div className="space-y-4">
             <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
-              <h2 className="text-base font-black text-slate-800">Invitaciones Recibidas ({myInvitations.length})</h2>
+              <h2 className="text-sm font-black text-slate-800">Invitaciones Recibidas ({myInvitations.length})</h2>
               {myInvitations.length === 0 ? <p className="text-xs text-slate-500">Sin invitaciones pendientes.</p> : myInvitations.map((event) => (
                 <div key={event.id} className="p-3.5 rounded-2xl border border-sky-200 bg-sky-50/60 flex justify-between items-center">
                   <p className="text-xs font-bold text-slate-800">{event.title}</p>
@@ -1613,7 +1662,7 @@ export default function App() {
             </div>
 
             <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
-              <h2 className="text-base font-black text-slate-800">Solicitudes para tus Eventos</h2>
+              <h2 className="text-sm font-black text-slate-800">Solicitudes para tus Eventos</h2>
               {myApprovalRequests.length === 0 ? <p className="text-xs text-slate-500">Sin solicitudes pendientes.</p> : myApprovalRequests.map((event) => (
                 <div key={event.id} className="space-y-2">
                   <p className="text-xs font-bold text-slate-700">{event.title}</p>
@@ -1630,10 +1679,9 @@ export default function App() {
               ))}
             </div>
 
-            {/* SECCIÓN DE ADMINISTRADOR */}
             {isAdmin && (
               <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-red-100 shadow-sm space-y-3">
-                <h2 className="text-base font-black text-slate-800 flex items-center">
+                <h2 className="text-sm font-black text-slate-800 flex items-center">
                   <ShieldAlert size={16} className="mr-1.5 text-red-600" /> Panel de Administrador (Bloquear/Gestionar Usuarios)
                 </h2>
                 <div className="space-y-2">
