@@ -105,6 +105,10 @@ export default function App() {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user) {
           const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+          if (!profile || profile.is_blocked || !profile.is_approved) {
+            await supabase.auth.signOut();
+            return;
+          }
           const userDisplayName = profile?.name || session.user.email?.split('@')[0] || 'Usuario';
           const userRole = profile?.role || 'user';
           setCurrentUser({ id: session.user.id, name: userDisplayName, email: session.user.email, role: userRole });
@@ -229,7 +233,7 @@ export default function App() {
       const { data, error } = await supabase.from('profiles').select('id, name, email, role, is_blocked, is_approved');
       if (error) throw error;
       setRegisteredUsers(Array.isArray(data) ? data : []);
-      setPendingRegistrations((Array.isArray(data) ? data : []).filter(p => !p.is_approved && p.role !== 'admin'));
+      setPendingRegistrations((Array.isArray(data) ? data : []).filter(p => !p.is_approved && !p.is_blocked && p.role !== 'admin'));
     } catch (err) {
       console.error('Error cargando perfiles:', err.message);
     }
@@ -237,7 +241,7 @@ export default function App() {
 
   const fetchPendingRegistrations = async () => {
     try {
-      const { data, error } = await supabase.from('profiles').select('*').eq('is_approved', false);
+      const { data, error } = await supabase.from('profiles').select('*').eq('is_approved', false).eq('is_blocked', false);
       if (error) throw error;
       setPendingRegistrations(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -400,34 +404,62 @@ export default function App() {
     setActiveEvent(null);
   };
 
+  // Gestión no destructiva de cuentas: jamás borrar profiles ni auth.users desde esta interfaz.
+  // Se preservan eventos, participantes, gastos, lugares, fotografías y comentarios.
   const handleApproveRegistration = async (userId, userName) => {
+    if (!isAdmin || userId === currentUser?.id) return;
     try {
-      await supabase.from('profiles').update({ is_approved: true }).eq('id', userId);
+      const { data, error } = await supabase.from('profiles')
+        .update({ is_approved: true, is_blocked: false })
+        .eq('id', userId).eq('is_approved', false).eq('is_blocked', false)
+        .neq('role', 'admin').select('id');
+      if (error) throw error;
+      if (!data?.length) throw new Error('No se ha confirmado la aprobación. Comprueba los permisos de Supabase.');
       alert(`✅ Usuario ${userName} aprobado.`);
       await refreshAllData();
     } catch (err) {
-      alert('Error: ' + err.message);
+      alert('Error al aprobar: ' + (err.message || 'Error desconocido'));
     }
   };
 
+  // Rechazar = desactivar el acceso, NO eliminar datos ni relaciones.
   const handleRejectRegistration = async (userId) => {
-    if (!confirm('¿Rechazar y eliminar esta solicitud?')) return;
+    if (!isAdmin || userId === currentUser?.id) return;
+    const target = registeredUsers.find(u => u.id === userId);
+    if (!target || target.role === 'admin' || target.is_approved || target.is_blocked) return;
+    if (!window.confirm(`¿Rechazar la solicitud de ${target.name}?\n\nLa cuenta quedará bloqueada y no aprobada. NO se eliminará el perfil ni ningún plan, gasto, participación o dato histórico.`)) return;
     try {
-      await supabase.from('profiles').delete().eq('id', userId);
+      const { data, error } = await supabase.from('profiles')
+        .update({ is_approved: false, is_blocked: true })
+        .eq('id', userId).eq('is_approved', false).eq('is_blocked', false)
+        .neq('role', 'admin').select('id');
+      if (error) throw error;
+      if (!data?.length) throw new Error('Supabase no confirmó el rechazo. Revisa los permisos UPDATE (RLS).');
       await refreshAllData();
+      alert('Solicitud rechazada sin borrar ningún dato. La cuenta queda bloqueada.');
     } catch (err) {
-      alert('Error: ' + err.message);
+      alert('No se pudo rechazar la solicitud: ' + (err.message || 'Error desconocido'));
     }
   };
 
   const handleToggleBlockUser = async (userId, currentBlockedState, userName) => {
-    if (!confirm(`¿Estás seguro de ${currentBlockedState ? 'desbloquear' : 'bloquear/anular'} a ${userName}?`)) return;
+    if (!isAdmin || userId === currentUser?.id) return;
+    const target = registeredUsers.find(u => u.id === userId);
+    if (!target || target.role === 'admin') return;
+    if (!window.confirm(`¿${currentBlockedState ? 'Desbloquear' : 'Bloquear'} a ${userName}?\n\nEsta acción NO elimina el perfil ni modifica planes, gastos o participaciones.${currentBlockedState && !target.is_approved ? '\n\nLa cuenta seguirá pendiente de aprobación.' : ''}`)) return;
     try {
-      await supabase.from('profiles').update({ is_blocked: !currentBlockedState }).eq('id', userId);
-      alert(`Usuario ${userName} ${currentBlockedState ? 'desbloqueado' : 'bloqueado'}.`);
+      const { data, error } = await supabase.from('profiles')
+        .update({ is_blocked: !currentBlockedState })
+        .eq('id', userId).eq('is_blocked', currentBlockedState)
+        .neq('role', 'admin').select('id, is_blocked');
+      if (error) throw error;
+      if (!data?.length || data[0].is_blocked !== !currentBlockedState) {
+        throw new Error('Supabase no confirmó el cambio. Comprueba los permisos UPDATE (RLS).');
+      }
       await refreshAllData();
+      alert(`Usuario ${userName} ${currentBlockedState ? 'desbloqueado' : 'bloqueado'} sin borrar sus datos.`);
     } catch (err) {
-      alert('Error al cambiar estado del usuario: ' + err.message);
+      alert('Error al cambiar el estado: ' + (err.message || 'Error desconocido'));
     }
   };
 
@@ -1701,6 +1733,10 @@ export default function App() {
                         <div key={exp.id} className="bg-white/90 p-3.5 rounded-2xl border border-sky-100 flex flex-wrap justify-between items-center text-xs">
                           <div>
                             <p className="font-bold text-slate-800">{exp.description}</p>
+                            <p className="text-[10px] text-sky-700 font-semibold flex items-center gap-1 mt-1">
+                              <MapPin size={11} className="shrink-0" />
+                              <span>Lugar: {validSpots.find(spot => String(spot.id) === String(exp.spot_id))?.name || 'Sin lugar asignado'}</span>
+                            </p>
                             <p className="text-[10px] text-slate-500">Pagado por <span className="font-bold text-sky-600">{exp.paid_by}</span> • Reparto: <span className="text-slate-700 font-bold">{getExpenseParticipants(exp, validMembers).join(', ')}</span></p>
                           </div>
                           <div className="flex items-center space-x-2">
@@ -2209,6 +2245,7 @@ export default function App() {
                 </div>
 
                 <div className="bg-white/90 p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 p-3 rounded-xl">Protección del histórico: bloquear o rechazar una cuenta no elimina usuarios ni modifica planes, gastos o participaciones. La eliminación definitiva de cuentas está deshabilitada.</p>
                   <h2 className="text-sm font-black text-slate-800 flex items-center">
                     <Users size={16} className="mr-1.5 text-sky-600" /> Todos los Usuarios Registrados ({registeredUsers.length})
                   </h2>
