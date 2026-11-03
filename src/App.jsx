@@ -281,7 +281,6 @@ export default function App() {
     }
   };
 
-  // AÑADIR ENLACE QR / CARTA AL SITIO
   const handleAddQrLink = async (e, spot) => {
     e.preventDefault();
     if (!customQrUrl.trim()) return;
@@ -306,7 +305,6 @@ export default function App() {
     }
   };
 
-  // ELIMINAR ENLACE QR
   const handleDeleteQrLink = async (spot, indexToRemove) => {
     const existingLinks = Array.isArray(spot.qr_links) ? spot.qr_links : [];
     const updatedLinks = existingLinks.filter((_, idx) => idx !== indexToRemove);
@@ -596,6 +594,15 @@ export default function App() {
     }
     return transactions;
   };
+
+  // DEFINICIÓN DE LA VARIABLE isAdmin AQUÍ
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.email === 'rafa@ejemplo.com';
+  const myInvitations = Array.isArray(events) ? events.filter(e => Array.isArray(e.pendingInvitations) && e.pendingInvitations.includes(currentUser?.name)) : [];
+  const myApprovalRequests = Array.isArray(events) ? events.filter(e => e.creator_name === currentUser?.name && Array.isArray(e.pendingRequests) && e.pendingRequests.length > 0) : [];
+  
+  const totalNotifications = myInvitations.length + 
+    myApprovalRequests.reduce((acc, curr) => acc + (Array.isArray(curr.pendingRequests) ? curr.pendingRequests.length : 0), 0) + 
+    (isAdmin ? (Array.isArray(passwordRequests) ? passwordRequests.length : 0) + (Array.isArray(pendingRegistrations) ? pendingRegistrations.length : 0) : 0);
 
   const renderSpotCard = (spot, isSelected, maxVotes, selectedSpotsList = []) => {
     const isMajority = maxVotes > 0 && spot.votes === maxVotes;
@@ -1428,7 +1435,7 @@ export default function App() {
         <button onClick={() => setActiveTab('notifications')} className={`flex flex-col items-center relative ${activeTab === 'notifications' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
           <Inbox size={20} />
           <span className="text-[10px] mt-0.5">Aprobaciones</span>
-          {pendingRegistrations.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{pendingRegistrations.length}</span>}
+          {totalNotifications > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{totalNotifications}</span>}
         </button>
       </nav>
     </div>
