@@ -30,8 +30,9 @@ export default function App() {
   // Búsqueda dinámica de usuarios y perfiles
   const [friendSearchInput, setFriendSearchInput] = useState('');
   const [registeredUsers, setRegisteredUsers] = useState([]);
+  const [passwordRequests, setPasswordRequests] = useState([]);
 
-  // Sitios, GPS y Mapas (Con nombre obligatorio garantizado)
+  // Sitios, GPS y Mapas
   const [newSpotName, setNewSpotName] = useState('');
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [showGpsModal, setShowGpsModal] = useState(false);
@@ -62,11 +63,10 @@ export default function App() {
   // Modal para ver tickets grandes
   const [viewingReceiptUrl, setViewingReceiptUrl] = useState(null);
 
-  // Modal de Reseteo Alternativo de Contraseña
+  // Modal de Recuperación de Contraseña con Solicitud al Admin
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetEmailInput, setResetEmailInput] = useState('');
-  const [resetCodeInput, setResetCodeInput] = useState('');
-  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [resetNewPasswordInput, setResetNewPasswordInput] = useState('');
 
   const [events, setEvents] = useState([]);
 
@@ -74,6 +74,7 @@ export default function App() {
     if (currentUser) {
       fetchAppData();
       fetchRegisteredUsers();
+      fetchPasswordRequests();
     }
   }, [currentUser]);
 
@@ -106,6 +107,21 @@ export default function App() {
       setRegisteredUsers(data || []);
     } catch (err) {
       console.error('Error cargando perfiles:', err.message);
+    }
+  };
+
+  const fetchPasswordRequests = async () => {
+    try {
+      const { data, error } = await supabase.from('password_requests').select('*').eq('status', 'pending');
+      if (error) {
+        // Si la tabla no existe aún, evitamos que rompa la app
+        console.warn('Tabla password_requests posiblemente no creada:', error.message);
+        setPasswordRequests([]);
+        return;
+      }
+      setPasswordRequests(data || []);
+    } catch (err) {
+      console.error('Error cargando solicitudes de clave:', err);
     }
   };
 
@@ -212,32 +228,61 @@ export default function App() {
     }
   };
 
-  // SISTEMA DE RESTARURACIÓN DE CONTRASEÑA DIRECTO (SIN SMTP)
-  const handleDirectPasswordReset = async (e) => {
+  // ENVIAR SOLICITUD DE NUEVA CONTRASEÑA AL ADMINISTRADOR
+  const handleRequestPasswordChange = async (e) => {
     e.preventDefault();
-    if (!resetEmailInput || !newPasswordInput) {
-      alert('Por favor, introduce el correo y la nueva contraseña.');
+    if (!resetEmailInput || !resetNewPasswordInput) {
+      alert('Por favor, completa todos los campos.');
       return;
     }
 
-    const errorMsg = validateStrongPassword(newPasswordInput);
+    const errorMsg = validateStrongPassword(resetNewPasswordInput);
     if (errorMsg) {
       alert('Contraseña no válida: ' + errorMsg);
       return;
     }
 
-    // Como el servicio de correo automático de Supabase requiere SMTP configurado, 
-    // facilitamos el reseteo directo mediante verificación de email registrado en perfiles.
-    const targetUser = registeredUsers.find(u => u.email.toLowerCase() === resetEmailInput.toLowerCase());
-    if (!targetUser) {
-      alert('No se ha encontrado ningún usuario con ese correo.');
-      return;
-    }
+    try {
+      const { error } = await supabase.from('password_requests').insert([{
+        email: resetEmailInput.toLowerCase().trim(),
+        new_password: resetNewPasswordInput,
+        status: 'pending'
+      }]);
 
-    alert(`🔑 Solicitud registrada para ${targetUser.name}. Contacta con el administrador del sistema para aplicar el cambio inmediato de credenciales o usa el panel de control.`);
-    setShowResetModal(false);
-    setResetEmailInput('');
-    setNewPasswordInput('');
+      if (error) {
+        // Si no existe la tabla en Supabase, avisamos de la sentencia SQL necesaria
+        alert('ℹ️ Para activar esta función en Supabase, ejecuta esta línea SQL en tu panel:\n\ncreate table password_requests (id uuid default gen_random_uuid() primary key, email text, new_password text, status text default \'pending\', created_at timestamp with time zone default timezone(\'utc\'::text, now()));');
+        return;
+      }
+
+      alert('✅ Solicitud enviada correctamente al administrador. Cuando la apruebe desde su panel, podrás acceder con tu nueva clave.');
+      setShowResetModal(false);
+      setResetEmailInput('');
+      setResetNewPasswordInput('');
+    } catch (err) {
+      console.error(err);
+      alert('Error al enviar la solicitud.');
+    }
+  };
+
+  // APROBAR SOLICITUD DE CONTRASEÑA POR PARTE DEL ADMIN
+  const handleApprovePasswordRequest = async (reqId, targetEmail, requestedPassword) => {
+    if (!confirm(`¿Aprobar el cambio de contraseña para ${targetEmail}?`)) return;
+
+    try {
+      // Marcamos la solicitud como aprobada
+      await supabase.from('password_requests').update({ status: 'approved' }).eq('id', reqId);
+      
+      alert(`🔑 Solicitud aprobada para ${targetEmail}. (Nota: Como Supabase requiere permisos de Auth Admin para modificar claves de otros usuarios, asegúrate de actualizar su clave en el panel de autenticación de Supabase o comunicársela).`);
+      fetchPasswordRequests();
+    } catch (err) {
+      alert('Error al aprobar la solicitud: ' + err.message);
+    }
+  };
+
+  const handleRejectPasswordRequest = async (reqId) => {
+    await supabase.from('password_requests').update({ status: 'rejected' }).eq('id', reqId);
+    fetchPasswordRequests();
   };
 
   const toggleFriendSelection = (friendName) => {
@@ -561,11 +606,6 @@ export default function App() {
     }
   };
 
-  const handleAdminResetPassword = async (userEmail, userName) => {
-    if (!confirm(`¿Restablecer contraseña para ${userName} (${userEmail})?`)) return;
-    alert(`💡 Las credenciales de ${userName} se pueden actualizar directamente desde el panel o proporcionando una clave temporal.`);
-  };
-
   const handleRequestJoin = async (eventId) => {
     await supabase.from('event_members').insert([{
       event_id: eventId,
@@ -597,9 +637,10 @@ export default function App() {
 
   const myInvitations = events.filter(e => e.pendingInvitations.includes(currentUser?.name));
   const myApprovalRequests = events.filter(e => e.creator_name === currentUser?.name && e.pendingRequests.length > 0);
-  const totalNotifications = myInvitations.length + myApprovalRequests.reduce((acc, curr) => acc + curr.pendingRequests.length, 0);
-
+  
+  // Total notificaciones incluye invitaciones, solicitudes a eventos y solicitudes pendientes de contraseña (si es admin)
   const isAdmin = currentUser?.role === 'admin' || currentUser?.email === 'rafa@ejemplo.com';
+  const totalNotifications = myInvitations.length + myApprovalRequests.reduce((acc, curr) => acc + curr.pendingRequests.length, 0) + (isAdmin ? passwordRequests.length : 0);
 
   const filteredUsersToInvite = registeredUsers.filter(u => 
     !u.is_blocked &&
@@ -608,7 +649,6 @@ export default function App() {
      u.email.toLowerCase().includes(friendSearchInput.toLowerCase()))
   );
 
-  // ALGORITMO ROBUSTO DE REPARTO POR TRAMOS (Excluyendo miembros incorporados tarde en gastos previos)
   const calculateDebts = (members = [], expenses = [], spots = []) => {
     if (members.length === 0) return [];
 
@@ -628,8 +668,6 @@ export default function App() {
 
       if (exp.spot_id && sortedSpots.length > 0) {
         const spotIndex = sortedSpots.findIndex(s => s.id === exp.spot_id);
-        // Si el gasto pertenece al primer sitio y hay más de 2 miembros actuales (es decir, alguien se unió después), 
-        // los gastos iniciales corresponden exclusivamente a los miembros originales / fundadores del plan.
         if (spotIndex === 0 && members.length > 2) {
           participants = members.slice(0, 2);
         }
@@ -907,17 +945,17 @@ export default function App() {
           </form>
         </div>
 
-        {/* MODAL DE RECUPERACIÓN DE CONTRASEÑA */}
+        {/* MODAL DE SOLICITUD DE CAMBIO DE CLAVE AL ADMIN */}
         {showResetModal && (
           <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white max-w-sm w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-sky-100">
               <div className="text-center space-y-1">
                 <KeyRound className="w-8 h-8 text-sky-600 mx-auto" />
-                <h3 className="font-black text-slate-800 text-base">Recuperar Acceso</h3>
-                <p className="text-xs text-slate-500">Introduce tu correo para tramitar la nueva clave</p>
+                <h3 className="font-black text-slate-800 text-base">Solicitar Cambio de Contraseña</h3>
+                <p className="text-xs text-slate-500">Envía tu propuesta de nueva contraseña al administrador para que la valide</p>
               </div>
 
-              <form onSubmit={handleDirectPasswordReset} className="space-y-3">
+              <form onSubmit={handleRequestPasswordChange} className="space-y-3">
                 <input 
                   type="email" 
                   placeholder="Tu correo electrónico..." 
@@ -928,9 +966,9 @@ export default function App() {
                 />
                 <input 
                   type="password" 
-                  placeholder="Nueva contraseña segura..." 
-                  value={newPasswordInput} 
-                  onChange={(e) => setNewPasswordInput(e.target.value)} 
+                  placeholder="Nueva contraseña deseada..." 
+                  value={resetNewPasswordInput} 
+                  onChange={(e) => setResetNewPasswordInput(e.target.value)} 
                   className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-3 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
                   required
                 />
@@ -946,7 +984,7 @@ export default function App() {
                     type="submit" 
                     className="w-1/2 bg-sky-600 hover:bg-sky-700 text-white font-bold py-2.5 rounded-2xl text-xs shadow transition"
                   >
-                    Solicitar Cambio
+                    Enviar al Admin
                   </button>
                 </div>
               </form>
@@ -1520,7 +1558,6 @@ export default function App() {
           )}
         </main>
 
-        {/* MODAL GPS CON CAMPO DE NOMBRE OBLIGATORIO */}
         {showGpsModal && (
           <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white max-w-sm w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-sky-100">
@@ -1768,6 +1805,42 @@ export default function App() {
             </div>
 
             {isAdmin && (
+              <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-indigo-100 shadow-sm space-y-3">
+                <h2 className="text-sm font-black text-slate-800 flex items-center">
+                  <KeyRound size={16} className="mr-1.5 text-indigo-600" /> Solicitudes de Cambio de Contraseña ({passwordRequests.length})
+                </h2>
+                {passwordRequests.length === 0 ? (
+                  <p className="text-xs text-slate-500">No hay solicitudes de nueva contraseña pendientes.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {passwordRequests.map(req => (
+                      <div key={req.id} className="p-3 rounded-2xl border border-indigo-100 bg-indigo-50/40 flex justify-between items-center text-xs">
+                        <div>
+                          <p className="font-bold text-slate-800">{req.email}</p>
+                          <p className="text-[10px] text-slate-500">Nueva clave solicitada: <span className="font-bold text-indigo-600">{req.new_password}</span></p>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <button 
+                            onClick={() => handleApprovePasswordRequest(req.id, req.email, req.new_password)}
+                            className="px-2.5 py-1.5 rounded-xl font-bold text-[10px] bg-emerald-600 hover:bg-emerald-700 text-white transition"
+                          >
+                            Aprobar
+                          </button>
+                          <button 
+                            onClick={() => handleRejectPasswordRequest(req.id)}
+                            className="px-2.5 py-1.5 rounded-xl font-bold text-[10px] bg-red-600 hover:bg-red-700 text-white transition"
+                          >
+                            Rechazar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isAdmin && (
               <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-red-100 shadow-sm space-y-3">
                 <h2 className="text-sm font-black text-slate-800 flex items-center">
                   <ShieldAlert size={16} className="mr-1.5 text-red-600" /> Panel de Administrador (Gestión de Usuarios)
@@ -1780,14 +1853,6 @@ export default function App() {
                         <p className="text-[10px] text-slate-500">{u.email}</p>
                       </div>
                       <div className="flex gap-1.5">
-                        <button 
-                          onClick={() => handleAdminResetPassword(u.email, u.name)}
-                          title="Gestionar contraseña"
-                          className="px-2.5 py-1.5 rounded-xl font-bold text-[10px] bg-sky-600 hover:bg-sky-700 text-white transition flex items-center space-x-1"
-                        >
-                          <KeyRound size={12} />
-                          <span>Reset Clave</span>
-                        </button>
                         <button 
                           onClick={() => handleToggleBlockUser(u.id, u.is_blocked)}
                           className={`px-2.5 py-1.5 rounded-xl font-bold text-[10px] transition ${u.is_blocked ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}
