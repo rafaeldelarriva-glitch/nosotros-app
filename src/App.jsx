@@ -101,9 +101,9 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Inicializar participantes solo una vez al abrir el evento
+  // Inicializar participantes solo una vez al abrir el evento si está vacío
   useEffect(() => {
-    if (activeEvent && Array.isArray(activeEvent.members)) {
+    if (activeEvent && Array.isArray(activeEvent.members) && expenseParticipants.length === 0) {
       setExpenseParticipants(activeEvent.members);
     }
   }, [activeEvent?.id]);
@@ -713,10 +713,10 @@ export default function App() {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
     
-    // Respetamos estrictamente lo que el usuario dejó marcado en pantalla
+    // Respetamos estrictamente la selección del usuario en pantalla
     const finalParticipants = (Array.isArray(expenseParticipants) && expenseParticipants.length > 0) 
       ? expenseParticipants 
-      : [currentUser.name];
+      : activeEvent.members;
 
     const { error } = await supabase.from('expenses').insert([{
       event_id: activeEvent.id,
@@ -737,7 +737,7 @@ export default function App() {
     setExpenseAmount('');
     setExpenseSpotId('');
     setExpenseReceiptUrl('');
-    // OJO: YA NO RESETEAMOS LOS PARTICIPANTES AQUÍ PARA QUE SE MANTENGAN TUS PREFERENCIAS
+    // No reseteamos expenseParticipants para conservar las preferencias de selección
     await refreshAllData();
   };
 
@@ -790,7 +790,6 @@ export default function App() {
       const amount = Number(exp.amount) || 0;
       balancesMap[exp.paid_by] = (balancesMap[exp.paid_by] || 0) + amount;
 
-      // Usamos el array guardado en la base de datos. Si no viniera, por seguridad usa todos.
       const parts = (Array.isArray(exp.participants) && exp.participants.length > 0) 
         ? exp.participants 
         : members;
@@ -1095,7 +1094,6 @@ export default function App() {
     const validPhotos = Array.isArray(activeEvent.photos) ? activeEvent.photos : [];
 
     const totalSpent = validExpenses.reduce((acc, c) => acc + Number(c.amount), 0);
-    const averagePerPerson = validMembers.length > 0 ? (totalSpent / validMembers.length) : 0;
     
     const selectedSpots = validSpots.filter(s => s.active_now);
     const pendingSpots = validSpots.filter(s => !s.active_now);
@@ -1362,9 +1360,10 @@ export default function App() {
 
               {eventSubTab === 'expenses' && (
                 <div className="space-y-5">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm"><p className="text-[10px] font-bold text-slate-500">TOTAL GRUPO</p><p className="text-xl font-black text-emerald-600">{totalSpent.toFixed(2)}€</p></div>
-                    <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm"><p className="text-[10px] font-bold text-slate-500">MEDIA APROX / PERSONA</p><p className="text-xl font-black text-sky-600">{averagePerPerson.toFixed(2)}€</p></div>
+                  {/* Tarjeta de Total del Grupo (eliminada la media aproximada por no ser equitativa) */}
+                  <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm text-center">
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">TOTAL GASTADO POR EL GRUPO</p>
+                    <p className="text-2xl font-black text-emerald-600 mt-0.5">{totalSpent.toFixed(2)}€</p>
                   </div>
 
                   <div className="bg-gradient-to-br from-slate-900 to-sky-950 text-white p-5 rounded-3xl shadow-lg space-y-3 border border-sky-400/20">
