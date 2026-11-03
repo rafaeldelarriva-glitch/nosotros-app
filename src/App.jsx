@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, MapPin, DollarSign, Plus, CheckCircle, 
-  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus, UserMinus, ShieldAlert, KeyRound, Archive, Share2, ArrowUp, ArrowDown, Radio, Settings, ShieldCheck, Edit3, QrCode, ExternalLink
+  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus, UserMinus, ShieldAlert, KeyRound, Archive, Share2, ArrowUp, ArrowDown, Radio, Settings, ShieldCheck, Edit3, QrCode, ExternalLink, Ban, UserCheck, Crosshair
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -41,8 +41,10 @@ export default function App() {
   const [confirmNewPasswordInput, setConfirmNewPasswordInput] = useState('');
   const [profileMessage, setProfileMessage] = useState('');
 
-  // Sitios, QR y GPS
+  // Sitios, Autocompletado OpenStreetMap y GPS
   const [newSpotName, setNewSpotName] = useState('');
+  const [osmSuggestions, setOsmSuggestions] = useState([]);
+  const [isSearchingOsm, setIsSearchingOsm] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [activeQrSpotId, setActiveQrSpotId] = useState(null);
   const [customQrLabel, setCustomQrLabel] = useState('');
@@ -62,12 +64,6 @@ export default function App() {
   const [viewingPhotoUrl, setViewingPhotoUrl] = useState(null);
   const [spotCommentInputs, setSpotCommentInputs] = useState({});
   const [expandedTimelineSpotId, setExpandedTimelineSpotId] = useState(null);
-  const [viewingReceiptUrl, setViewingReceiptUrl] = useState(null);
-
-  // Recuperación clave
-  const [showResetModal, setShowResetModal] = useState(false);
-  const [resetEmailInput, setResetEmailInput] = useState('');
-  const [resetNewPasswordInput, setResetNewPasswordInput] = useState('');
 
   const [events, setEvents] = useState([]);
 
@@ -104,6 +100,30 @@ export default function App() {
       setExpenseParticipants(activeEvent.members);
     }
   }, [activeEvent]);
+
+  // Búsqueda en OpenStreetMap (Nominatim) al escribir
+  useEffect(() => {
+    if (!newSpotName.trim() || newSpotName.length < 3) {
+      setOsmSuggestions([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearchingOsm(true);
+      try {
+        const query = `${newSpotName}, El Puerto de Santa María, Cadiz, Spain`;
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`);
+        const data = await res.json();
+        setOsmSuggestions(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Error buscando en OpenStreetMap:', err);
+      } finally {
+        setIsSearchingOsm(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [newSpotName]);
 
   const refreshAllData = async () => {
     await Promise.all([
@@ -174,6 +194,7 @@ export default function App() {
           members: rawMembers.filter(m => m.status === 'member').map(m => m.user_name),
           pendingInvitations: rawMembers.filter(m => m.status === 'pending_invite').map(m => m.user_name),
           pendingRequests: rawMembers.filter(m => m.status === 'pending_request').map(m => m.user_name),
+          rawEventMembers: rawMembers,
           spots: rawSpots,
           expenses: Array.isArray(ev.expenses) ? ev.expenses : [],
           photos: Array.isArray(ev.photos) ? ev.photos : [],
@@ -289,6 +310,7 @@ export default function App() {
     setActiveEvent(null);
   };
 
+  // APROBACIONES Y ADMINISTRACIÓN DE USUARIOS
   const handleApproveRegistration = async (userId, userName) => {
     try {
       await supabase.from('profiles').update({ is_approved: true }).eq('id', userId);
@@ -307,6 +329,63 @@ export default function App() {
     } catch (err) {
       alert('Error: ' + err.message);
     }
+  };
+
+  const handleToggleBlockUser = async (userId, currentBlockedState, userName) => {
+    if (!confirm(`¿Estás seguro de ${currentBlockedState ? 'desbloquear' : 'bloquear/anular'} a ${userName}?`)) return;
+    try {
+      await supabase.from('profiles').update({ is_blocked: !currentBlockedState }).eq('id', userId);
+      alert(`Usuario ${userName} ${currentBlockedState ? 'desbloqueado' : 'bloqueado'}.`);
+      await refreshAllData();
+    } catch (err) {
+      alert('Error al cambiar estado del usuario: ' + err.message);
+    }
+  };
+
+  const handleApproveEventJoin = async (eventId, userName) => {
+    try {
+      await supabase.from('event_members').update({ status: 'member' }).eq('event_id', eventId).eq('user_name', userName);
+      alert(`✅ ${userName} añadido al plan.`);
+      await refreshAllData();
+    } catch (err) {
+      alert('Error al aprobar usuario en plan: ' + err.message);
+    }
+  };
+
+  const handleRejectEventJoin = async (eventId, userName) => {
+    if (!confirm(`¿Rechazar la solicitud de ${userName}?`)) return;
+    try {
+      await supabase.from('event_members').delete().eq('event_id', eventId).eq('user_name', userName);
+      await refreshAllData();
+    } catch (err) {
+      alert('Error al rechazar usuario: ' + err.message);
+    }
+  };
+
+  // PROPUSTA CON GPS DIRECTO
+  const handleProposeCurrentGpsLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Tu navegador no soporta geolocalización GPS.');
+      return;
+    }
+    setIsGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      try {
+        const { latitude, longitude } = pos.coords;
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+        const data = await res.json();
+        const detectedName = data.display_name ? data.display_name.split(',')[0] : `Sitio GPS (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
+        setNewSpotName(detectedName);
+        setOsmSuggestions([]);
+      } catch (err) {
+        alert('No se pudo traducir la posición GPS a nombre de calle.');
+      } finally {
+        setIsGettingLocation(false);
+      }
+    }, () => {
+      setIsGettingLocation(false);
+      alert('No se pudo obtener la posición GPS actual.');
+    }, { enableHighAccuracy: true });
   };
 
   const handleAddQrLink = async (e, spot) => {
@@ -390,14 +469,6 @@ export default function App() {
     }
   };
 
-  const toggleExpenseParticipant = (memberName) => {
-    if (Array.isArray(expenseParticipants) && expenseParticipants.includes(memberName)) {
-      setExpenseParticipants(expenseParticipants.filter(m => m !== memberName));
-    } else {
-      setExpenseParticipants([...(Array.isArray(expenseParticipants) ? expenseParticipants : []), memberName]);
-    }
-  };
-
   const handleCreateEvent = async (e) => {
     e.preventDefault();
     if (!newTitle.trim() || !newDate || !currentUser) return;
@@ -432,15 +503,11 @@ export default function App() {
     if (e) e.preventDefault();
     if (!newSpotName.trim() || !activeEvent || !currentUser) return;
 
-    const formattedSpotName = newSpotName.toLowerCase().includes('valdelagrana') || newSpotName.toLowerCase().includes('el puerto') 
-      ? newSpotName.trim() 
-      : `${newSpotName.trim()}, Valdelagrana, El Puerto de Santa María`;
-
     const currentSelectedCount = (activeEvent.spots || []).filter(s => s.active_now).length;
 
     await supabase.from('spots').insert([{
       event_id: activeEvent.id,
-      name: formattedSpotName,
+      name: newSpotName.trim(),
       category: 'bar',
       votes: 1,
       suggested_by: currentUser.name,
@@ -449,6 +516,7 @@ export default function App() {
     }]);
 
     setNewSpotName('');
+    setOsmSuggestions([]);
     await refreshAllData();
   };
 
@@ -509,18 +577,6 @@ export default function App() {
     if (!confirm('¿Eliminar sitio?')) return;
     await supabase.from('spots').delete().eq('id', spotId);
     await refreshAllData();
-  };
-
-  const handleReceiptUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setIsUploadingReceipt(true);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      setExpenseReceiptUrl(reader.result);
-      setIsUploadingReceipt(false);
-    };
-    reader.readAsDataURL(file);
   };
 
   const handleAddExpense = async (e) => {
@@ -609,6 +665,14 @@ export default function App() {
   };
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.email === 'rafa@ejemplo.com';
+
+  // Colección de todas las solicitudes pendientes para el panel de aprobación
+  const allPendingPlanRequests = events.flatMap(ev => {
+    const rawMembers = Array.isArray(ev.rawEventMembers) ? ev.rawEventMembers : [];
+    return rawMembers
+      .filter(m => m.status === 'pending_request')
+      .map(m => ({ eventId: ev.id, eventTitle: ev.title, userName: m.user_name }));
+  });
 
   const renderSpotCard = (spot, isSelected, maxVotes, selectedSpotsList = []) => {
     const isMajority = maxVotes > 0 && spot.votes === maxVotes;
@@ -873,7 +937,6 @@ export default function App() {
     
     const selectedSpots = validSpots.filter(s => s.active_now);
     const pendingSpots = validSpots.filter(s => !s.active_now);
-    const currentSpotHere = validSpots.find(s => s.is_current_here);
 
     const calculatedDebts = calculateDebts(validMembers, validExpenses);
     const isCreator = activeEvent.creator_name === currentUser.name;
@@ -1053,10 +1116,54 @@ export default function App() {
 
               {eventSubTab === 'spots' && (
                 <div className="space-y-4">
-                  <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
-                    <h3 className="text-xs font-black text-slate-800">Proponer nuevo sitio</h3>
-                    <form onSubmit={handleAddSpot} className="space-y-2.5">
-                      <input type="text" placeholder="Ej. Bar Shiko..." value={newSpotName} onChange={(e) => setNewSpotName(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" />
+                  {/* FORMULARIO DE PROPUESTA DE SITIO CON AUTOCOMPLETADO OPENSTREETMAP Y GPS */}
+                  <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3 relative">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-xs font-black text-slate-800">Proponer nuevo sitio</h3>
+                      <button 
+                        type="button" 
+                        onClick={handleProposeCurrentGpsLocation} 
+                        disabled={isGettingLocation}
+                        className="text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-xl flex items-center transition"
+                      >
+                        <Crosshair size={12} className="mr-1 text-emerald-600" />
+                        {isGettingLocation ? 'Obteniendo GPS...' : 'Marcar con mi GPS'}
+                      </button>
+                    </div>
+
+                    <form onSubmit={handleAddSpot} className="space-y-2.5 relative">
+                      <div className="relative">
+                        <input 
+                          type="text" 
+                          placeholder="Escribe un bar o sitio (ej. Bar Shiko)..." 
+                          value={newSpotName} 
+                          onChange={(e) => setNewSpotName(e.target.value)} 
+                          className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" 
+                        />
+                        {isSearchingOsm && (
+                          <span className="absolute right-3 top-2.5 text-[10px] text-sky-600 font-bold animate-pulse">Buscando mapa...</span>
+                        )}
+                      </div>
+
+                      {/* DESPLEGABLE DE SUGERENCIAS DE OPENSTREETMAP */}
+                      {osmSuggestions.length > 0 && (
+                        <div className="absolute left-0 right-0 top-11 bg-white border border-sky-200 rounded-2xl shadow-xl z-50 max-h-48 overflow-y-auto divide-y divide-sky-100">
+                          {osmSuggestions.map((item, idx) => (
+                            <div 
+                              key={idx} 
+                              onClick={() => {
+                                setNewSpotName(item.display_name);
+                                setOsmSuggestions([]);
+                              }}
+                              className="p-2.5 text-xs text-slate-700 hover:bg-sky-50 cursor-pointer transition flex items-start space-x-2"
+                            >
+                              <MapPin size={14} className="text-sky-600 shrink-0 mt-0.5" />
+                              <span className="line-clamp-2">{item.display_name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
                       <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow">
                         🔍 Añadir a la ruta
                       </button>
@@ -1334,16 +1441,44 @@ export default function App() {
           </div>
         )}
 
+        {/* PESTAÑA APROBACIONES / PANEL DE ADMINISTRADOR Y SOLICITUDES DE PLANES */}
         {activeTab === 'notifications' && (
           <div className="space-y-4">
+            {/* 1. SOLICITUDES PENDIENTES DE PLANES (Accesible para creadores y administradores) */}
+            <div className="bg-white/90 p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
+              <h2 className="text-sm font-black text-slate-800 flex items-center">
+                <UserPlus size={16} className="mr-1.5 text-sky-600" /> Solicitudes para unirse a Planes ({allPendingPlanRequests.length})
+              </h2>
+              {allPendingPlanRequests.length === 0 ? (
+                <p className="text-xs text-slate-400">No hay solicitudes para ningún plan activo.</p>
+              ) : (
+                <div className="space-y-2">
+                  {allPendingPlanRequests.map((req, idx) => (
+                    <div key={idx} className="p-3.5 rounded-2xl border border-sky-200 bg-sky-50/50 flex justify-between items-center text-xs">
+                      <div>
+                        <p className="font-bold text-slate-800">{req.userName}</p>
+                        <p className="text-[10px] text-sky-700 font-bold">Plan: {req.eventTitle}</p>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => handleApproveEventJoin(req.eventId, req.userName)} className="px-3 py-1.5 rounded-xl font-bold bg-sky-600 text-white">Aprobar</button>
+                        <button onClick={() => handleRejectEventJoin(req.eventId, req.userName)} className="px-3 py-1.5 rounded-xl font-bold bg-red-100 text-red-700">Rechazar</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 2. REGISTROS Y GESTIÓN GLOBAL DE USUARIOS (ADMIN) */}
             {isAdmin ? (
-              <div className="space-y-3">
+              <div className="space-y-4">
+                {/* Registros de nuevas cuentas */}
                 <div className="bg-white/90 p-5 rounded-[2.5rem] border border-emerald-100 shadow-sm space-y-3">
                   <h2 className="text-sm font-black text-slate-800 flex items-center">
-                    <ShieldCheck size={16} className="mr-1.5 text-emerald-600" /> Registros Pendientes ({pendingRegistrations.length})
+                    <ShieldCheck size={16} className="mr-1.5 text-emerald-600" /> Cuentas de Usuario Pendientes ({pendingRegistrations.length})
                   </h2>
                   {pendingRegistrations.length === 0 ? (
-                    <p className="text-xs text-slate-400">No hay registros pendientes de aprobación.</p>
+                    <p className="text-xs text-slate-400">No hay cuentas nuevas pendientes de aprobación.</p>
                   ) : (
                     <div className="space-y-2">
                       {pendingRegistrations.map(reg => (
@@ -1361,12 +1496,40 @@ export default function App() {
                     </div>
                   )}
                 </div>
+
+                {/* Lista general para bloquear/anular usuarios */}
+                <div className="bg-white/90 p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
+                  <h2 className="text-sm font-black text-slate-800 flex items-center">
+                    <Users size={16} className="mr-1.5 text-sky-600" /> Todos los Usuarios Registrados ({registeredUsers.length})
+                  </h2>
+                  <div className="space-y-2">
+                    {registeredUsers.map(usr => (
+                      <div key={usr.id} className={`p-3.5 rounded-2xl border flex justify-between items-center text-xs ${usr.is_blocked ? 'bg-red-50/80 border-red-200' : 'bg-white border-sky-100'}`}>
+                        <div>
+                          <p className="font-bold text-slate-800 flex items-center">
+                            {usr.name} {usr.role === 'admin' && <span className="ml-1.5 text-[9px] bg-sky-100 text-sky-800 font-bold px-1.5 py-0.5 rounded-full">ADMIN</span>}
+                          </p>
+                          <p className="text-[10px] text-slate-500">{usr.email}</p>
+                        </div>
+                        {usr.role !== 'admin' && (
+                          <button 
+                            onClick={() => handleToggleBlockUser(usr.id, usr.is_blocked, usr.name)} 
+                            className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-1 ${usr.is_blocked ? 'bg-emerald-600 text-white' : 'bg-red-100 text-red-700 hover:bg-red-200'}`}
+                          >
+                            {usr.is_blocked ? <UserCheck size={12} className="mr-1" /> : <Ban size={12} className="mr-1" />}
+                            <span>{usr.is_blocked ? 'Desbloquear' : 'Bloquear / Anular'}</span>
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             ) : (
               <div className="bg-white/90 p-6 rounded-[2.5rem] text-center space-y-2 border border-sky-100">
                 <Shield size={24} className="mx-auto text-sky-600" />
                 <h3 className="font-black text-slate-800 text-sm">Panel de Administrador</h3>
-                <p className="text-xs text-slate-500">Solo el administrador puede gestionar las aprobaciones de nuevos usuarios.</p>
+                <p className="text-xs text-slate-500">Solo el administrador puede gestionar el bloqueo de cuentas y la aprobación global de registros.</p>
               </div>
             )}
           </div>
@@ -1412,7 +1575,11 @@ export default function App() {
         <button onClick={() => setActiveTab('notifications')} className={`flex flex-col items-center relative ${activeTab === 'notifications' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
           <Inbox size={20} />
           <span className="text-[10px] mt-0.5">Aprobaciones</span>
-          {pendingRegistrations.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{pendingRegistrations.length}</span>}
+          {(pendingRegistrations.length + allPendingPlanRequests.length) > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+              {pendingRegistrations.length + allPendingPlanRequests.length}
+            </span>
+          )}
         </button>
       </nav>
     </div>
