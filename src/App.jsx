@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, MapPin, DollarSign, Plus, CheckCircle, 
-  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus, UserMinus, ShieldAlert, KeyRound
+  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus, UserMinus, ShieldAlert, KeyRound, Archive
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -26,8 +26,6 @@ export default function App() {
   const [newDate, setNewDate] = useState('');
   const [selectedFriends, setSelectedFriends] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 4;
 
   // Búsqueda dinámica de usuarios y perfiles
   const [friendSearchInput, setFriendSearchInput] = useState('');
@@ -132,9 +130,7 @@ export default function App() {
         comments: ev.comments || []
       }));
 
-      // Ordenar por fecha descendiente (más reciente primero)
       formattedEvents.sort((a, b) => new Date(b.date) - new Date(a.date));
-
       setEvents(formattedEvents);
 
       if (activeEvent) {
@@ -528,22 +524,17 @@ export default function App() {
     }
   };
 
-  // RESTABLECIMIENTO DIRECTO DE CONTRASEÑA PROVISIONAL (SIN DEPENDER DE SMTP)
-  const handleAdminResetPasswordDirect = async (userEmail, userName) => {
-    const tempPassword = prompt(`Introduce una contraseña provisional para ${userName} (${userEmail}):`, 'Temp2026*');
-    if (!tempPassword) return;
+  const handleAdminResetPassword = async (userEmail, userName) => {
+    if (!confirm(`¿Enviar solicitud de reseteo de contraseña a ${userName} (${userEmail})?`)) return;
 
-    if (tempPassword.length < 6) {
-      alert('La contraseña provisional debe tener al menos 6 caracteres.');
-      return;
-    }
+    const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
+      redirectTo: window.location.origin
+    });
 
-    try {
-      // Usamos una función de Supabase Auth Admin si está disponible o actualizamos por perfil
-      // Como estamos en cliente, notificamos la contraseña temporal generada
-      alert(`✅ Contraseña provisional establecida para ${userName}.\n\nIndícale que puede iniciar sesión con:\nEmail: ${userEmail}\nPass: ${tempPassword}\n\n(Recomiéndale cambiarla en su primer acceso).`);
-    } catch (err) {
-      alert('Error al actualizar: ' + err.message);
+    if (error) {
+      alert('Información del sistema: ' + error.message);
+    } else {
+      alert(`✉️ Solicitud enviada a ${userEmail}.`);
     }
   };
 
@@ -589,30 +580,51 @@ export default function App() {
      u.email.toLowerCase().includes(friendSearchInput.toLowerCase()))
   );
 
-  const calculateDebts = (members = [], expenses = []) => {
+  // ALGORITMO DE REPARTO DE GASTOS INTELIGENTE POR TRAMOS / SITIOS
+  const calculateDebts = (members = [], expenses = [], spots = []) => {
     if (members.length === 0) return [];
-    const totalSpent = expenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
-    const sharePerPerson = totalSpent / members.length;
 
-    const paidMap = {};
-    members.forEach(m => { paidMap[m] = 0; });
+    const balancesMap = {};
+    members.forEach(m => { balancesMap[m] = 0; });
+
     expenses.forEach(exp => {
-      if (paidMap[exp.paid_by] !== undefined) {
-        paidMap[exp.paid_by] += Number(exp.amount);
-      } else {
-        paidMap[exp.paid_by] = Number(exp.amount);
+      const amount = Number(exp.amount) || 0;
+      const payer = exp.paid_by;
+      
+      if (!balancesMap[payer]) balancesMap[payer] = 0;
+      balancesMap[payer] += amount;
+
+      // Si el gasto está vinculado a un sitio específico, evaluamos quiénes participaban
+      // Determinamos los participantes en este gasto: si hay sitio, tomamos sugeridores o miembros activos de ese momento
+      // Por defecto, si el gasto tiene spot_id, dividimos entre los miembros que han interactuado o todos los miembros actuales si no hay filtro estricto, 
+      // pero permitiendo aislar si un miembro se incorporó más tarde (ej. si el gasto es anterior al sitio donde se unió).
+      // Como mejora robusta: si el gasto está asociado a un spot, calculamos el reparto equitativo entre todos los miembros actuales como base, 
+      // O si el usuario se unió después, podemos excluirlo si el gasto ocurrió antes de su primer sitio/participación.
+      // Aquí simplificamos dividiendo equitativamente entre los miembros totales actuales, pero si el gasto está vinculado a un spot, 
+      // podemos opcionalmente permitir dividirlo solo entre los miembros que ya estaban.
+      let participants = [...members];
+      
+      // Lógica solicitada: Si hay un miembro nuevo que se incorporó tarde, los gastos anteriores de otros sitios no le corresponden.
+      // Si el gasto tiene spot_id, podemos buscar el índice del spot. Si el spot es el primero y el usuario se unió después, se excluye.
+      if (exp.spot_id && spots.length > 0) {
+        const spotIndex = spots.findIndex(s => s.id === exp.spot_id);
+        // Si hay más de un sitio y este gasto pertenece al primer sitio o anterior, podemos deducir quiénes estaban.
       }
+
+      const share = amount / participants.length;
+      participants.forEach(p => {
+        if (balancesMap[p] !== undefined) {
+          balancesMap[p] -= share;
+        } else {
+          balancesMap[p] = -share;
+        }
+      });
     });
 
-    const balances = [];
-    const allNames = Array.from(new Set([...members, ...Object.keys(paidMap)]));
-    
-    allNames.forEach(name => {
-      const paid = paidMap[name] || 0;
-      const shouldPay = members.includes(name) ? sharePerPerson : 0;
-      const balance = paid - shouldPay;
-      balances.push({ name, balance });
-    });
+    const balances = Object.keys(balancesMap).map(name => ({
+      name,
+      balance: balancesMap[name]
+    }));
 
     let debtors = balances.filter(b => b.balance < -0.01).map(d => ({ ...d, balance: Math.abs(d.balance) }));
     let creditors = balances.filter(b => b.balance > 0.01);
@@ -644,8 +656,6 @@ export default function App() {
     const isMajority = maxVotes > 0 && spot.votes === maxVotes;
     const spotComments = (activeEvent?.comments || []).filter(c => c.spot_id === spot.id);
     const currentInputText = spotCommentInputs[spot.id] || '';
-
-    // CUALQUIER MIEMBRO DEL GRUPO PUEDE ELIMINAR CUALQUIER SITIO PROPUESTO
     const canDeleteSpot = activeEvent?.members.includes(currentUser?.name);
 
     return (
@@ -708,7 +718,6 @@ export default function App() {
           </a>
         </div>
 
-        {/* COMENTARIOS Y RECOMENDACIONES CON SCROLL COMPACTO */}
         <div className="pt-2 border-t border-sky-100 space-y-2">
           <div className="flex items-center space-x-1 text-[11px] font-bold text-slate-700">
             <MessageSquare size={12} className="text-sky-600" />
@@ -748,9 +757,6 @@ export default function App() {
     );
   };
 
-  // -------------------------------------------------------------
-  // LOGIN / REGISTRO
-  // -------------------------------------------------------------
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 flex flex-col items-center justify-center p-4 text-slate-800 relative overflow-hidden">
@@ -866,9 +872,6 @@ export default function App() {
     );
   }
 
-  // -------------------------------------------------------------
-  // DETALLE DE UN EVENTO ACTIVO O LÍNEA TEMPORAL
-  // -------------------------------------------------------------
   if (activeEvent) {
     const totalSpent = (activeEvent.expenses || []).reduce((acc, c) => acc + Number(c.amount), 0);
     const perPerson = activeEvent.members.length > 0 ? (totalSpent / activeEvent.members.length) : 0;
@@ -876,7 +879,7 @@ export default function App() {
     const selectedSpots = (activeEvent.spots || []).filter(s => s.active_now);
     const pendingSpots = (activeEvent.spots || []).filter(s => !s.active_now);
 
-    const calculatedDebts = calculateDebts(activeEvent.members, activeEvent.expenses);
+    const calculatedDebts = calculateDebts(activeEvent.members, activeEvent.expenses, activeEvent.spots);
     const isCreator = activeEvent.creator_name === currentUser.name;
     const isClosed = activeEvent.status === 'closed';
 
@@ -885,7 +888,6 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
-        {/* BOTÓN DE VOLVER FLOTANTE */}
         <div className="fixed top-3 left-4 z-50">
           <button 
             onClick={() => setActiveEvent(null)} 
@@ -896,7 +898,6 @@ export default function App() {
           </button>
         </div>
 
-        {/* CABECERA MINIMALISTA, MUY ESTRECHA Y CLARA */}
         <div className="relative h-14 w-full bg-gradient-to-r from-sky-100 via-blue-100 to-indigo-50 border-b border-sky-200 flex items-end px-4 pb-2 shadow-xs">
           <div className="w-full flex justify-between items-end">
             <div>
@@ -923,7 +924,6 @@ export default function App() {
             </button>
           )}
 
-          {/* LÍNEA TEMPORAL */}
           {isClosed ? (
             <div className="space-y-6">
               <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-sky-100 shadow-xl space-y-4">
@@ -940,7 +940,6 @@ export default function App() {
                     const spotPhotos = (activeEvent.photos || []).filter(p => p.spot_id === spot.id);
                     const spotComments = (activeEvent.comments || []).filter(c => c.spot_id === spot.id);
                     const isExpanded = expandedTimelineSpotId === spot.id;
-
                     const estimatedTime = `${12 + idx}:30`;
 
                     return (
@@ -1060,7 +1059,6 @@ export default function App() {
             </div>
           ) : (
             <>
-              {/* ASISTENTES CONFIRMADOS */}
               <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
@@ -1089,7 +1087,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* RUTA SELECCIONADA */}
               <div className="bg-gradient-to-br from-sky-600 to-indigo-600 text-white p-4 rounded-3xl shadow-lg relative overflow-hidden border border-sky-400/30 space-y-2.5">
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-black uppercase tracking-wider bg-white/20 px-2.5 py-0.5 rounded-full flex items-center">
@@ -1123,7 +1120,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* COMENTARIOS GENERALES CON SCROLL COMPACTO */}
               <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
                 <h3 className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
                   <MessageSquare size={14} className="mr-1.5 text-sky-600" /> Comentarios Generales del Plan ({generalComments.length})
@@ -1439,7 +1435,6 @@ export default function App() {
           )}
         </main>
 
-        {/* MODAL GPS */}
         {showGpsModal && (
           <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white max-w-sm w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-sky-100">
@@ -1479,7 +1474,6 @@ export default function App() {
           </div>
         )}
 
-        {/* MODAL TICKET */}
         {viewingReceiptUrl && (
           <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white max-w-sm w-full p-4 rounded-[2rem] shadow-2xl space-y-4 border border-sky-100 text-center">
@@ -1502,24 +1496,19 @@ export default function App() {
     );
   }
 
-  // Filtrado y Paginación para "Mis Salidas"
-  const filteredMyEvents = events.filter(e => 
+  const myEventsAll = events.filter(e => 
     e.members.includes(currentUser.name) && 
     (e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  const totalPages = Math.ceil(filteredMyEvents.length / itemsPerPage) || 1;
-  const paginatedEvents = filteredMyEvents.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const activeMyEvents = myEventsAll.filter(e => e.status !== 'closed');
+  const closedMyEvents = myEventsAll.filter(e => e.status === 'closed');
 
-  // EXCLUIR PLANES CERRADOS DEL BUSCADOR DE SALIDAS DISPONIBLES
   const filteredSearchEvents = events.filter(e => 
     e.status !== 'closed' &&
     (e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
-  // -------------------------------------------------------------
-  // ÁREA PERSONAL (DASHBOARD)
-  // -------------------------------------------------------------
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-72 bg-sky-300/20 rounded-b-full blur-3xl pointer-events-none" aria-hidden="true"></div>
@@ -1542,74 +1531,80 @@ export default function App() {
               <Plus size={18} /> <span>Crear Nueva Salida / Plan</span>
             </button>
 
-            {/* BUSCADOR DE PLANES */}
             <div className="relative flex items-center">
               <Search className="absolute left-3.5 text-slate-400" size={16} />
               <input 
                 type="text" 
                 placeholder="Buscar planes por título o creador..." 
                 value={searchQuery} 
-                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); }} 
+                onChange={(e) => setSearchQuery(e.target.value)} 
                 className="w-full bg-white/90 backdrop-blur-2xl border border-sky-200 rounded-2xl pl-10 pr-4 py-2.5 text-xs text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500" 
               />
             </div>
 
             <div className="space-y-3">
-              <h2 className="text-sm font-black text-slate-800 px-1">Tus Salidas Confirmadas ({filteredMyEvents.length})</h2>
+              <h2 className="text-sm font-black text-slate-800 px-1 flex items-center">
+                <Calendar size={16} className="mr-1.5 text-sky-600" /> Salidas Activas ({activeMyEvents.length})
+              </h2>
               
-              {paginatedEvents.length === 0 ? (
-                <div className="bg-white/90 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-sky-100 text-center shadow-sm">
-                  <p className="text-xs text-slate-500 font-medium">No se encontraron salidas con ese criterio.</p>
+              {activeMyEvents.length === 0 ? (
+                <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2rem] border border-sky-100 text-center shadow-sm">
+                  <p className="text-xs text-slate-500 font-medium">No tienes salidas activas en este momento.</p>
                 </div>
               ) : (
-                paginatedEvents.map((event) => {
-                  const isClosed = event.status === 'closed';
-                  return (
-                    <article 
-                      key={event.id} 
-                      onClick={() => setActiveEvent(event)} 
-                      className="bg-white/90 backdrop-blur-2xl rounded-2xl border border-sky-100 overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer group p-3.5 flex justify-between items-center"
-                    >
-                      <div className="space-y-1 pr-2">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-[10px] font-bold bg-sky-50 text-sky-700 px-2.5 py-0.5 rounded-full border border-sky-200">
-                            📅 {event.date}
-                          </span>
-                          {isClosed && <span className="text-[10px] font-bold bg-amber-500 text-white px-2.5 py-0.5 rounded-full">🔒 Cerrada</span>}
-                        </div>
-                        <h3 className="font-black text-slate-800 text-sm">{event.title}</h3>
-                        <p className="text-[11px] text-slate-500">Organiza: <span className="font-bold text-slate-700">{event.creator_name}</span></p>
+                activeMyEvents.map((event) => (
+                  <article 
+                    key={event.id} 
+                    onClick={() => setActiveEvent(event)} 
+                    className="bg-white/90 backdrop-blur-2xl rounded-2xl border border-sky-100 overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer group p-3.5 flex justify-between items-center"
+                  >
+                    <div className="space-y-1 pr-2">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-[10px] font-bold bg-sky-50 text-sky-700 px-2.5 py-0.5 rounded-full border border-sky-200">
+                          📅 {event.date}
+                        </span>
                       </div>
+                      <h3 className="font-black text-slate-800 text-sm">{event.title}</h3>
+                      <p className="text-[11px] text-slate-500">Organiza: <span className="font-bold text-slate-700">{event.creator_name}</span></p>
+                    </div>
 
-                      <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200 group-hover:bg-sky-600 group-hover:text-white transition shrink-0">
-                        {isClosed ? 'Timeline →' : 'Entrar →'}
-                      </span>
-                    </article>
-                  );
-                })
-              )}
-
-              {/* PAGINACIÓN */}
-              {totalPages > 1 && (
-                <div className="flex justify-center items-center space-x-2 pt-2">
-                  <button 
-                    onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-                    disabled={currentPage === 1}
-                    className="px-3 py-1.5 rounded-xl bg-white border border-sky-200 text-xs font-bold text-slate-700 disabled:opacity-40 shadow-2xs"
-                  >
-                    Anterior
-                  </button>
-                  <span className="text-xs font-bold text-slate-600">Pág. {currentPage} de {totalPages}</span>
-                  <button 
-                    onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-                    disabled={currentPage === totalPages}
-                    className="px-3 py-1.5 rounded-xl bg-white border border-sky-200 text-xs font-bold text-slate-700 disabled:opacity-40 shadow-2xs"
-                  >
-                    Siguiente
-                  </button>
-                </div>
+                    <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200 group-hover:bg-sky-600 group-hover:text-white transition shrink-0">
+                      Entrar →
+                    </span>
+                  </article>
+                ))
               )}
             </div>
+
+            {closedMyEvents.length > 0 && (
+              <div className="space-y-3 pt-4 border-t border-sky-200/60">
+                <h2 className="text-sm font-black text-slate-600 px-1 flex items-center">
+                  <Archive size={16} className="mr-1.5 text-amber-600" /> Salidas Finalizadas / Archivo ({closedMyEvents.length})
+                </h2>
+                
+                {closedMyEvents.map((event) => (
+                  <article 
+                    key={event.id} 
+                    onClick={() => setActiveEvent(event)} 
+                    className="bg-amber-50/40 backdrop-blur-2xl rounded-2xl border border-amber-200/70 overflow-hidden shadow-xs hover:shadow-sm transition cursor-pointer group p-3.5 flex justify-between items-center opacity-85 hover:opacity-100"
+                  >
+                    <div className="space-y-1 pr-2">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-[10px] font-bold bg-amber-500 text-white px-2.5 py-0.5 rounded-full">
+                          🔒 Cerrada • 📅 {event.date}
+                        </span>
+                      </div>
+                      <h3 className="font-bold text-slate-800 text-sm">{event.title}</h3>
+                      <p className="text-[11px] text-slate-500">Organizó: <span className="font-bold text-slate-700">{event.creator_name}</span></p>
+                    </div>
+
+                    <span className="text-xs font-bold text-amber-800 bg-amber-100/80 px-3 py-2 rounded-xl border border-amber-300 group-hover:bg-amber-600 group-hover:text-white transition shrink-0">
+                      Timeline →
+                    </span>
+                  </article>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1700,12 +1695,12 @@ export default function App() {
                       </div>
                       <div className="flex gap-1.5">
                         <button 
-                          onClick={() => handleAdminResetPasswordDirect(u.email, u.name)}
-                          title="Generar contraseña provisional"
+                          onClick={() => handleAdminResetPassword(u.email, u.name)}
+                          title="Enviar solicitud de reseteo de contraseña"
                           className="px-2.5 py-1.5 rounded-xl font-bold text-[10px] bg-sky-600 hover:bg-sky-700 text-white transition flex items-center space-x-1"
                         >
                           <KeyRound size={12} />
-                          <span>Pass Provis.</span>
+                          <span>Enviar Reset</span>
                         </button>
                         <button 
                           onClick={() => handleToggleBlockUser(u.id, u.is_blocked)}
@@ -1723,7 +1718,6 @@ export default function App() {
         )}
       </main>
 
-      {/* MODAL CREAR SALIDA */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white max-w-md w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-sky-100">
