@@ -101,10 +101,10 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Inicializar participantes solo una vez al abrir el evento si está vacío
+  // Inicializar participantes al abrir el evento solo si está vacío
   useEffect(() => {
     if (activeEvent && Array.isArray(activeEvent.members) && expenseParticipants.length === 0) {
-      setExpenseParticipants(activeEvent.members);
+      setExpenseParticipants([...activeEvent.members]);
     }
   }, [activeEvent?.id]);
 
@@ -701,22 +701,26 @@ export default function App() {
 
   const handleToggleExpenseParticipant = (memberName) => {
     setExpenseParticipants(prev => {
-      if (prev.includes(memberName)) {
-        return prev.filter(m => m !== memberName);
+      const current = Array.isArray(prev) ? prev : [];
+      if (current.includes(memberName)) {
+        return current.filter(m => m !== memberName);
       } else {
-        return [...prev, memberName];
+        return [...current, memberName];
       }
     });
   };
 
+  // CORRECCIÓN DEFINITIVA: Respetamos 100% el array actual sin añadir miembros fantasma
   const handleAddExpense = async (e) => {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
     
-    // Respetamos estrictamente la selección del usuario en pantalla
-    const finalParticipants = (Array.isArray(expenseParticipants) && expenseParticipants.length > 0) 
+    // Si desmarcó a todos, por seguridad al menos se pone a sí mismo, pero si marcó a uno (ej. Nacho), va EXACTAMENTE [Nacho]
+    const finalParticipants = (Array.isArray(expenseParticipants) && expenseParticipants.length > 0)
       ? expenseParticipants 
-      : activeEvent.members;
+      : [currentUser.name];
+
+    console.log("-> ENVIANDO A SUPABASE PARTICIPANTES:", finalParticipants);
 
     const { error } = await supabase.from('expenses').insert([{
       event_id: activeEvent.id,
@@ -737,7 +741,7 @@ export default function App() {
     setExpenseAmount('');
     setExpenseSpotId('');
     setExpenseReceiptUrl('');
-    // No reseteamos expenseParticipants para conservar las preferencias de selección
+    // NO TOCAMOS expenseParticipants AQUÍ PARA QUE CONSERVE TUS SELECCIONES
     await refreshAllData();
   };
 
@@ -780,7 +784,7 @@ export default function App() {
     await refreshAllData();
   };
 
-  // CÁLCULO INTELIGENTE DE DEUDAS (REPARTO ESTRICTO SEGÚN EXP.PARTICIPANTS)
+  // CÁLCULO INTELIGENTE DE DEUDAS
   const calculateDebts = (members = [], expenses = []) => {
     if (!Array.isArray(members) || members.length === 0) return [];
     const balancesMap = {};
@@ -1360,7 +1364,6 @@ export default function App() {
 
               {eventSubTab === 'expenses' && (
                 <div className="space-y-5">
-                  {/* Tarjeta de Total del Grupo (eliminada la media aproximada por no ser equitativa) */}
                   <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm text-center">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">TOTAL GASTADO POR EL GRUPO</p>
                     <p className="text-2xl font-black text-emerald-600 mt-0.5">{totalSpent.toFixed(2)}€</p>
@@ -1428,7 +1431,7 @@ export default function App() {
                       <label className="block text-[11px] font-bold text-slate-700">¿Entre quiénes se reparte este gasto?</label>
                       <div className="flex flex-wrap gap-1.5">
                         {validMembers.map(member => {
-                          const isSelected = expenseParticipants.includes(member);
+                          const isSelected = Array.isArray(expenseParticipants) && expenseParticipants.includes(member);
                           return (
                             <button
                               key={member}
