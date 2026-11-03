@@ -268,19 +268,19 @@ export default function App() {
       setPasswordError('');
 
       let loginEmail = usernameOrEmail.trim().toLowerCase();
+      
       if (!loginEmail.includes('@')) {
-        const { data: foundProfile } = await supabase
+        const { data: foundProfile, error: profileErr } = await supabase
           .from('profiles')
           .select('email')
           .ilike('name', loginEmail)
           .maybeSingle();
 
-        if (foundProfile && foundProfile.email) {
-          loginEmail = foundProfile.email;
-        } else {
-          alert('No se encontró ningún usuario con ese nombre.');
+        if (profileErr || !foundProfile || !foundProfile.email) {
+          alert('No se encontró ningún usuario registrado con ese nombre.');
           return;
         }
+        loginEmail = foundProfile.email;
       }
 
       const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
@@ -392,6 +392,28 @@ export default function App() {
       await refreshAllData();
     } catch (err) {
       alert('Error al rechazar usuario: ' + err.message);
+    }
+  };
+
+  // FUNCIÓN PARA QUE EL ADMIN BORRE UN PLAN COMPLETO
+  const handleAdminDeleteEvent = async (eventId, eventTitle) => {
+    if (!confirm(`⚠️ ¿Estás seguro de ELIMINAR por completo el plan "${eventTitle}"? Esta acción borrará sus sitios, gastos y fotos asociados.`)) return;
+    try {
+      // Borrar registros relacionados primero o confiar en cascada
+      await supabase.from('spots').delete().eq('event_id', eventId);
+      await supabase.from('expenses').delete().eq('event_id', eventId);
+      await supabase.from('photos').delete().eq('event_id', eventId);
+      await supabase.from('comments').delete().eq('event_id', eventId);
+      await supabase.from('event_members').delete().eq('event_id', eventId);
+      
+      const { error } = await supabase.from('events').delete().eq('id', eventId);
+      if (error) throw error;
+
+      alert(`✅ Plan "${eventTitle}" eliminado correctamente.`);
+      setActiveEvent(null);
+      await refreshAllData();
+    } catch (err) {
+      alert('Error al eliminar el plan: ' + err.message);
     }
   };
 
@@ -717,10 +739,11 @@ export default function App() {
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.email === 'rafa@ejemplo.com';
 
+  // RECOPILAR SOLICITUDES EXCLUYENDO LAS DEL PROPIO CREADOR (para que no se auto-apruebe)
   const allPendingPlanRequests = events.flatMap(ev => {
     const rawMembers = Array.isArray(ev.rawEventMembers) ? ev.rawEventMembers : [];
     return rawMembers
-      .filter(m => m.status === 'pending_request')
+      .filter(m => m.status === 'pending_request' && m.user_name !== ev.creator_name)
       .map(m => ({ eventId: ev.id, eventTitle: ev.title, userName: m.user_name }));
   });
 
@@ -1033,6 +1056,13 @@ export default function App() {
         </div>
 
         <main className="max-w-md mx-auto p-4 space-y-4 relative z-10">
+          {/* BOTÓN DE BORRAR PLAN (SOLO ADMIN) */}
+          {isAdmin && (
+            <button onClick={() => handleAdminDeleteEvent(activeEvent.id, activeEvent.title)} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow-lg flex items-center justify-center space-x-2 transition">
+              <Trash2 size={16} /> <span>Eliminar este Plan por completo (Admin)</span>
+            </button>
+          )}
+
           {isCreator && !isClosed && (
             <button onClick={handleCloseEvent} className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow-lg flex items-center justify-center space-x-2 border border-amber-500/30">
               <Flag size={16} /> <span>Cerrar Salida y Generar Línea Temporal</span>
@@ -1516,7 +1546,7 @@ export default function App() {
                 <UserPlus size={16} className="mr-1.5 text-sky-600" /> Solicitudes para unirse a Planes ({allPendingPlanRequests.length})
               </h2>
               {allPendingPlanRequests.length === 0 ? (
-                <p className="text-xs text-slate-400">No hay solicitudes para ningún plan activo.</p>
+                <p className="text-xs text-slate-400">No hay solicitudes pendientes de otros usuarios.</p>
               ) : (
                 <div className="space-y-2">
                   {allPendingPlanRequests.map((req, idx) => (
