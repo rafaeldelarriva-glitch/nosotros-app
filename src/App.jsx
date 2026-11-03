@@ -376,11 +376,47 @@ export default function App() {
     }
   };
 
+  // FUNCIÓN CORREGIDA: ACTUALIZA Y RECARGA CORRECTAMENTE EL ESTADO DEL EVENTO ACTIVO
   const handleApproveEventJoin = async (eventId, userName) => {
     try {
-      await supabase.from('event_members').update({ status: 'member' }).eq('event_id', eventId).eq('user_name', userName);
+      const { error } = await supabase
+        .from('event_members')
+        .update({ status: 'member' })
+        .eq('event_id', eventId)
+        .eq('user_name', userName);
+
+      if (error) throw error;
+
       alert(`✅ ${userName} añadido al plan.`);
+      
       await refreshAllData();
+
+      if (activeEvent && activeEvent.id === eventId) {
+        const { data: updatedEvents } = await supabase
+          .from('events')
+          .select(`*, spots(*), expenses(*), photos(*), comments(*), event_members(*)`)
+          .eq('id', eventId)
+          .single();
+
+        if (updatedEvents) {
+          const rawMembers = Array.isArray(updatedEvents.event_members) ? updatedEvents.event_members : [];
+          const rawSpots = Array.isArray(updatedEvents.spots) ? updatedEvents.spots : [];
+          rawSpots.sort((a, b) => (a.stop_order || 0) - (b.stop_order || 0));
+
+          setActiveEvent({
+            ...updatedEvents,
+            status: updatedEvents.status || 'active',
+            members: rawMembers.filter(m => m.status === 'member').map(m => m.user_name),
+            pendingInvitations: rawMembers.filter(m => m.status === 'pending_invite').map(m => m.user_name),
+            pendingRequests: rawMembers.filter(m => m.status === 'pending_request').map(m => m.user_name),
+            rawEventMembers: rawMembers,
+            spots: rawSpots,
+            expenses: Array.isArray(updatedEvents.expenses) ? updatedEvents.expenses : [],
+            photos: Array.isArray(updatedEvents.photos) ? updatedEvents.photos : [],
+            comments: Array.isArray(updatedEvents.comments) ? updatedEvents.comments : []
+          });
+        }
+      }
     } catch (err) {
       alert('Error al aprobar usuario en plan: ' + err.message);
     }
@@ -396,7 +432,6 @@ export default function App() {
     }
   };
 
-  // BORRAR PLAN (DISPONIBLE PARA EL ADMINISTRADOR O EL CREADOR DEL PLAN)
   const handleDeleteEvent = async (eventId, eventTitle) => {
     if (!confirm(`⚠️ ¿Estás seguro de ELIMINAR por completo el plan "${eventTitle}"? Esta acción borrará sus sitios, gastos y fotos asociados.`)) return;
     try {
@@ -751,7 +786,6 @@ export default function App() {
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.email === 'rafa@ejemplo.com';
 
-  // RECOPILAR SOLICITUDES: Solo mostrar si el usuario actual es el CREADOR del plan o ADMIN
   const allPendingPlanRequests = events.flatMap(ev => {
     const rawMembers = Array.isArray(ev.rawEventMembers) ? ev.rawEventMembers : [];
     const isUserCreator = ev.creator_name === currentUser?.name;
@@ -1032,7 +1066,6 @@ export default function App() {
     const isClosed = activeEvent.status === 'closed';
     const maxVotes = Math.max(0, ...validSpots.map(s => s.votes || 0));
 
-    // Permitir borrar plan al administrador o al creador del plan
     const canDeleteEvent = isAdmin || isCreator;
 
     return (
@@ -1075,7 +1108,6 @@ export default function App() {
         </div>
 
         <main className="max-w-md mx-auto p-4 space-y-4 relative z-10">
-          {/* BOTÓN DE BORRAR PLAN (ADMIN O CREADOR) */}
           {canDeleteEvent && (
             <button onClick={() => handleDeleteEvent(activeEvent.id, activeEvent.title)} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow-lg flex items-center justify-center space-x-2 transition">
               <Trash2 size={16} /> <span>Eliminar este Plan por completo</span>
