@@ -101,12 +101,18 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Cada vez que se abre un evento o cambian sus miembros, inicializamos los participantes seleccionados con todos los miembros
+  // Inicializar participantes solo cuando se abre un evento por primera vez (usando el ID del evento)
   useEffect(() => {
     if (activeEvent && Array.isArray(activeEvent.members)) {
-      setExpenseParticipants([...activeEvent.members]);
+      setExpenseParticipants(prev => {
+        // Solo inicializamos si está vacío o si cambió de evento
+        if (prev.length === 0 || !prev.every(m => activeEvent.members.includes(m))) {
+          return [...activeEvent.members];
+        }
+        return prev;
+      });
     }
-  }, [activeEvent]);
+  }, [activeEvent?.id]);
 
   // Búsqueda en OpenStreetMap (Nominatim) al escribir
   useEffect(() => {
@@ -700,19 +706,23 @@ export default function App() {
   };
 
   const handleToggleExpenseParticipant = (memberName) => {
-    if (expenseParticipants.includes(memberName)) {
-      setExpenseParticipants(expenseParticipants.filter(m => m !== memberName));
-    } else {
-      setExpenseParticipants([...expenseParticipants, memberName]);
-    }
+    setExpenseParticipants(prev => {
+      if (prev.includes(memberName)) {
+        return prev.filter(m => m !== memberName);
+      } else {
+        return [...prev, memberName];
+      }
+    });
   };
 
   const handleAddExpense = async (e) => {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
     
-    // Respetar estrictamente los participantes seleccionados en los botones (si hay alguno marcado). Si el usuario desmarcó a alguien, se queda desmarcado.
-    const finalParticipants = (expenseParticipants.length > 0) ? expenseParticipants : [currentUser.name];
+    // Respetamos estrictamente los participantes que tienen el tick activo en pantalla
+    const finalParticipants = (Array.isArray(expenseParticipants) && expenseParticipants.length > 0) 
+      ? expenseParticipants 
+      : [currentUser.name];
 
     await supabase.from('expenses').insert([{
       event_id: activeEvent.id,
