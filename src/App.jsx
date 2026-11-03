@@ -484,7 +484,6 @@ export default function App() {
     }
   };
 
-  // MANEJO DE SUBIDA DE FOTOS CORREGIDO
   const handlePhotoUpload = (e) => {
     const file = e.target.files[0];
     if (!file || !activeEvent) return;
@@ -712,7 +711,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Listado de fotos en miniatura asociadas a este sitio */}
         {spotPhotos.length > 0 && (
           <div className="flex gap-2 overflow-x-auto py-1">
             {spotPhotos.map(p => (
@@ -986,18 +984,23 @@ export default function App() {
           </button>
         </div>
 
-        <div className="relative h-14 w-full bg-gradient-to-r from-sky-100 via-blue-100 to-indigo-50 border-b border-sky-200 flex items-end px-4 pb-2 shadow-xs">
-          <div className="w-full flex justify-between items-end">
-            <div>
-              <h1 className="text-sm font-black text-slate-800 truncate max-w-[210px]">{activeEvent.title}</h1>
-              <span className="text-[10px] text-slate-500">📅 {activeEvent.date}</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              {isClosed && <span className="text-[9px] font-bold bg-amber-500 text-white px-2 py-0.5 rounded-full shadow">🔒 Cerrada</span>}
-              <span className="text-[10px] font-bold text-sky-800 bg-white/80 px-2.5 py-0.5 rounded-full border border-sky-200">
-                Org: {activeEvent.creator_name}
+        {/* CABECERA CON NOMBRE DEL PLAN BIEN VISIBLE */}
+        <div className="relative bg-gradient-to-r from-sky-100 via-blue-100 to-indigo-50 border-b border-sky-200 pt-12 pb-4 px-4 shadow-xs">
+          <div className="max-w-md mx-auto space-y-1">
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] font-black uppercase tracking-wider text-sky-700 bg-white/80 px-2.5 py-0.5 rounded-full border border-sky-200">
+                Organiza: {activeEvent.creator_name}
               </span>
+              {isClosed ? (
+                <span className="text-[9px] font-bold bg-amber-500 text-white px-2.5 py-0.5 rounded-full shadow">🔒 Salida Cerrada</span>
+              ) : (
+                <span className="text-[9px] font-bold bg-emerald-600 text-white px-2.5 py-0.5 rounded-full shadow">🟢 Plan Activo</span>
+              )}
             </div>
+            <h1 className="text-xl font-black text-slate-900 tracking-tight">{activeEvent.title}</h1>
+            <p className="text-xs text-slate-600 font-medium flex items-center">
+              <Calendar size={13} className="mr-1 text-sky-600" /> Fecha del plan: {activeEvent.date}
+            </p>
           </div>
         </div>
 
@@ -1017,8 +1020,16 @@ export default function App() {
               <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-sky-100 shadow-xl space-y-4">
                 <div className="text-center space-y-1">
                   <span className="text-2xl">⏳</span>
-                  <h2 className="text-base font-black text-slate-800">Línea Temporal e Historial del Día</h2>
-                  <p className="text-[11px] text-slate-500">Pulsa sobre cada parada para consultar sus gastos y fotos</p>
+                  <h2 className="text-base font-black text-slate-800">Línea Temporal e Historial: {activeEvent.title}</h2>
+                  <p className="text-[11px] text-slate-500">Pulsa sobre cada parada para consultar sus asistentes, gastos y tickets</p>
+                </div>
+
+                {/* ASISTENTES GENERALES DEL PLAN CERRADO */}
+                <div className="bg-sky-50/80 p-3.5 rounded-2xl border border-sky-200 space-y-1.5">
+                  <span className="text-[11px] font-bold text-slate-700 flex items-center">
+                    <Users size={13} className="mr-1 text-sky-600" /> Asistentes Totales del Plan ({validMembers.length})
+                  </span>
+                  <p className="text-xs font-medium text-slate-800">{validMembers.join(', ')}</p>
                 </div>
 
                 <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-gradient-to-b before:from-sky-500 before:via-indigo-500 before:to-sky-300">
@@ -1063,14 +1074,38 @@ export default function App() {
 
                               <div className="space-y-2">
                                 <span className="text-xs font-bold text-slate-700 flex items-center">
-                                  <Receipt size={14} className="mr-1 text-emerald-600" /> Gastos ({spotSpent.toFixed(2)}€)
+                                  <Receipt size={14} className="mr-1 text-emerald-600" /> Gastos de la parada ({spotSpent.toFixed(2)}€)
                                 </span>
-                                {spotExpenses.map(exp => (
-                                  <div key={exp.id} className="flex justify-between items-center text-xs bg-white p-2.5 rounded-2xl border border-sky-100">
-                                    <span className="font-bold text-slate-800">{exp.description}</span>
-                                    <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
-                                  </div>
-                                ))}
+                                {spotExpenses.length === 0 ? (
+                                  <p className="text-[11px] text-slate-400">Sin gastos registrados en este sitio.</p>
+                                ) : (
+                                  spotExpenses.map(exp => {
+                                    const parts = Array.isArray(exp.participants) ? exp.participants : validMembers;
+                                    return (
+                                      <div key={exp.id} className="flex justify-between items-center text-xs bg-white p-3 rounded-2xl border border-sky-100 shadow-2xs">
+                                        <div>
+                                          <p className="font-bold text-slate-800">{exp.description}</p>
+                                          <p className="text-[10px] text-slate-500">
+                                            Pagado por <span className="font-bold text-sky-600">{exp.paid_by}</span> • Reparto: {parts.join(', ')}
+                                          </p>
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                          <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
+                                          {exp.receipt_url && (
+                                            <button 
+                                              type="button"
+                                              onClick={(e) => { e.stopPropagation(); setViewingReceiptUrl(exp.receipt_url); }}
+                                              className="p-2 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-xl border border-sky-200 transition"
+                                              title="Ver ticket"
+                                            >
+                                              <Receipt size={14} />
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })
+                                )}
                               </div>
                             </div>
                           )}
