@@ -101,15 +101,10 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Inicializar participantes cuando se selecciona el evento
+  // Inicializar participantes solo una vez al abrir el evento
   useEffect(() => {
     if (activeEvent && Array.isArray(activeEvent.members)) {
-      setExpenseParticipants(prev => {
-        if (prev.length === 0 || !prev.every(m => activeEvent.members.includes(m))) {
-          return [...activeEvent.members];
-        }
-        return prev;
-      });
+      setExpenseParticipants(activeEvent.members);
     }
   }, [activeEvent?.id]);
 
@@ -718,12 +713,11 @@ export default function App() {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
     
-    // Respetamos estrictamente los participantes marcados en pantalla
     const finalParticipants = (Array.isArray(expenseParticipants) && expenseParticipants.length > 0) 
       ? expenseParticipants 
       : [currentUser.name];
 
-    await supabase.from('expenses').insert([{
+    const { error } = await supabase.from('expenses').insert([{
       event_id: activeEvent.id,
       description: expenseDesc.trim(),
       amount: parseFloat(expenseAmount),
@@ -732,6 +726,11 @@ export default function App() {
       receipt_url: expenseReceiptUrl || null,
       participants: finalParticipants
     }]);
+
+    if (error) {
+      alert('Error al guardar el gasto: ' + error.message);
+      return;
+    }
 
     setExpenseDesc('');
     setExpenseAmount('');
@@ -780,7 +779,7 @@ export default function App() {
     await refreshAllData();
   };
 
-  // CÁLCULO INTELIGENTE DE DEUDAS
+  // CÁLCULO INTELIGENTE DE DEUDAS (BASADO ESTRICTAMENTE EN EXP.PARTICIPANTS)
   const calculateDebts = (members = [], expenses = []) => {
     if (!Array.isArray(members) || members.length === 0) return [];
     const balancesMap = {};
@@ -790,7 +789,10 @@ export default function App() {
       const amount = Number(exp.amount) || 0;
       balancesMap[exp.paid_by] = (balancesMap[exp.paid_by] || 0) + amount;
 
-      const parts = (Array.isArray(exp.participants) && exp.participants.length > 0) ? exp.participants : members;
+      const parts = (Array.isArray(exp.participants) && exp.participants.length > 0) 
+        ? exp.participants 
+        : members;
+
       const share = amount / parts.length;
 
       parts.forEach(p => { 
