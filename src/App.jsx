@@ -268,7 +268,9 @@ export default function App() {
     if (!confirm(`¿Aprobar el cambio de contraseña para ${targetEmail}?`)) return;
 
     try {
-      await supabase.from('password_requests').update({ status: 'approved' }).eq('id', reqId);
+      const { error } = await supabase.from('password_requests').update({ status: 'approved' }).eq('id', reqId);
+      if (error) throw error;
+
       alert(`✅ Solicitud aprobada para ${targetEmail}.\n\n⚠️ RECUERDA: Ve a Supabase > Authentication > Users, pulsa en "Update user" para ${targetEmail} y asígnale la clave "${requestedPassword}".`);
       fetchPasswordRequests();
     } catch (err) {
@@ -277,8 +279,13 @@ export default function App() {
   };
 
   const handleRejectPasswordRequest = async (reqId) => {
-    await supabase.from('password_requests').update({ status: 'rejected' }).eq('id', reqId);
-    fetchPasswordRequests();
+    try {
+      const { error } = await supabase.from('password_requests').update({ status: 'rejected' }).eq('id', reqId);
+      if (error) throw error;
+      fetchPasswordRequests();
+    } catch (err) {
+      alert('Error al rechazar: ' + err.message);
+    }
   };
 
   const toggleFriendSelection = (friendName) => {
@@ -622,23 +629,43 @@ export default function App() {
   };
 
   const handleApproveRequest = async (eventId, userName) => {
-    await supabase.from('event_members').update({ status: 'member' }).eq('event_id', eventId).eq('user_name', userName);
-    fetchAppData();
+    try {
+      const { error } = await supabase.from('event_members').update({ status: 'member' }).eq('event_id', eventId).eq('user_name', userName);
+      if (error) throw error;
+      fetchAppData();
+    } catch (err) {
+      alert('Error al aprobar solicitud: ' + err.message);
+    }
   };
 
   const handleRejectRequest = async (eventId, userName) => {
-    await supabase.from('event_members').delete().eq('event_id', eventId).eq('user_name', userName);
-    fetchAppData();
+    try {
+      const { error } = await supabase.from('event_members').delete().eq('event_id', eventId).eq('user_name', userName);
+      if (error) throw error;
+      fetchAppData();
+    } catch (err) {
+      alert('Error al rechazar solicitud: ' + err.message);
+    }
   };
 
   const handleAcceptInvitation = async (eventId) => {
-    await supabase.from('event_members').update({ status: 'member' }).eq('event_id', eventId).eq('user_name', currentUser.name);
-    fetchAppData();
+    try {
+      const { error } = await supabase.from('event_members').update({ status: 'member' }).eq('event_id', eventId).eq('user_name', currentUser.name);
+      if (error) throw error;
+      fetchAppData();
+    } catch (err) {
+      alert('Error al aceptar invitación: ' + err.message);
+    }
   };
 
   const handleRejectInvitation = async (eventId) => {
-    await supabase.from('event_members').delete().eq('event_id', eventId).eq('user_name', currentUser.name);
-    fetchAppData();
+    try {
+      const { error } = await supabase.from('event_members').delete().eq('event_id', eventId).eq('user_name', currentUser.name);
+      if (error) throw error;
+      fetchAppData();
+    } catch (err) {
+      alert('Error al rechazar invitación: ' + err.message);
+    }
   };
 
   const myInvitations = events.filter(e => e.pendingInvitations.includes(currentUser?.name));
@@ -654,7 +681,6 @@ export default function App() {
      u.email.toLowerCase().includes(friendSearchInput.toLowerCase()))
   );
 
-  // ALGORITMO DE REPARTO BASADO EN LOS PARTICIPANTES SELECCIONADOS DE CADA GASTO
   const calculateDebts = (members = [], expenses = []) => {
     if (members.length === 0) return [];
 
@@ -1315,7 +1341,6 @@ export default function App() {
     );
   }
 
-  // FILTROS PRINCIPALES: Salidas activas y salidas cerradas donde el usuario participe
   const myEventsAll = events.filter(e => 
     e.members.includes(currentUser.name) && 
     (e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -1323,6 +1348,11 @@ export default function App() {
 
   const activeMyEvents = myEventsAll.filter(e => e.status !== 'closed');
   const closedMyEvents = myEventsAll.filter(e => e.status === 'closed');
+
+  const filteredSearchEvents = events.filter(e => 
+    e.status !== 'closed' &&
+    (e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase()))
+  );
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
@@ -1338,49 +1368,146 @@ export default function App() {
       </header>
 
       <main className="max-w-md mx-auto p-4 space-y-4">
-        <button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-bold py-3 px-4 rounded-2xl text-sm shadow-lg flex items-center justify-center space-x-2">
-          <Plus size={18} /> <span>Crear Nueva Salida / Plan</span>
-        </button>
+        {activeTab === 'my-events' && (
+          <div className="space-y-4">
+            <button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-bold py-3 px-4 rounded-2xl text-sm shadow-lg flex items-center justify-center space-x-2">
+              <Plus size={18} /> <span>Crear Nueva Salida / Plan</span>
+            </button>
 
-        <div className="space-y-3">
-          <h2 className="text-sm font-black text-slate-800 px-1">Mis Salidas Activas ({activeMyEvents.length})</h2>
-          {activeMyEvents.length === 0 ? (
-            <p className="text-xs text-slate-400 px-1">No tienes salidas activas.</p>
-          ) : (
-            activeMyEvents.map((event) => (
-              <article 
-                key={event.id} 
-                onClick={() => setActiveEvent(event)} 
-                className="bg-white/90 rounded-2xl border border-sky-100 p-3.5 flex justify-between items-center cursor-pointer shadow-sm hover:shadow"
-              >
-                <div>
-                  <span className="text-[10px] font-bold bg-sky-50 text-sky-700 px-2.5 py-0.5 rounded-full">📅 {event.date}</span>
-                  <h3 className="font-black text-slate-800 text-sm mt-1">{event.title}</h3>
-                </div>
-                <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200">Entrar →</span>
-              </article>
-            ))
-          )}
-        </div>
+            <div className="space-y-3">
+              <h2 className="text-sm font-black text-slate-800 px-1">Mis Salidas Activas ({activeMyEvents.length})</h2>
+              {activeMyEvents.length === 0 ? (
+                <p className="text-xs text-slate-400 px-1">No tienes salidas activas.</p>
+              ) : (
+                activeMyEvents.map((event) => (
+                  <article 
+                    key={event.id} 
+                    onClick={() => setActiveEvent(event)} 
+                    className="bg-white/90 rounded-2xl border border-sky-100 p-3.5 flex justify-between items-center cursor-pointer shadow-sm hover:shadow"
+                  >
+                    <div>
+                      <span className="text-[10px] font-bold bg-sky-50 text-sky-700 px-2.5 py-0.5 rounded-full">📅 {event.date}</span>
+                      <h3 className="font-black text-slate-800 text-sm mt-1">{event.title}</h3>
+                    </div>
+                    <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200">Entrar →</span>
+                  </article>
+                ))
+              )}
+            </div>
 
-        {closedMyEvents.length > 0 && (
-          <div className="space-y-3 pt-4 border-t border-sky-200/60">
-            <h2 className="text-sm font-black text-slate-600 px-1 flex items-center">
-              <Archive size={16} className="mr-1.5 text-amber-600" /> Historial de Salidas Cerradas ({closedMyEvents.length})
-            </h2>
-            {closedMyEvents.map((event) => (
-              <article 
-                key={event.id} 
-                onClick={() => setActiveEvent(event)} 
-                className="bg-amber-50/50 rounded-2xl border border-amber-200 p-3.5 flex justify-between items-center cursor-pointer shadow-xs hover:shadow"
-              >
-                <div>
-                  <span className="text-[10px] font-bold bg-amber-500 text-white px-2.5 py-0.5 rounded-full">🔒 Cerrada • 📅 {event.date}</span>
-                  <h3 className="font-bold text-slate-800 text-sm mt-1">{event.title}</h3>
+            {closedMyEvents.length > 0 && (
+              <div className="space-y-3 pt-4 border-t border-sky-200/60">
+                <h2 className="text-sm font-black text-slate-600 px-1 flex items-center">
+                  <Archive size={16} className="mr-1.5 text-amber-600" /> Historial de Salidas Cerradas ({closedMyEvents.length})
+                </h2>
+                {closedMyEvents.map((event) => (
+                  <article 
+                    key={event.id} 
+                    onClick={() => setActiveEvent(event)} 
+                    className="bg-amber-50/50 rounded-2xl border border-amber-200 p-3.5 flex justify-between items-center cursor-pointer shadow-xs hover:shadow"
+                  >
+                    <div>
+                      <span className="text-[10px] font-bold bg-amber-500 text-white px-2.5 py-0.5 rounded-full">🔒 Cerrada • 📅 {event.date}</span>
+                      <h3 className="font-bold text-slate-800 text-sm mt-1">{event.title}</h3>
+                    </div>
+                    <span className="text-xs font-bold text-amber-800 bg-amber-100 px-3 py-2 rounded-xl border border-amber-300">Ver Timeline →</span>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'search' && (
+          <div className="space-y-4">
+            <input type="text" placeholder="Buscar por título o creador..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-white/90 border border-sky-200 rounded-2xl px-4 py-3 text-sm" />
+            <div className="space-y-3">
+              <h2 className="text-sm font-black text-slate-800 px-1">Salidas Disponibles</h2>
+              {filteredSearchEvents.map((event) => {
+                const isMember = event.members.includes(currentUser.name);
+                const isPending = event.pendingInvitations.includes(currentUser.name);
+                const hasRequested = event.pendingRequests.includes(currentUser.name);
+
+                return (
+                  <article key={event.id} className="bg-white/90 rounded-2xl border border-sky-100 p-4 shadow-sm flex justify-between items-center">
+                    <div>
+                      <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">📅 {event.date} • {event.creator_name}</span>
+                      <h3 className="font-bold text-sm text-slate-800 mt-1">{event.title}</h3>
+                    </div>
+                    {isMember ? (
+                      <button onClick={() => setActiveEvent(event)} className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border">Ver Plan</button>
+                    ) : hasRequested ? (
+                      <span className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-2 rounded-xl">Solicitado</span>
+                    ) : isPending ? (
+                      <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl">Invitado</span>
+                    ) : (
+                      <button onClick={() => handleRequestJoin(event.id)} className="bg-sky-600 text-white text-xs font-bold px-3.5 py-2 rounded-xl shadow">Unirme</button>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'notifications' && (
+          <div className="space-y-4">
+            <div className="bg-white/90 p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
+              <h2 className="text-sm font-black text-slate-800">Invitaciones Recibidas ({myInvitations.length})</h2>
+              {myInvitations.length === 0 ? <p className="text-xs text-slate-500">Sin invitaciones pendientes.</p> : myInvitations.map((event) => (
+                <div key={event.id} className="p-3.5 rounded-2xl border border-sky-200 bg-sky-50/60 flex justify-between items-center">
+                  <p className="text-xs font-bold text-slate-800">{event.title}</p>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleAcceptInvitation(event.id)} className="bg-emerald-600 text-white p-2 rounded-xl text-xs"><Check size={14} /></button>
+                    <button onClick={() => handleRejectInvitation(event.id)} className="bg-slate-200 text-slate-700 p-2 rounded-xl text-xs"><X size={14} /></button>
+                  </div>
                 </div>
-                <span className="text-xs font-bold text-amber-800 bg-amber-100 px-3 py-2 rounded-xl border border-amber-300">Ver Timeline →</span>
-              </article>
-            ))}
+              ))}
+            </div>
+
+            <div className="bg-white/90 p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
+              <h2 className="text-sm font-black text-slate-800">Solicitudes para tus Eventos</h2>
+              {myApprovalRequests.length === 0 ? <p className="text-xs text-slate-500">Sin solicitudes pendientes.</p> : myApprovalRequests.map((event) => (
+                <div key={event.id} className="space-y-2">
+                  <p className="text-xs font-bold text-slate-700">{event.title}</p>
+                  {event.pendingRequests.map((userName) => (
+                    <div key={userName} className="p-3.5 rounded-2xl border border-indigo-200 bg-indigo-50/60 flex justify-between items-center">
+                      <p className="text-xs font-bold text-slate-800">{userName} quiere unirse</p>
+                      <div className="flex gap-2">
+                        <button onClick={() => handleApproveRequest(event.id, userName)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold">Aprobar</button>
+                        <button onClick={() => handleRejectRequest(event.id, userName)} className="bg-slate-200 text-slate-700 p-1.5 rounded-xl text-xs"><X size={14} /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+
+            {isAdmin && (
+              <div className="bg-white/90 p-5 rounded-[2.5rem] border border-indigo-100 shadow-sm space-y-3">
+                <h2 className="text-sm font-black text-slate-800 flex items-center">
+                  <KeyRound size={16} className="mr-1.5 text-indigo-600" /> Solicitudes de Cambio de Contraseña ({passwordRequests.length})
+                </h2>
+                {passwordRequests.length === 0 ? (
+                  <p className="text-xs text-slate-500">No hay solicitudes de nueva contraseña pendientes.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {passwordRequests.map(req => (
+                      <div key={req.id} className="p-3 rounded-2xl border border-indigo-100 bg-indigo-50/40 flex justify-between items-center text-xs">
+                        <div>
+                          <p className="font-bold text-slate-800">{req.email}</p>
+                          <p className="text-[10px] text-slate-500">Nueva clave: <span className="font-bold text-indigo-600">{req.new_password}</span></p>
+                        </div>
+                        <div className="flex gap-1.5">
+                          <button onClick={() => handleApprovePasswordRequest(req.id, req.email, req.new_password)} className="px-2.5 py-1.5 rounded-xl font-bold text-[10px] bg-emerald-600 text-white">Aprobar</button>
+                          <button onClick={() => handleRejectPasswordRequest(req.id)} className="px-2.5 py-1.5 rounded-xl font-bold text-[10px] bg-red-600 text-white">Rechazar</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -1392,7 +1519,7 @@ export default function App() {
             <form onSubmit={handleCreateEvent} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Título del Plan</label>
-                <input type="text" placeholder="Ej. Ruta de Tapas" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-sm" required />
+                <input type="text" placeholder="Ej. Cervecitas" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-sm" required />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Fecha</label>
@@ -1409,13 +1536,18 @@ export default function App() {
       )}
 
       <nav className="fixed bottom-3 left-4 right-4 bg-white/95 backdrop-blur-xl border border-sky-200 py-3 px-6 flex justify-around items-center z-40 rounded-[2rem] shadow-lg max-w-md mx-auto">
-        <button onClick={() => setActiveTab('my-events')} className="flex flex-col items-center text-sky-600 font-bold">
+        <button onClick={() => setActiveTab('my-events')} className={`flex flex-col items-center ${activeTab === 'my-events' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
           <Calendar size={20} />
           <span className="text-[10px] mt-0.5">Mis Salidas</span>
         </button>
-        <button onClick={() => setActiveTab('notifications')} className="flex flex-col items-center text-slate-500">
+        <button onClick={() => setActiveTab('search')} className={`flex flex-col items-center ${activeTab === 'search' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
+          <Search size={20} />
+          <span className="text-[10px] mt-0.5">Buscar</span>
+        </button>
+        <button onClick={() => setActiveTab('notifications')} className={`flex flex-col items-center relative ${activeTab === 'notifications' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
           <Inbox size={20} />
           <span className="text-[10px] mt-0.5">Aprobaciones</span>
+          {totalNotifications > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{totalNotifications}</span>}
         </button>
       </nav>
     </div>
