@@ -80,7 +80,7 @@ export default function App() {
   }, [currentUser]);
 
   useEffect(() => {
-    if (activeEvent && activeEvent.members) {
+    if (activeEvent && Array.isArray(activeEvent.members)) {
       setExpenseParticipants(activeEvent.members);
     }
   }, [activeEvent]);
@@ -92,7 +92,7 @@ export default function App() {
         try {
           const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(newSpotName + ' Cádiz España')}&limit=5`);
           const data = await res.json();
-          setMapSuggestions(data || []);
+          setMapSuggestions(Array.isArray(data) ? data : []);
         } catch (err) {
           console.error('Error buscando lugares:', err);
           setMapSuggestions([]);
@@ -111,7 +111,7 @@ export default function App() {
     try {
       const { data, error } = await supabase.from('profiles').select('id, name, email, role, is_blocked');
       if (error) throw error;
-      setRegisteredUsers(data || []);
+      setRegisteredUsers(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Error cargando perfiles:', err.message);
     }
@@ -124,7 +124,7 @@ export default function App() {
         setPasswordRequests([]);
         return;
       }
-      setPasswordRequests(data || []);
+      setPasswordRequests(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Error cargando solicitudes de clave:', err);
     }
@@ -145,17 +145,20 @@ export default function App() {
 
       if (error) throw error;
 
-      const formattedEvents = (eventsData || []).map(ev => ({
-        ...ev,
-        status: ev.status || 'active',
-        members: (ev.event_members || []).filter(m => m.status === 'member').map(m => m.user_name),
-        pendingInvitations: (ev.event_members || []).filter(m => m.status === 'pending_invite').map(m => m.user_name),
-        pendingRequests: (ev.event_members || []).filter(m => m.status === 'pending_request').map(m => m.user_name),
-        spots: ev.spots || [],
-        expenses: ev.expenses || [],
-        photos: ev.photos || [],
-        comments: ev.comments || []
-      }));
+      const formattedEvents = (Array.isArray(eventsData) ? eventsData : []).map(ev => {
+        const rawMembers = Array.isArray(ev.event_members) ? ev.event_members : [];
+        return {
+          ...ev,
+          status: ev.status || 'active',
+          members: rawMembers.filter(m => m.status === 'member').map(m => m.user_name),
+          pendingInvitations: rawMembers.filter(m => m.status === 'pending_invite').map(m => m.user_name),
+          pendingRequests: rawMembers.filter(m => m.status === 'pending_request').map(m => m.user_name),
+          spots: Array.isArray(ev.spots) ? ev.spots : [],
+          expenses: Array.isArray(ev.expenses) ? ev.expenses : [],
+          photos: Array.isArray(ev.photos) ? ev.photos : [],
+          comments: Array.isArray(ev.comments) ? ev.comments : []
+        };
+      });
 
       formattedEvents.sort((a, b) => new Date(b.date) - new Date(a.date));
       setEvents(formattedEvents);
@@ -288,19 +291,11 @@ export default function App() {
     }
   };
 
-  const toggleFriendSelection = (friendName) => {
-    if (selectedFriends.includes(friendName)) {
-      setSelectedFriends(selectedFriends.filter(f => f !== friendName));
-    } else {
-      setSelectedFriends([...selectedFriends, friendName]);
-    }
-  };
-
   const toggleExpenseParticipant = (memberName) => {
-    if (expenseParticipants.includes(memberName)) {
+    if (Array.isArray(expenseParticipants) && expenseParticipants.includes(memberName)) {
       setExpenseParticipants(expenseParticipants.filter(m => m !== memberName));
     } else {
-      setExpenseParticipants([...expenseParticipants, memberName]);
+      setExpenseParticipants([...(Array.isArray(expenseParticipants) ? expenseParticipants : []), memberName]);
     }
   };
 
@@ -329,7 +324,7 @@ export default function App() {
         status: 'member' 
       }]);
 
-      if (selectedFriends.length > 0) {
+      if (Array.isArray(selectedFriends) && selectedFriends.length > 0) {
         const memberInserts = selectedFriends.map(friend => ({
           event_id: newEv.id,
           user_name: friend,
@@ -397,10 +392,6 @@ export default function App() {
     fetchAppData();
   };
 
-  const handleSelectSuggestion = async (displayName) => {
-    handleAddSpot(null, displayName);
-  };
-
   const handleStartGpsCapture = () => {
     if (!navigator.geolocation) {
       alert('Tu navegador no soporta geolocalización GPS.');
@@ -417,38 +408,12 @@ export default function App() {
         setIsGettingLocation(false);
         setShowGpsModal(true);
       },
-      (error) => {
+      () => {
         alert('No se pudo obtener tu ubicación GPS.');
         setIsGettingLocation(false);
       },
       { enableHighAccuracy: true }
     );
-  };
-
-  const handleSaveGpsSpot = async (e) => {
-    e.preventDefault();
-    if (!gpsCustomName.trim() || !tempCoords || !activeEvent) return;
-
-    const finalSpotName = `${gpsCustomName.trim()} (${tempCoords.lat.toFixed(4)}, ${tempCoords.lon.toFixed(4)})`;
-
-    const { error } = await supabase.from('spots').insert([{
-      event_id: activeEvent.id,
-      name: finalSpotName,
-      category: 'gps',
-      votes: 1,
-      suggested_by: currentUser.name,
-      active_now: true
-    }]);
-
-    if (error) {
-      alert('Error guardando la posición GPS: ' + error.message);
-      return;
-    }
-
-    setShowGpsModal(false);
-    setGpsCustomName('');
-    setTempCoords(null);
-    fetchAppData();
   };
 
   const handleVoteSpot = async (spotId, currentVotes) => {
@@ -488,7 +453,7 @@ export default function App() {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
 
-    if (expenseParticipants.length === 0) {
+    if (!Array.isArray(expenseParticipants) || expenseParticipants.length === 0) {
       alert('Debes seleccionar al menos un participante para este gasto.');
       return;
     }
@@ -510,7 +475,7 @@ export default function App() {
       setExpenseAmount('');
       setExpenseSpotId('');
       setExpenseReceiptUrl('');
-      setExpenseParticipants(activeEvent.members);
+      setExpenseParticipants(Array.isArray(activeEvent.members) ? activeEvent.members : []);
       await fetchAppData();
     } catch (err) {
       console.error('Error al guardar gasto:', err.message);
@@ -553,26 +518,6 @@ export default function App() {
     }
   };
 
-  const handleAddGeneralComment = async (e) => {
-    e.preventDefault();
-    if (!generalCommentInput.trim() || !activeEvent) return;
-
-    const { error } = await supabase.from('comments').insert([{
-      event_id: activeEvent.id,
-      spot_id: null,
-      user_name: currentUser.name,
-      content: generalCommentInput.trim()
-    }]);
-
-    if (error) {
-      alert('Error al enviar comentario: ' + error.message);
-      return;
-    }
-
-    setGeneralCommentInput('');
-    await fetchAppData();
-  };
-
   const handleAddSpotComment = async (spotId) => {
     const text = spotCommentInputs[spotId];
     if (!text || !text.trim() || !activeEvent) return;
@@ -605,19 +550,6 @@ export default function App() {
       alert('Error al cerrar la salida: ' + error.message);
     } else {
       fetchAppData();
-    }
-  };
-
-  const handleToggleBlockUser = async (userId, currentBlockState) => {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ is_blocked: !currentBlockState })
-      .eq('id', userId);
-
-    if (error) {
-      alert('Error al actualizar el estado del usuario: ' + error.message);
-    } else {
-      fetchRegisteredUsers();
     }
   };
 
@@ -670,34 +602,30 @@ export default function App() {
     }
   };
 
-  const myInvitations = events.filter(e => e.pendingInvitations.includes(currentUser?.name));
-  const myApprovalRequests = events.filter(e => e.creator_name === currentUser?.name && e.pendingRequests.length > 0);
+  const myInvitations = Array.isArray(events) ? events.filter(e => Array.isArray(e.pendingInvitations) && e.pendingInvitations.includes(currentUser?.name)) : [];
+  const myApprovalRequests = Array.isArray(events) ? events.filter(e => e.creator_name === currentUser?.name && Array.isArray(e.pendingRequests) && e.pendingRequests.length > 0) : [];
   
   const isAdmin = currentUser?.role === 'admin' || currentUser?.email === 'rafa@ejemplo.com';
-  const totalNotifications = myInvitations.length + myApprovalRequests.reduce((acc, curr) => acc + curr.pendingRequests.length, 0) + (isAdmin ? passwordRequests.length : 0);
-
-  const filteredUsersToInvite = registeredUsers.filter(u => 
-    !u.is_blocked &&
-    u.name.toLowerCase() !== currentUser?.name.toLowerCase() &&
-    (u.name.toLowerCase().includes(friendSearchInput.toLowerCase()) || 
-     u.email.toLowerCase().includes(friendSearchInput.toLowerCase()))
-  );
+  const totalNotifications = myInvitations.length + myApprovalRequests.reduce((acc, curr) => acc + (Array.isArray(curr.pendingRequests) ? curr.pendingRequests.length : 0), 0) + (isAdmin && Array.isArray(passwordRequests) ? passwordRequests.length : 0);
 
   const calculateDebts = (members = [], expenses = []) => {
-    if (members.length === 0) return [];
+    const validMembers = Array.isArray(members) ? members : [];
+    const validExpenses = Array.isArray(expenses) ? expenses : [];
+
+    if (validMembers.length === 0) return [];
 
     const balancesMap = {};
-    members.forEach(m => { balancesMap[m] = 0; });
+    validMembers.forEach(m => { balancesMap[m] = 0; });
 
-    expenses.forEach(exp => {
+    validExpenses.forEach(exp => {
       const amount = Number(exp.amount) || 0;
       const payer = exp.paid_by;
       
       if (!balancesMap[payer]) balancesMap[payer] = 0;
       balancesMap[payer] += amount;
 
-      let participants = (exp.participants && exp.participants.length > 0) ? exp.participants : members;
-      if (participants.length === 0) participants = [...members];
+      let participants = (Array.isArray(exp.participants) && exp.participants.length > 0) ? exp.participants : validMembers;
+      if (participants.length === 0) participants = [...validMembers];
 
       const share = amount / participants.length;
       participants.forEach(p => {
@@ -742,9 +670,9 @@ export default function App() {
 
   const renderSpotCard = (spot, isSelected, maxVotes) => {
     const isMajority = maxVotes > 0 && spot.votes === maxVotes;
-    const spotComments = (activeEvent?.comments || []).filter(c => c.spot_id === spot.id);
+    const spotComments = Array.isArray(activeEvent?.comments) ? activeEvent.comments.filter(c => c.spot_id === spot.id) : [];
     const currentInputText = spotCommentInputs[spot.id] || '';
-    const canDeleteSpot = activeEvent?.members.includes(currentUser?.name);
+    const canDeleteSpot = Array.isArray(activeEvent?.members) && activeEvent.members.includes(currentUser?.name);
 
     return (
       <div key={spot.id} className={`p-4 rounded-3xl border flex flex-col space-y-3 backdrop-blur-xl ${isSelected ? 'bg-sky-50/90 border-sky-300 shadow-sm' : isMajority ? 'bg-amber-50/60 border-amber-300' : 'bg-white/90 border-sky-100 shadow-sm'}`}>
@@ -1009,18 +937,23 @@ export default function App() {
   }
 
   if (activeEvent) {
-    const totalSpent = (activeEvent.expenses || []).reduce((acc, c) => acc + Number(c.amount), 0);
-    const perPerson = activeEvent.members.length > 0 ? (totalSpent / activeEvent.members.length) : 0;
-    
-    const selectedSpots = (activeEvent.spots || []).filter(s => s.active_now);
-    const pendingSpots = (activeEvent.spots || []).filter(s => !s.active_now);
+    const validExpenses = Array.isArray(activeEvent.expenses) ? activeEvent.expenses : [];
+    const validMembers = Array.isArray(activeEvent.members) ? activeEvent.members : [];
+    const validSpots = Array.isArray(activeEvent.spots) ? activeEvent.spots : [];
+    const validPhotos = Array.isArray(activeEvent.photos) ? activeEvent.photos : [];
+    const validComments = Array.isArray(activeEvent.comments) ? activeEvent.comments : [];
 
-    const calculatedDebts = calculateDebts(activeEvent.members, activeEvent.expenses);
+    const totalSpent = validExpenses.reduce((acc, c) => acc + Number(c.amount), 0);
+    const perPerson = validMembers.length > 0 ? (totalSpent / validMembers.length) : 0;
+    
+    const selectedSpots = validSpots.filter(s => s.active_now);
+    const pendingSpots = validSpots.filter(s => !s.active_now);
+
+    const calculatedDebts = calculateDebts(validMembers, validExpenses);
     const isCreator = activeEvent.creator_name === currentUser.name;
     const isClosed = activeEvent.status === 'closed';
 
-    const maxVotes = Math.max(0, ...(activeEvent.spots || []).map(s => s.votes || 0));
-    const generalComments = (activeEvent.comments || []).filter(c => c.spot_id === null || c.spot_id === undefined);
+    const maxVotes = Math.max(0, ...validSpots.map(s => s.votes || 0));
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
@@ -1069,11 +1002,9 @@ export default function App() {
                 </div>
 
                 <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-gradient-to-b before:from-sky-500 before:via-indigo-500 before:to-sky-300">
-                  {(selectedSpots.length > 0 ? selectedSpots : activeEvent.spots || []).map((spot, idx) => {
-                    const spotExpenses = (activeEvent.expenses || []).filter(e => e.spot_id === spot.id);
+                  {(selectedSpots.length > 0 ? selectedSpots : validSpots).map((spot, idx) => {
+                    const spotExpenses = validExpenses.filter(e => e.spot_id === spot.id);
                     const spotSpent = spotExpenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
-                    const spotPhotos = (activeEvent.photos || []).filter(p => p.spot_id === spot.id);
-                    const spotComments = (activeEvent.comments || []).filter(c => c.spot_id === spot.id);
                     const isExpanded = expandedTimelineSpotId === spot.id;
 
                     return (
@@ -1132,10 +1063,10 @@ export default function App() {
             <>
               <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
                 <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
-                  <Users size={14} className="mr-1.5 text-sky-600" /> Asistentes Confirmados ({activeEvent.members.length})
+                  <Users size={14} className="mr-1.5 text-sky-600" /> Asistentes Confirmados ({validMembers.length})
                 </span>
                 <div className="flex flex-wrap gap-2">
-                  {activeEvent.members.map((member) => {
+                  {validMembers.map((member) => {
                     const canRemove = isCreator || member === currentUser.name;
                     return (
                       <div key={member} className="text-xs font-bold bg-sky-50 text-sky-700 px-3 py-1.5 rounded-xl border border-sky-200 flex items-center space-x-2">
@@ -1263,7 +1194,7 @@ export default function App() {
                         className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none"
                       >
                         <option value="">Selecciona un sitio del plan...</option>
-                        {(activeEvent.spots || []).map((spot) => (
+                        {validSpots.map((spot) => (
                           <option key={spot.id} value={spot.id}>{spot.name}</option>
                         ))}
                       </select>
@@ -1272,8 +1203,8 @@ export default function App() {
                     <div className="space-y-1.5 pt-1">
                       <label className="block text-[11px] font-bold text-slate-700">¿Quiénes participan en este gasto? (Desmarca a los ausentes)</label>
                       <div className="flex flex-wrap gap-1.5 bg-sky-50/50 p-2.5 rounded-2xl border border-sky-200">
-                        {activeEvent.members.map((member) => {
-                          const isParticipant = expenseParticipants.includes(member);
+                        {validMembers.map((member) => {
+                          const isParticipant = Array.isArray(expenseParticipants) && expenseParticipants.includes(member);
                           return (
                             <button
                               key={member}
@@ -1311,10 +1242,10 @@ export default function App() {
                   </form>
 
                   <div className="space-y-2">
-                    <h4 className="text-xs font-bold text-slate-700 px-1">Historial de Gastos ({activeEvent.expenses.length})</h4>
-                    {(activeEvent.expenses || []).map((exp) => {
-                      const spotObj = (activeEvent.spots || []).find(s => s.id === exp.spot_id);
-                      const parts = exp.participants || activeEvent.members;
+                    <h4 className="text-xs font-bold text-slate-700 px-1">Historial de Gastos ({validExpenses.length})</h4>
+                    {validExpenses.map((exp) => {
+                      const spotObj = validSpots.find(s => s.id === exp.spot_id);
+                      const parts = Array.isArray(exp.participants) ? exp.participants : validMembers;
                       return (
                         <div key={exp.id} className="bg-white/90 backdrop-blur-2xl p-3.5 rounded-2xl border border-sky-100 flex justify-between items-center text-xs shadow-sm">
                           <div>
@@ -1353,7 +1284,7 @@ export default function App() {
                     required
                   >
                     <option value="">Selecciona el sitio de la foto...</option>
-                    {(activeEvent.spots || []).map((spot) => (
+                    {validSpots.map((spot) => (
                       <option key={spot.id} value={spot.id}>{spot.name}</option>
                     ))}
                   </select>
@@ -1391,7 +1322,9 @@ export default function App() {
     );
   }
 
-  const myEventsAll = events.filter(e => 
+  const validEvents = Array.isArray(events) ? events : [];
+  const myEventsAll = validEvents.filter(e => 
+    Array.isArray(e.members) && 
     e.members.includes(currentUser.name) && 
     (e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase()))
   );
@@ -1399,7 +1332,7 @@ export default function App() {
   const activeMyEvents = myEventsAll.filter(e => e.status !== 'closed');
   const closedMyEvents = myEventsAll.filter(e => e.status === 'closed');
 
-  const filteredSearchEvents = events.filter(e => 
+  const filteredSearchEvents = validEvents.filter(e => 
     e.status !== 'closed' &&
     (e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase()))
   );
@@ -1474,9 +1407,13 @@ export default function App() {
             <div className="space-y-3">
               <h2 className="text-sm font-black text-slate-800 px-1">Salidas Disponibles</h2>
               {filteredSearchEvents.map((event) => {
-                const isMember = event.members.includes(currentUser.name);
-                const isPending = event.pendingInvitations.includes(currentUser.name);
-                const hasRequested = event.pendingRequests.includes(currentUser.name);
+                const membersList = Array.isArray(event.members) ? event.members : [];
+                const pendingInv = Array.isArray(event.pendingInvitations) ? event.pendingInvitations : [];
+                const pendingReq = Array.isArray(event.pendingRequests) ? event.pendingRequests : [];
+
+                const isMember = membersList.includes(currentUser.name);
+                const isPending = pendingInv.includes(currentUser.name);
+                const hasRequested = pendingReq.includes(currentUser.name);
 
                 return (
                   <article key={event.id} className="bg-white/90 rounded-2xl border border-sky-100 p-4 shadow-sm flex justify-between items-center">
@@ -1517,20 +1454,23 @@ export default function App() {
 
             <div className="bg-white/90 p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
               <h2 className="text-sm font-black text-slate-800">Solicitudes para tus Eventos</h2>
-              {myApprovalRequests.length === 0 ? <p className="text-xs text-slate-500">Sin solicitudes pendientes.</p> : myApprovalRequests.map((event) => (
-                <div key={event.id} className="space-y-2">
-                  <p className="text-xs font-bold text-slate-700">{event.title}</p>
-                  {event.pendingRequests.map((userName) => (
-                    <div key={userName} className="p-3.5 rounded-2xl border border-indigo-200 bg-indigo-50/60 flex justify-between items-center">
-                      <p className="text-xs font-bold text-slate-800">{userName} quiere unirse</p>
-                      <div className="flex gap-2">
-                        <button onClick={() => handleApproveRequest(event.id, userName)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold">Aprobar</button>
-                        <button onClick={() => handleRejectRequest(event.id, userName)} className="bg-slate-200 text-slate-700 p-1.5 rounded-xl text-xs"><X size={14} /></button>
+              {myApprovalRequests.length === 0 ? <p className="text-xs text-slate-500">Sin solicitudes pendientes.</p> : myApprovalRequests.map((event) => {
+                const pendingReqs = Array.isArray(event.pendingRequests) ? event.pendingRequests : [];
+                return (
+                  <div key={event.id} className="space-y-2">
+                    <p className="text-xs font-bold text-slate-700">{event.title}</p>
+                    {pendingReqs.map((userName) => (
+                      <div key={userName} className="p-3.5 rounded-2xl border border-indigo-200 bg-indigo-50/60 flex justify-between items-center">
+                        <p className="text-xs font-bold text-slate-800">{userName} quiere unirse</p>
+                        <div className="flex gap-2">
+                          <button onClick={() => handleApproveRequest(event.id, userName)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-xl text-xs font-bold">Aprobar</button>
+                          <button onClick={() => handleRejectRequest(event.id, userName)} className="bg-slate-200 text-slate-700 p-1.5 rounded-xl text-xs"><X size={14} /></button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
+                    ))}
+                  </div>
+                );
+              })}
             </div>
 
             {isAdmin && (
