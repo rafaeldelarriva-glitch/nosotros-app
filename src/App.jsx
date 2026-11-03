@@ -315,7 +315,6 @@ export default function App() {
     setActiveEvent(null);
   };
 
-  // APROBACIONES Y ADMINISTRACIÓN DE USUARIOS
   const handleApproveRegistration = async (userId, userName) => {
     try {
       await supabase.from('profiles').update({ is_approved: true }).eq('id', userId);
@@ -347,7 +346,6 @@ export default function App() {
     }
   };
 
-  // CAMBIO DE CONTRASEÑA POR EL ADMINISTRADOR
   const handleAdminChangePassword = async (e) => {
     e.preventDefault();
     if (!adminTargetUser || !adminNewPasswordInput) return;
@@ -364,11 +362,7 @@ export default function App() {
         new_password: adminNewPasswordInput
       });
 
-      if (error) {
-        // Fallback si no se usa función RPC directa (requiere Supabase Auth Admin API o función personalizada)
-        alert('Nota: Para cambiar contraseñas desde admin en Supabase se recomienda habilitar una función RPC o usar la API de Auth.');
-        throw error;
-      }
+      if (error) throw error;
 
       setAdminPasswordMessage('✅ ¡Contraseña actualizada con éxito para ' + adminTargetUser.name + '!');
       setTimeout(() => {
@@ -377,7 +371,7 @@ export default function App() {
         setAdminPasswordMessage('');
       }, 1500);
     } catch (err) {
-      setAdminPasswordMessage('❌ Error al actualizar contraseña: ' + (err.message || 'Comprueba la configuración de Supabase.'));
+      setAdminPasswordMessage('❌ Error: ' + (err.message || 'Crea la función RPC en Supabase.'));
     }
   };
 
@@ -401,7 +395,6 @@ export default function App() {
     }
   };
 
-  // PROPUSTA CON GPS DIRECTO
   const handleProposeCurrentGpsLocation = () => {
     if (!navigator.geolocation) {
       alert('Tu navegador no soporta geolocalización GPS.');
@@ -468,16 +461,26 @@ export default function App() {
     setProfileMessage('');
 
     try {
-      const updates = { name: editNameInput.trim() };
       let emailChanged = false;
+      const newEmailVal = editEmailInput.trim().toLowerCase();
 
-      if (editEmailInput.trim() && editEmailInput.trim().toLowerCase() !== currentUser?.email?.toLowerCase()) {
-        updates.email = editEmailInput.trim().toLowerCase();
+      const updates = { name: editNameInput.trim() };
+      if (newEmailVal && newEmailVal !== currentUser?.email?.toLowerCase()) {
+        updates.email = newEmailVal;
         emailChanged = true;
       }
 
-      await supabase.from('profiles').update(updates).eq('id', currentUser.id);
-      if (emailChanged) await supabase.auth.updateUser({ email: editEmailInput.trim().toLowerCase() });
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update(updates)
+        .eq('id', currentUser.id);
+
+      if (profileError) throw profileError;
+
+      if (emailChanged) {
+        const { error: authError } = await supabase.auth.updateUser({ email: newEmailVal });
+        if (authError) throw authError;
+      }
 
       if (oldPasswordInput || newPasswordInput || confirmNewPasswordInput) {
         if (newPasswordInput !== confirmNewPasswordInput) {
@@ -489,22 +492,31 @@ export default function App() {
           setProfileMessage('❌ Contraseña no válida: ' + errorMsg);
           return;
         }
-        const { error: loginError } = await supabase.auth.signInWithPassword({ email: currentUser.email, password: oldPasswordInput });
+        const { error: loginError } = await supabase.auth.signInWithPassword({ 
+          email: currentUser.email, 
+          password: oldPasswordInput 
+        });
         if (loginError) {
           setProfileMessage('❌ Contraseña actual incorrecta.');
           return;
         }
-        await supabase.auth.updateUser({ password: newPasswordInput });
+        const { error: passError } = await supabase.auth.updateUser({ password: newPasswordInput });
+        if (passError) throw passError;
       }
 
-      setCurrentUser({ ...currentUser, name: editNameInput.trim(), email: emailChanged ? editEmailInput.trim().toLowerCase() : currentUser.email });
+      setCurrentUser({ 
+        ...currentUser, 
+        name: editNameInput.trim(), 
+        email: emailChanged ? newEmailVal : currentUser.email 
+      });
+
       setProfileMessage('✅ ¡Perfil y contraseña actualizados con éxito!');
       setOldPasswordInput('');
       setNewPasswordInput('');
       setConfirmNewPasswordInput('');
       await refreshAllData();
     } catch (err) {
-      setProfileMessage('❌ Error: ' + err.message);
+      setProfileMessage('❌ Error: ' + (err.message || 'No se pudo actualizar el perfil.'));
     }
   };
 
@@ -1549,7 +1561,6 @@ export default function App() {
                   )}
                 </div>
 
-                {/* LISTADO DE USUARIOS CON ACCIÓN DE BLOQUEO Y CAMBIO DE CONTRASEÑA */}
                 <div className="bg-white/90 p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
                   <h2 className="text-sm font-black text-slate-800 flex items-center">
                     <Users size={16} className="mr-1.5 text-sky-600" /> Todos los Usuarios Registrados ({registeredUsers.length})
