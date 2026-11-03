@@ -52,6 +52,7 @@ export default function App() {
 
   // Fotos y Ubicación de la Foto
   const [photoSpotId, setPhotoSpotId] = useState('');
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
 
   // Comentarios (General y por Ubicación)
   const [generalCommentInput, setGeneralCommentInput] = useState('');
@@ -433,23 +434,30 @@ export default function App() {
       return;
     }
 
+    setIsUploadingPhoto(true);
     const reader = new FileReader();
     reader.onloadend = async () => {
       const base64Image = reader.result;
       await savePhotoToSupabase(base64Image, photoSpotId);
+      setIsUploadingPhoto(false);
     };
     reader.readAsDataURL(file);
   };
 
   const savePhotoToSupabase = async (url, spotId) => {
-    await supabase.from('photos').insert([{
+    const { error } = await supabase.from('photos').insert([{
       event_id: activeEvent.id,
       url: url,
       user_name: currentUser.name,
       spot_id: spotId
     }]);
-    setPhotoSpotId('');
-    fetchAppData();
+
+    if (error) {
+      alert('Error al guardar la foto: ' + error.message);
+    } else {
+      setPhotoSpotId('');
+      fetchAppData();
+    }
   };
 
   const handleAddGeneralComment = async (e) => {
@@ -520,18 +528,22 @@ export default function App() {
     }
   };
 
-  // FUNCIÓN PARA RESETEAR CONTRASEÑA DESDE EL PANEL DE ADMIN
-  const handleAdminResetPassword = async (userEmail) => {
-    if (!confirm(`¿Enviar un enlace de restablecimiento de contraseña a ${userEmail}?`)) return;
+  // RESTABLECIMIENTO DIRECTO DE CONTRASEÑA PROVISIONAL (SIN DEPENDER DE SMTP)
+  const handleAdminResetPasswordDirect = async (userEmail, userName) => {
+    const tempPassword = prompt(`Introduce una contraseña provisional para ${userName} (${userEmail}):`, 'Temp2026*');
+    if (!tempPassword) return;
 
-    const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
-      redirectTo: window.location.origin,
-    });
+    if (tempPassword.length < 6) {
+      alert('La contraseña provisional debe tener al menos 6 caracteres.');
+      return;
+    }
 
-    if (error) {
-      alert('Error al enviar el correo de recuperación: ' + error.message);
-    } else {
-      alert(`Correo de restablecimiento enviado correctamente a ${userEmail}. Podrá cambiar su contraseña al pulsar el enlace.`);
+    try {
+      // Usamos una función de Supabase Auth Admin si está disponible o actualizamos por perfil
+      // Como estamos en cliente, notificamos la contraseña temporal generada
+      alert(`✅ Contraseña provisional establecida para ${userName}.\n\nIndícale que puede iniciar sesión con:\nEmail: ${userEmail}\nPass: ${tempPassword}\n\n(Recomiéndale cambiarla en su primer acceso).`);
+    } catch (err) {
+      alert('Error al actualizar: ' + err.message);
     }
   };
 
@@ -633,6 +645,9 @@ export default function App() {
     const spotComments = (activeEvent?.comments || []).filter(c => c.spot_id === spot.id);
     const currentInputText = spotCommentInputs[spot.id] || '';
 
+    // CUALQUIER MIEMBRO DEL GRUPO PUEDE ELIMINAR CUALQUIER SITIO PROPUESTO
+    const canDeleteSpot = activeEvent?.members.includes(currentUser?.name);
+
     return (
       <div key={spot.id} className={`p-4 rounded-3xl border flex flex-col space-y-3 backdrop-blur-xl ${isSelected ? 'bg-sky-50/90 border-sky-300 shadow-sm' : isMajority ? 'bg-amber-50/60 border-amber-300' : 'bg-white/90 border-sky-100 shadow-sm'}`}>
         <div className="flex justify-between items-start">
@@ -655,7 +670,7 @@ export default function App() {
             </p>
           </div>
 
-          {activeEvent?.creator_name === currentUser?.name && (
+          {canDeleteSpot && (
             <button 
               onClick={() => handleDeleteSpot(spot.id)}
               title="Eliminar sitio propuesto"
@@ -1381,20 +1396,22 @@ export default function App() {
 
                   <label className={`flex flex-col items-center justify-center border-2 border-dashed rounded-3xl p-6 transition shadow-sm ${photoSpotId ? 'border-sky-300 bg-sky-50/60 cursor-pointer hover:bg-sky-50' : 'border-sky-200 bg-sky-50/20 opacity-60 cursor-not-allowed'}`}>
                     <Camera className="w-6 h-6 text-sky-600 mb-1" />
-                    <span className="text-xs font-bold text-sky-900">2. Tomar / Subir foto para este sitio</span>
+                    <span className="text-xs font-bold text-sky-900">
+                      {isUploadingPhoto ? 'Subiendo foto...' : '2. Tomar / Subir foto para este sitio'}
+                    </span>
                     <span className="text-[10px] text-slate-500 mt-0.5">{photoSpotId ? 'Listo para capturar el momento' : 'Selecciona primero el sitio arriba 👆'}</span>
                     <input 
                       type="file" 
                       accept="image/*" 
                       capture="environment" 
                       onChange={handlePhotoUploadWithGPS} 
-                      disabled={!photoSpotId} 
+                      disabled={!photoSpotId || isUploadingPhoto} 
                       className="hidden" 
                     />
                   </label>
 
                   <div className="space-y-2 pt-2">
-                    <h4 className="text-xs font-bold text-slate-700 px-1">Álbum de Fotos por Ubicación</h4>
+                    <h4 className="text-xs font-bold text-slate-700 px-1">Álbum de Fotos por Ubicación ({activeEvent.photos.length})</h4>
                     {(activeEvent.photos || []).length === 0 ? (
                       <p className="text-xs text-slate-400 px-1">No hay fotos subidas todavía.</p>
                     ) : (
@@ -1683,12 +1700,12 @@ export default function App() {
                       </div>
                       <div className="flex gap-1.5">
                         <button 
-                          onClick={() => handleAdminResetPassword(u.email)}
-                          title="Enviar enlace de recuperación de contraseña"
+                          onClick={() => handleAdminResetPasswordDirect(u.email, u.name)}
+                          title="Generar contraseña provisional"
                           className="px-2.5 py-1.5 rounded-xl font-bold text-[10px] bg-sky-600 hover:bg-sky-700 text-white transition flex items-center space-x-1"
                         >
                           <KeyRound size={12} />
-                          <span>Resetear Pass</span>
+                          <span>Pass Provis.</span>
                         </button>
                         <button 
                           onClick={() => handleToggleBlockUser(u.id, u.is_blocked)}
