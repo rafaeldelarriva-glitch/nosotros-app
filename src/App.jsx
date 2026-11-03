@@ -101,11 +101,10 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Inicializar participantes solo cuando se abre un evento por primera vez (usando el ID del evento)
+  // Inicializar participantes cuando se selecciona el evento
   useEffect(() => {
     if (activeEvent && Array.isArray(activeEvent.members)) {
       setExpenseParticipants(prev => {
-        // Solo inicializamos si está vacío o si cambió de evento
         if (prev.length === 0 || !prev.every(m => activeEvent.members.includes(m))) {
           return [...activeEvent.members];
         }
@@ -719,7 +718,7 @@ export default function App() {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
     
-    // Respetamos estrictamente los participantes que tienen el tick activo en pantalla
+    // Respetamos estrictamente los participantes marcados en pantalla
     const finalParticipants = (Array.isArray(expenseParticipants) && expenseParticipants.length > 0) 
       ? expenseParticipants 
       : [currentUser.name];
