@@ -55,7 +55,7 @@ export default function App() {
   const [customQrLabel, setCustomQrLabel] = useState('');
   const [customQrUrl, setCustomQrUrl] = useState('');
 
-  // Gastos y Tickets
+  // Gastos y Tickets Inteligentes
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseSpotId, setExpenseSpotId] = useState('');
@@ -101,6 +101,7 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // Al cambiar de evento activo, marcar por defecto a todos los miembros actuales como participantes del nuevo gasto
   useEffect(() => {
     if (activeEvent && Array.isArray(activeEvent.members)) {
       setExpenseParticipants(activeEvent.members);
@@ -376,7 +377,6 @@ export default function App() {
     }
   };
 
-  // FUNCIÓN CORREGIDA: ACTUALIZA Y RECARGA CORRECTAMENTE EL ESTADO DEL EVENTO ACTIVO
   const handleApproveEventJoin = async (eventId, userName) => {
     try {
       const { error } = await supabase
@@ -699,9 +699,22 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
+  // Selector inteligente de participantes para cada gasto
+  const handleToggleExpenseParticipant = (memberName) => {
+    if (expenseParticipants.includes(memberName)) {
+      setExpenseParticipants(expenseParticipants.filter(m => m !== memberName));
+    } else {
+      setExpenseParticipants([...expenseParticipants, memberName]);
+    }
+  };
+
   const handleAddExpense = async (e) => {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
+    
+    // Si no se marcó ningún participante de forma manual, por defecto se reparte entre todos los actuales
+    const finalParticipants = (expenseParticipants.length > 0) ? expenseParticipants : activeEvent.members;
+
     await supabase.from('expenses').insert([{
       event_id: activeEvent.id,
       description: expenseDesc.trim(),
@@ -709,12 +722,14 @@ export default function App() {
       paid_by: currentUser.name,
       spot_id: expenseSpotId || null,
       receipt_url: expenseReceiptUrl || null,
-      participants: expenseParticipants
+      participants: finalParticipants
     }]);
+
     setExpenseDesc('');
     setExpenseAmount('');
     setExpenseSpotId('');
     setExpenseReceiptUrl('');
+    setExpenseParticipants(activeEvent.members || []);
     await refreshAllData();
   };
 
@@ -757,25 +772,38 @@ export default function App() {
     await refreshAllData();
   };
 
+  // CÁLCULO INTELIGENTE DE DEUDAS BASADO EN PARTICIPANTES REALES POR GASTO
   const calculateDebts = (members = [], expenses = []) => {
     if (!Array.isArray(members) || members.length === 0) return [];
     const balancesMap = {};
     members.forEach(m => { balancesMap[m] = 0; });
+
     (expenses || []).forEach(exp => {
       const amount = Number(exp.amount) || 0;
       balancesMap[exp.paid_by] = (balancesMap[exp.paid_by] || 0) + amount;
+
+      // Usar los participantes específicos guardados en el gasto, o los miembros si no estuvieran definidos
       const parts = (Array.isArray(exp.participants) && exp.participants.length > 0) ? exp.participants : members;
       const share = amount / parts.length;
-      parts.forEach(p => { if (balancesMap[p] !== undefined) balancesMap[p] -= share; });
+
+      parts.forEach(p => { 
+        if (balancesMap[p] !== undefined) {
+          balancesMap[p] -= share; 
+        }
+      });
     });
+
     const balances = Object.keys(balancesMap).map(name => ({ name, balance: balancesMap[name] }));
     let debtors = balances.filter(b => b.balance < -0.01).map(d => ({ ...d, balance: Math.abs(d.balance) }));
     let creditors = balances.filter(b => b.balance > 0.01);
+    
     const transactions = [];
     let dIndex = 0, cIndex = 0;
     while (dIndex < debtors.length && cIndex < creditors.length) {
       const amount = Math.min(debtors[dIndex].balance, creditors[cIndex].balance);
-      if (amount > 0.01) transactions.push({ from: debtors[dIndex].name, to: creditors[cIndex].name, amount });
+      if (amount > 0.01) {
+        transactions.push({ from: debtors[dIndex].name, to: creditors[cIndex].name, amount });
+      }
       debtors[dIndex].balance -= amount;
       creditors[cIndex].balance -= amount;
       if (debtors[dIndex].balance <= 0.01) dIndex++;
@@ -1056,7 +1084,9 @@ export default function App() {
     const validPhotos = Array.isArray(activeEvent.photos) ? activeEvent.photos : [];
 
     const totalSpent = validExpenses.reduce((acc, c) => acc + Number(c.amount), 0);
-    const perPerson = validMembers.length > 0 ? (totalSpent / validMembers.length) : 0;
+    
+    // Gasto medio orientativo por persona (informativo)
+    const averagePerPerson = validMembers.length > 0 ? (totalSpent / validMembers.length) : 0;
     
     const selectedSpots = validSpots.filter(s => s.active_now);
     const pendingSpots = validSpots.filter(s => !s.active_now);
@@ -1200,7 +1230,7 @@ export default function App() {
                                     <div key={exp.id} className="flex justify-between items-center text-xs bg-white p-3 rounded-2xl border border-sky-100">
                                       <div>
                                         <p className="font-bold text-slate-800">{exp.description}</p>
-                                        <p className="text-[10px] text-slate-500">Pagado por {exp.paid_by}</p>
+                                        <p className="text-[10px] text-slate-500">Pagado por {exp.paid_by} (Reparto: {(exp.participants || []).join(', ')})</p>
                                       </div>
                                       <div className="flex items-center space-x-2">
                                         <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
@@ -1325,12 +1355,12 @@ export default function App() {
                 <div className="space-y-5">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm"><p className="text-[10px] font-bold text-slate-500">TOTAL GRUPO</p><p className="text-xl font-black text-emerald-600">{totalSpent.toFixed(2)}€</p></div>
-                    <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm"><p className="text-[10px] font-bold text-slate-500">POR PERSONA</p><p className="text-xl font-black text-sky-600">{perPerson.toFixed(2)}€</p></div>
+                    <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm"><p className="text-[10px] font-bold text-slate-500">MEDIA APROX / PERSONA</p><p className="text-xl font-black text-sky-600">{averagePerPerson.toFixed(2)}€</p></div>
                   </div>
 
                   <div className="bg-gradient-to-br from-slate-900 to-sky-950 text-white p-5 rounded-3xl shadow-lg space-y-3 border border-sky-400/20">
                     <h3 className="text-xs font-black uppercase tracking-wider text-sky-300 flex items-center">
-                      <DollarSign size={16} className="mr-1 text-emerald-400" /> Reparto y Liquidación de Deudas
+                      <DollarSign size={16} className="mr-1 text-emerald-400" /> Reparto y Liquidación Inteligente de Deudas
                     </h3>
                     {calculatedDebts.length === 0 ? (
                       <p className="text-xs text-sky-200">¡Cuentas saldadas!</p>
@@ -1359,7 +1389,7 @@ export default function App() {
                         <div key={exp.id} className="bg-white/90 p-3.5 rounded-2xl border border-sky-100 flex justify-between items-center text-xs">
                           <div>
                             <p className="font-bold text-slate-800">{exp.description}</p>
-                            <p className="text-[10px] text-slate-500">Pagado por <span className="font-bold text-sky-600">{exp.paid_by}</span></p>
+                            <p className="text-[10px] text-slate-500">Pagado por <span className="font-bold text-sky-600">{exp.paid_by}</span> • Reparto: <span className="text-slate-700 font-bold">{(exp.participants || []).join(', ')}</span></p>
                           </div>
                           <div className="flex items-center space-x-2">
                             <span className="font-black text-emerald-600 text-sm">{Number(exp.amount).toFixed(2)}€</span>
@@ -1375,25 +1405,45 @@ export default function App() {
                   )}
 
                   <form onSubmit={handleAddExpense} className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
-                    <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto</h4>
-                    <input type="text" placeholder="Concepto..." value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
-                    <input type="number" step="0.01" placeholder="Importe (€)" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
+                    <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto con selección de participantes</h4>
+                    <input type="text" placeholder="Concepto (ej. Cervezas)..." value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
+                    <input type="number" step="0.01" placeholder="Importe (€)..." value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
 
                     <select value={expenseSpotId} onChange={(e) => setExpenseSpotId(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none">
-                      <option value="">Selecciona un sitio del plan...</option>
+                      <option value="">Selecciona un sitio del plan (Opcional)...</option>
                       {validSpots.map((spot) => (
                         <option key={spot.id} value={spot.id}>{spot.name}</option>
                       ))}
                     </select>
 
-                    <div className="space-y-1">
+                    {/* SELECTOR DE PARTICIPANTES PARA ESTE GASTO */}
+                    <div className="space-y-1.5 pt-1">
+                      <label className="block text-[11px] font-bold text-slate-700">¿Entre quiénes se reparte este gasto?</label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {validMembers.map(member => {
+                          const isSelected = expenseParticipants.includes(member);
+                          return (
+                            <button
+                              key={member}
+                              type="button"
+                              onClick={() => handleToggleExpenseParticipant(member)}
+                              className={`text-xs font-bold px-3 py-1.5 rounded-xl border transition ${isSelected ? 'bg-sky-600 text-white border-sky-600 shadow-xs' : 'bg-sky-50 text-slate-600 border-sky-200'}`}
+                            >
+                              {isSelected ? '✓ ' : '+ '} {member}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1 pt-1">
                       <label className="block text-[11px] font-bold text-slate-700">Adjuntar Ticket / Recibo (Opcional)</label>
                       <input type="file" accept="image/*" onChange={handleReceiptUpload} className="w-full text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100" />
                       {expenseReceiptUrl && <p className="text-[10px] text-emerald-600 font-bold mt-1">✓ Ticket adjuntado correctamente</p>}
                     </div>
 
                     <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow mt-1">
-                      {isUploadingReceipt ? 'Procesando ticket...' : 'Añadir Gasto'}
+                      {isUploadingReceipt ? 'Procesando ticket...' : 'Añadir Gasto Inteligente'}
                     </button>
                   </form>
                 </div>
