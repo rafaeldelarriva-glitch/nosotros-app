@@ -493,27 +493,29 @@ export default function App() {
       return;
     }
 
-    const { error } = await supabase.from('expenses').insert([{
-      event_id: activeEvent.id,
-      description: expenseDesc.trim(),
-      amount: parseFloat(expenseAmount),
-      paid_by: currentUser.name,
-      spot_id: expenseSpotId || null,
-      receipt_url: expenseReceiptUrl || null,
-      participants: expenseParticipants
-    }]);
+    try {
+      const { error } = await supabase.from('expenses').insert([{
+        event_id: activeEvent.id,
+        description: expenseDesc.trim(),
+        amount: parseFloat(expenseAmount),
+        paid_by: currentUser.name,
+        spot_id: expenseSpotId || null,
+        receipt_url: expenseReceiptUrl || null,
+        participants: expenseParticipants
+      }]);
 
-    if (error) {
-      alert('Error al guardar el gasto: ' + error.message);
-      return;
+      if (error) throw error;
+
+      setExpenseDesc('');
+      setExpenseAmount('');
+      setExpenseSpotId('');
+      setExpenseReceiptUrl('');
+      setExpenseParticipants(activeEvent.members);
+      await fetchAppData();
+    } catch (err) {
+      console.error('Error al guardar gasto:', err.message);
+      alert('Error al guardar el gasto: ' + err.message);
     }
-
-    setExpenseDesc('');
-    setExpenseAmount('');
-    setExpenseSpotId('');
-    setExpenseReceiptUrl('');
-    setExpenseParticipants(activeEvent.members);
-    await fetchAppData();
   };
 
   const handlePhotoUploadWithGPS = (e) => {
@@ -1101,7 +1103,19 @@ export default function App() {
                                 {spotExpenses.map(exp => (
                                   <div key={exp.id} className="flex justify-between items-center text-xs bg-white p-2.5 rounded-2xl border border-sky-100">
                                     <span className="font-bold text-slate-800">{exp.description}</span>
-                                    <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
+                                    <div className="flex items-center space-x-2">
+                                      <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
+                                      {exp.receipt_url && (
+                                        <button 
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); setViewingReceiptUrl(exp.receipt_url); }}
+                                          className="p-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-xl border border-sky-200"
+                                          title="Ver ticket"
+                                        >
+                                          <Receipt size={14} />
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
                                 ))}
                               </div>
@@ -1284,6 +1298,11 @@ export default function App() {
                         </span>
                         <input type="file" accept="image/*" onChange={handleReceiptUpload} className="hidden" />
                       </label>
+                      {expenseReceiptUrl && (
+                        <div className="w-16 h-16 rounded-xl overflow-hidden border border-sky-200 mt-1">
+                          <img src={expenseReceiptUrl} alt="Vista previa ticket" className="w-full h-full object-cover" />
+                        </div>
+                      )}
                     </div>
 
                     <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow mt-1">
@@ -1305,7 +1324,19 @@ export default function App() {
                               {spotObj && <span className="ml-1 text-slate-600">• 📍 {spotObj.name}</span>}
                             </p>
                           </div>
-                          <span className="font-black text-emerald-700 text-sm">{Number(exp.amount).toFixed(2)}€</span>
+                          <div className="flex items-center space-x-2">
+                            <span className="font-black text-emerald-700 text-sm">{Number(exp.amount).toFixed(2)}€</span>
+                            {exp.receipt_url && (
+                              <button 
+                                type="button"
+                                onClick={() => setViewingReceiptUrl(exp.receipt_url)}
+                                className="w-7 h-7 bg-sky-50 hover:bg-sky-100 rounded-xl flex items-center justify-center text-sky-700 transition border border-sky-200" 
+                                title="Ver ticket asociado"
+                              >
+                                <Receipt size={14} />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -1337,6 +1368,25 @@ export default function App() {
             </>
           )}
         </main>
+
+        {viewingReceiptUrl && (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white max-w-sm w-full p-4 rounded-[2rem] shadow-2xl space-y-4 border border-sky-100 text-center">
+              <div className="flex justify-between items-center px-1">
+                <h3 className="font-black text-slate-800 text-sm">Ticket de Gasto</h3>
+                <button onClick={() => setViewingReceiptUrl(null)} className="p-1 bg-sky-50 rounded-full text-slate-600 hover:text-red-600">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="w-full max-h-96 rounded-2xl overflow-hidden border border-sky-200 bg-sky-50 flex items-center justify-center">
+                <img src={viewingReceiptUrl} alt="Ticket completo" className="w-full h-auto object-contain max-h-96" />
+              </div>
+              <button onClick={() => setViewingReceiptUrl(null)} className="w-full bg-sky-600 text-white font-bold py-2.5 rounded-xl text-xs">
+                Cerrar
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
