@@ -53,6 +53,7 @@ export default function App() {
   // Fotos y Ubicación de la Foto
   const [photoSpotId, setPhotoSpotId] = useState('');
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [viewingPhotoUrl, setViewingPhotoUrl] = useState(null);
 
   // Comentarios (General y por Ubicación)
   const [generalCommentInput, setGeneralCommentInput] = useState('');
@@ -483,7 +484,8 @@ export default function App() {
     }
   };
 
-  const handlePhotoUploadWithGPS = (e) => {
+  // MANEJO DE SUBIDA DE FOTOS CORREGIDO
+  const handlePhotoUpload = (e) => {
     const file = e.target.files[0];
     if (!file || !activeEvent) return;
 
@@ -503,18 +505,20 @@ export default function App() {
   };
 
   const savePhotoToSupabase = async (url, spotId) => {
-    const { error } = await supabase.from('photos').insert([{
-      event_id: activeEvent.id,
-      url: url,
-      user_name: currentUser.name,
-      spot_id: spotId
-    }]);
+    try {
+      const { error } = await supabase.from('photos').insert([{
+        event_id: activeEvent.id,
+        url: url,
+        user_name: currentUser.name,
+        spot_id: spotId
+      }]);
 
-    if (error) {
-      alert('Error al guardar la foto: ' + error.message);
-    } else {
+      if (error) throw error;
       setPhotoSpotId('');
-      fetchAppData();
+      await fetchAppData();
+    } catch (err) {
+      console.error('Error al guardar foto:', err.message);
+      alert('Error al guardar la foto: ' + err.message);
     }
   };
 
@@ -671,6 +675,7 @@ export default function App() {
   const renderSpotCard = (spot, isSelected, maxVotes) => {
     const isMajority = maxVotes > 0 && spot.votes === maxVotes;
     const spotComments = Array.isArray(activeEvent?.comments) ? activeEvent.comments.filter(c => c.spot_id === spot.id) : [];
+    const spotPhotos = Array.isArray(activeEvent?.photos) ? activeEvent.photos.filter(p => p.spot_id === spot.id) : [];
     const currentInputText = spotCommentInputs[spot.id] || '';
     const canDeleteSpot = Array.isArray(activeEvent?.members) && activeEvent.members.includes(currentUser?.name);
 
@@ -706,6 +711,21 @@ export default function App() {
             </button>
           )}
         </div>
+
+        {/* Listado de fotos en miniatura asociadas a este sitio */}
+        {spotPhotos.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto py-1">
+            {spotPhotos.map(p => (
+              <div 
+                key={p.id} 
+                onClick={() => setViewingPhotoUrl(p.url)}
+                className="w-14 h-14 rounded-xl overflow-hidden border border-sky-200 shrink-0 cursor-pointer shadow-xs hover:opacity-90"
+              >
+                <img src={p.url} alt="Foto del sitio" className="w-full h-full object-cover" />
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="flex gap-2 pt-1 border-t border-sky-100">
           <button 
@@ -1005,6 +1025,7 @@ export default function App() {
                   {(selectedSpots.length > 0 ? selectedSpots : validSpots).map((spot, idx) => {
                     const spotExpenses = validExpenses.filter(e => e.spot_id === spot.id);
                     const spotSpent = spotExpenses.reduce((sum, exp) => sum + Number(exp.amount), 0);
+                    const spotPhotos = validPhotos.filter(p => p.spot_id === spot.id);
                     const isExpanded = expandedTimelineSpotId === spot.id;
 
                     return (
@@ -1027,6 +1048,19 @@ export default function App() {
 
                           {isExpanded && (
                             <div className="mt-4 pt-4 border-t border-sky-200/60 space-y-4">
+                              {spotPhotos.length > 0 && (
+                                <div className="space-y-1.5">
+                                  <span className="text-xs font-bold text-slate-700">Fotos de la parada</span>
+                                  <div className="flex gap-2 overflow-x-auto py-1">
+                                    {spotPhotos.map(p => (
+                                      <div key={p.id} onClick={(e) => { e.stopPropagation(); setViewingPhotoUrl(p.url); }} className="w-16 h-16 rounded-xl overflow-hidden border border-sky-200 shrink-0 cursor-pointer">
+                                        <img src={p.url} alt="Foto parada" className="w-full h-full object-cover" />
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
                               <div className="space-y-2">
                                 <span className="text-xs font-bold text-slate-700 flex items-center">
                                   <Receipt size={14} className="mr-1 text-emerald-600" /> Gastos ({spotSpent.toFixed(2)}€)
@@ -1034,19 +1068,7 @@ export default function App() {
                                 {spotExpenses.map(exp => (
                                   <div key={exp.id} className="flex justify-between items-center text-xs bg-white p-2.5 rounded-2xl border border-sky-100">
                                     <span className="font-bold text-slate-800">{exp.description}</span>
-                                    <div className="flex items-center space-x-2">
-                                      <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
-                                      {exp.receipt_url && (
-                                        <button 
-                                          type="button"
-                                          onClick={(e) => { e.stopPropagation(); setViewingReceiptUrl(exp.receipt_url); }}
-                                          className="p-1.5 bg-sky-50 hover:bg-sky-100 text-sky-700 rounded-xl border border-sky-200"
-                                          title="Ver ticket"
-                                        >
-                                          <Receipt size={14} />
-                                        </button>
-                                      )}
-                                    </div>
+                                    <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
                                   </div>
                                 ))}
                               </div>
@@ -1089,7 +1111,7 @@ export default function App() {
               <div className="flex bg-white/90 backdrop-blur-xl p-1 rounded-2xl border border-sky-100 shadow-sm" role="tablist">
                 <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>Sitios</button>
                 <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>Gastos</button>
-                <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>Fotos</button>
+                <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>Fotos ({validPhotos.length})</button>
               </div>
 
               {eventSubTab === 'spots' && (
@@ -1276,24 +1298,57 @@ export default function App() {
               )}
 
               {eventSubTab === 'gallery' && (
-                <div className="space-y-4">
-                  <select 
-                    value={photoSpotId} 
-                    onChange={(e) => setPhotoSpotId(e.target.value)}
-                    className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800"
-                    required
-                  >
-                    <option value="">Selecciona el sitio de la foto...</option>
-                    {validSpots.map((spot) => (
-                      <option key={spot.id} value={spot.id}>{spot.name}</option>
-                    ))}
-                  </select>
+                <div className="space-y-5">
+                  <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
+                    <h3 className="text-xs font-bold text-slate-800">Subir nueva foto al plan</h3>
+                    <select 
+                      value={photoSpotId} 
+                      onChange={(e) => setPhotoSpotId(e.target.value)}
+                      className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none"
+                      required
+                    >
+                      <option value="">Selecciona el sitio de la foto...</option>
+                      {validSpots.map((spot) => (
+                        <option key={spot.id} value={spot.id}>{spot.name}</option>
+                      ))}
+                    </select>
 
-                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-sky-300 bg-sky-50/60 rounded-3xl p-6 cursor-pointer">
-                    <Camera className="w-6 h-6 text-sky-600 mb-1" />
-                    <span className="text-xs font-bold text-sky-900">Tomar / Subir foto para este sitio</span>
-                    <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUploadWithGPS} className="hidden" />
-                  </label>
+                    <label className="flex flex-col items-center justify-center border-2 border-dashed border-sky-300 bg-sky-50/60 rounded-3xl p-6 cursor-pointer hover:bg-sky-100 transition">
+                      <Camera className="w-6 h-6 text-sky-600 mb-1" />
+                      <span className="text-xs font-bold text-sky-900">
+                        {isUploadingPhoto ? 'Guardando foto...' : 'Tomar / Subir foto para este sitio'}
+                      </span>
+                      <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} className="hidden" />
+                    </label>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-black uppercase text-slate-700">Galería de Fotos del Plan ({validPhotos.length})</h4>
+                    {validPhotos.length === 0 ? (
+                      <p className="text-xs text-slate-400 text-center py-4">No hay fotos subidas todavía.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-3">
+                        {validPhotos.map((photo) => {
+                          const spotRef = validSpots.find(s => s.id === photo.spot_id);
+                          return (
+                            <div 
+                              key={photo.id} 
+                              onClick={() => setViewingPhotoUrl(photo.url)}
+                              className="bg-white/90 rounded-2xl border border-sky-100 overflow-hidden shadow-sm cursor-pointer flex flex-col hover:shadow"
+                            >
+                              <div className="h-28 w-full bg-sky-50 overflow-hidden">
+                                <img src={photo.url} alt="Foto del evento" className="w-full h-full object-cover" />
+                              </div>
+                              <div className="p-2 space-y-0.5">
+                                <p className="text-[10px] font-bold text-slate-800 truncate">📍 {spotRef ? spotRef.name : 'Sitio general'}</p>
+                                <p className="text-[9px] text-sky-600 font-medium">Subida por {photo.user_name}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </>
@@ -1313,6 +1368,25 @@ export default function App() {
                 <img src={viewingReceiptUrl} alt="Ticket completo" className="w-full h-auto object-contain max-h-96" />
               </div>
               <button onClick={() => setViewingReceiptUrl(null)} className="w-full bg-sky-600 text-white font-bold py-2.5 rounded-xl text-xs">
+                Cerrar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {viewingPhotoUrl && (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white max-w-sm w-full p-4 rounded-[2rem] shadow-2xl space-y-4 border border-sky-100 text-center">
+              <div className="flex justify-between items-center px-1">
+                <h3 className="font-black text-slate-800 text-sm">Foto del Plan</h3>
+                <button onClick={() => setViewingPhotoUrl(null)} className="p-1 bg-sky-50 rounded-full text-slate-600 hover:text-red-600">
+                  <X size={18} />
+                </button>
+              </div>
+              <div className="w-full max-h-96 rounded-2xl overflow-hidden border border-sky-200 bg-sky-50 flex items-center justify-center">
+                <img src={viewingPhotoUrl} alt="Foto completa" className="w-full h-auto object-contain max-h-96" />
+              </div>
+              <button onClick={() => setViewingPhotoUrl(null)} className="w-full bg-sky-600 text-white font-bold py-2.5 rounded-xl text-xs">
                 Cerrar
               </button>
             </div>
