@@ -19,6 +19,10 @@ export default function App() {
 
   // Navegación
   const [activeTab, setActiveTab] = useState('my-events');
+  const [calendarMonth, setCalendarMonth] = useState(() => new Date().getMonth());
+  const [calendarYear, setCalendarYear] = useState(() => new Date().getFullYear());
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(null);
+  const [processingInvitationId, setProcessingInvitationId] = useState(null);
   const [activeEvent, setActiveEvent] = useState(null);
   const [eventSubTab, setEventSubTab] = useState('spots');
 
@@ -470,6 +474,24 @@ export default function App() {
       }
     } catch (err) {
       alert('Error al aprobar usuario en plan: ' + err.message);
+    }
+  };
+
+  // Gestionar una invitación dirigida al usuario conectado.
+  const handleCalendarInvitation = async (eventId, accept) => {
+    if (!currentUser?.name || processingInvitationId) return;
+    try {
+      setProcessingInvitationId(eventId);
+      const query = supabase.from('event_members');
+      const { error } = accept
+        ? await query.update({ status: 'member' }).eq('event_id', eventId).eq('user_name', currentUser.name).eq('status', 'pending_invite')
+        : await query.delete().eq('event_id', eventId).eq('user_name', currentUser.name).eq('status', 'pending_invite');
+      if (error) throw error;
+      await refreshAllData();
+    } catch (err) {
+      alert('No se pudo gestionar la invitación: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setProcessingInvitationId(null);
     }
   };
 
@@ -1808,6 +1830,29 @@ export default function App() {
   const closedMyEvents = myEventsAll.filter(e => e.status === 'closed');
   const filteredSearchEvents = validEvents.filter(e => e.status !== 'closed' && (e.title?.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name?.toLowerCase().includes(searchQuery.toLowerCase())));
 
+  // Calendario personal: únicamente planes activos confirmados o invitaciones recibidas.
+  const calendarEvents = validEvents.filter(e => e.status !== 'closed' &&
+    (e.members?.includes(currentUser?.name) || e.pendingInvitations?.includes(currentUser?.name)) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(String(e.date || '').slice(0, 10)));
+  const eventDateKey = e => String(e.date).slice(0, 10);
+  const dateKey = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const todayKey = (() => { const d = new Date(); return dateKey(d.getFullYear(), d.getMonth(), d.getDate()); })();
+  const monthStartOffset = (new Date(calendarYear, calendarMonth, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+  const calendarCells = Array.from({ length: Math.ceil((monthStartOffset + daysInMonth) / 7) * 7 }, (_, i) => {
+    const day = i - monthStartOffset + 1;
+    return day > 0 && day <= daysInMonth ? day : null;
+  });
+  const selectedDayEvents = selectedCalendarDate ? calendarEvents.filter(e => eventDateKey(e) === selectedCalendarDate) : [];
+  const upcomingEvent = calendarEvents.filter(e => e.members?.includes(currentUser?.name) && eventDateKey(e) >= todayKey)
+    .sort((a, b) => eventDateKey(a).localeCompare(eventDateKey(b)))[0];
+  const changeCalendarMonth = offset => {
+    const d = new Date(calendarYear, calendarMonth + offset, 1);
+    setCalendarYear(d.getFullYear());
+    setCalendarMonth(d.getMonth());
+    setSelectedCalendarDate(null);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
       <header className="bg-white/90 backdrop-blur-2xl border-b border-sky-100 p-4 sticky top-0 z-40 flex justify-between items-center shadow-sm">
@@ -1827,6 +1872,55 @@ export default function App() {
             <button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-bold py-3 px-4 rounded-2xl text-sm shadow-lg flex items-center justify-center space-x-2">
               <Plus size={18} /> <span>Crear Nueva Salida / Plan</span>
             </button>
+
+            <section className="bg-white/95 rounded-3xl border border-sky-100 p-4 shadow-sm space-y-3" aria-label="Mi calendario de planes">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-black text-slate-800 flex items-center gap-2"><Calendar size={17} className="text-sky-600" /> Mi calendario</h2>
+                <button type="button" onClick={() => { const d = new Date(); setCalendarYear(d.getFullYear()); setCalendarMonth(d.getMonth()); setSelectedCalendarDate(todayKey); }} className="text-xs font-bold text-sky-700 px-2 py-1 rounded-lg bg-sky-50">Hoy</button>
+              </div>
+              {upcomingEvent && <button type="button" onClick={() => setActiveEvent(upcomingEvent)} className="w-full text-left rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-900">
+                <span className="font-black">Próximo encuentro:</span> {upcomingEvent.title} · {eventDateKey(upcomingEvent)} →
+              </button>}
+              <div className="flex justify-between items-center">
+                <button type="button" onClick={() => changeCalendarMonth(-1)} aria-label="Mes anterior" className="p-2 rounded-xl bg-sky-50 text-sky-700"><ArrowLeft size={18} /></button>
+                <span className="text-sm font-extrabold capitalize" aria-live="polite">{new Intl.DateTimeFormat('es-ES', { month: 'long', year: 'numeric' }).format(new Date(calendarYear, calendarMonth, 1))}</span>
+                <button type="button" onClick={() => changeCalendarMonth(1)} aria-label="Mes siguiente" className="p-2 rounded-xl bg-sky-50 text-sky-700"><ArrowRight size={18} /></button>
+              </div>
+              <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-slate-500">
+                {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((label, i) => <span key={i}>{label}</span>)}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {calendarCells.map((day, i) => {
+                  if (!day) return <span key={`empty-${i}`} className="h-11" />;
+                  const key = dateKey(calendarYear, calendarMonth, day);
+                  const dayEvents = calendarEvents.filter(e => eventDateKey(e) === key);
+                  const confirmed = dayEvents.some(e => e.members?.includes(currentUser?.name));
+                  const invited = dayEvents.some(e => e.pendingInvitations?.includes(currentUser?.name));
+                  return <button key={key} type="button" onClick={() => setSelectedCalendarDate(key)} aria-label={`${day} de ${calendarMonth + 1}: ${dayEvents.length} planes`} aria-pressed={selectedCalendarDate === key}
+                    className={`h-11 rounded-xl flex flex-col items-center justify-center gap-1 text-xs font-bold border ${selectedCalendarDate === key ? 'ring-2 ring-sky-500 border-sky-400 bg-sky-50' : key === todayKey ? 'border-sky-300 bg-sky-50' : 'border-transparent hover:bg-slate-50'} text-slate-800`}>
+                    <span>{day}</span><span className="flex gap-0.5 min-h-[5px]">{confirmed && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}{invited && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}</span>
+                  </button>;
+                })}
+              </div>
+              <div className="flex flex-wrap gap-3 text-[11px] text-slate-600 font-semibold">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 bg-emerald-500 rounded-full" /> Confirmado</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 bg-amber-500 rounded-full" /> Invitación pendiente</span>
+              </div>
+              {selectedCalendarDate && <div className="border-t border-sky-100 pt-3 space-y-2">
+                <h3 className="text-xs font-black text-slate-700">{selectedCalendarDate}</h3>
+                {selectedDayEvents.length === 0 ? <div className="space-y-2"><p className="text-xs text-slate-500">No tienes planes para este día.</p>
+                  <button type="button" onClick={() => { setNewDate(selectedCalendarDate); setShowCreateModal(true); }} className="text-xs font-bold bg-sky-600 text-white px-3 py-2 rounded-xl">+ Crear plan este día</button></div> :
+                  selectedDayEvents.map(event => {
+                    const isConfirmed = event.members?.includes(currentUser?.name);
+                    return <div key={event.id} className="rounded-xl border border-slate-200 p-3 flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0"><p className="font-bold text-sm text-slate-800 break-words">{event.title}</p><p className={`text-[11px] font-bold ${isConfirmed ? 'text-emerald-700' : 'text-amber-700'}`}>{isConfirmed ? '● Confirmado' : '● Invitación pendiente'}</p></div>
+                      {isConfirmed ? <button type="button" onClick={() => setActiveEvent(event)} className="text-xs font-bold bg-sky-600 text-white px-3 py-2 rounded-xl">Entrar</button> :
+                        <div className="flex gap-1"><button type="button" disabled={!!processingInvitationId} onClick={() => handleCalendarInvitation(event.id, true)} className="text-xs font-bold bg-emerald-600 text-white px-2 py-2 rounded-lg disabled:opacity-50">Aceptar</button>
+                          <button type="button" disabled={!!processingInvitationId} onClick={() => handleCalendarInvitation(event.id, false)} className="text-xs font-bold bg-red-50 text-red-700 px-2 py-2 rounded-lg disabled:opacity-50">Rechazar</button></div>}
+                    </div>;
+                  })}
+              </div>}
+            </section>
 
             <div className="space-y-3">
               <h2 className="text-sm font-black text-slate-800 px-1">Mis Salidas Activas ({activeMyEvents.length})</h2>
