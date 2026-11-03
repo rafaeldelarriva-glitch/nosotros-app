@@ -7,6 +7,7 @@ import { supabase } from './supabaseClient';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [authMode, setAuthMode] = useState('login');
   
   // Auth inputs
@@ -27,7 +28,7 @@ export default function App() {
   const [newDate, setNewDate] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Perfiles y solicitudes
+  // Perfiles, solicitudes y administración
   const [registeredUsers, setRegisteredUsers] = useState([]);
   const [passwordRequests, setPasswordRequests] = useState([]);
   const [pendingRegistrations, setPendingRegistrations] = useState([]);
@@ -69,6 +70,26 @@ export default function App() {
   const [resetNewPasswordInput, setResetNewPasswordInput] = useState('');
 
   const [events, setEvents] = useState([]);
+
+  // Cargar sesión activa al iniciar
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const { data: profile } = await supabase.from('profiles').select('*').eq('id', session.user.id).maybeSingle();
+          const userDisplayName = profile?.name || session.user.email?.split('@')[0] || 'Usuario';
+          const userRole = profile?.role || 'user';
+          setCurrentUser({ id: session.user.id, name: userDisplayName, email: session.user.email, role: userRole });
+        }
+      } catch (err) {
+        console.error('Error comprobando sesión:', err);
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+    checkSession();
+  }, []);
 
   useEffect(() => {
     if (currentUser) {
@@ -262,9 +283,16 @@ export default function App() {
     }
   };
 
-  const handleApproveRegistration = async (userId) => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setCurrentUser(null);
+    setActiveEvent(null);
+  };
+
+  const handleApproveRegistration = async (userId, userName) => {
     try {
       await supabase.from('profiles').update({ is_approved: true }).eq('id', userId);
+      alert(`✅ Usuario ${userName} aprobado.`);
       await refreshAllData();
     } catch (err) {
       alert('Error: ' + err.message);
@@ -272,7 +300,7 @@ export default function App() {
   };
 
   const handleRejectRegistration = async (userId) => {
-    if (!confirm('¿Rechazar solicitud?')) return;
+    if (!confirm('¿Rechazar y eliminar esta solicitud?')) return;
     try {
       await supabase.from('profiles').delete().eq('id', userId);
       await refreshAllData();
@@ -325,7 +353,7 @@ export default function App() {
       const updates = { name: editNameInput.trim() };
       let emailChanged = false;
 
-      if (editEmailInput.trim() && editEmailInput.trim().toLowerCase() !== currentUser.email.toLowerCase()) {
+      if (editEmailInput.trim() && editEmailInput.trim().toLowerCase() !== currentUser?.email?.toLowerCase()) {
         updates.email = editEmailInput.trim().toLowerCase();
         emailChanged = true;
       }
@@ -362,21 +390,6 @@ export default function App() {
     }
   };
 
-  const handleRequestPasswordChange = async (e) => {
-    e.preventDefault();
-    if (!resetEmailInput || !resetNewPasswordInput) return;
-    try {
-      await supabase.from('password_requests').insert([{ email: resetEmailInput.toLowerCase().trim(), new_password: resetNewPasswordInput, status: 'pending' }]);
-      alert('✅ Solicitud enviada al administrador.');
-      setShowResetModal(false);
-      setResetEmailInput('');
-      setResetNewPasswordInput('');
-      await refreshAllData();
-    } catch (err) {
-      alert('Error: ' + err.message);
-    }
-  };
-
   const toggleExpenseParticipant = (memberName) => {
     if (Array.isArray(expenseParticipants) && expenseParticipants.includes(memberName)) {
       setExpenseParticipants(expenseParticipants.filter(m => m !== memberName));
@@ -387,7 +400,7 @@ export default function App() {
 
   const handleCreateEvent = async (e) => {
     e.preventDefault();
-    if (!newTitle.trim() || !newDate) return;
+    if (!newTitle.trim() || !newDate || !currentUser) return;
 
     try {
       const { data: newEv, error: eventError } = await supabase
@@ -409,7 +422,7 @@ export default function App() {
   };
 
   const handleRemoveMember = async (memberName) => {
-    if (!confirm(`¿Quitar a ${memberName}?`)) return;
+    if (!confirm(`¿Estás seguro de quitar a ${memberName}?`)) return;
     await supabase.from('event_members').delete().eq('event_id', activeEvent.id).eq('user_name', memberName);
     if (memberName === currentUser.name) setActiveEvent(null);
     await refreshAllData();
@@ -417,7 +430,7 @@ export default function App() {
 
   const handleAddSpot = async (e) => {
     if (e) e.preventDefault();
-    if (!newSpotName.trim() || !activeEvent) return;
+    if (!newSpotName.trim() || !activeEvent || !currentUser) return;
 
     const formattedSpotName = newSpotName.toLowerCase().includes('valdelagrana') || newSpotName.toLowerCase().includes('el puerto') 
       ? newSpotName.trim() 
@@ -557,11 +570,22 @@ export default function App() {
     await refreshAllData();
   };
 
+  const handleRequestJoin = async (eventId) => {
+    await supabase.from('event_members').insert([{ event_id: eventId, user_name: currentUser.name, status: 'pending_request' }]);
+    await refreshAllData();
+  };
+
+  const handleCancelRequestJoin = async (eventId) => {
+    if (!confirm('¿Cancelar solicitud?')) return;
+    await supabase.from('event_members').delete().eq('event_id', eventId).eq('user_name', currentUser.name).eq('status', 'pending_request');
+    await refreshAllData();
+  };
+
   const calculateDebts = (members = [], expenses = []) => {
-    if (members.length === 0) return [];
+    if (!Array.isArray(members) || members.length === 0) return [];
     const balancesMap = {};
     members.forEach(m => { balancesMap[m] = 0; });
-    expenses.forEach(exp => {
+    (expenses || []).forEach(exp => {
       const amount = Number(exp.amount) || 0;
       balancesMap[exp.paid_by] = (balancesMap[exp.paid_by] || 0) + amount;
       const parts = (Array.isArray(exp.participants) && exp.participants.length > 0) ? exp.participants : members;
@@ -638,7 +662,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* ENLACES QR / CARTAS ASOCIADAS */}
+        {/* ENLACES QR / CARTAS */}
         <div className="space-y-1.5 pt-1">
           <div className="flex justify-between items-center">
             <span className="text-[11px] font-bold text-slate-700 flex items-center">
@@ -756,11 +780,17 @@ export default function App() {
     );
   };
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-500 font-bold text-sm">
+        Cargando datos...
+      </div>
+    );
+  }
+
   if (!currentUser) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 flex flex-col items-center justify-center p-4 text-slate-800 relative overflow-hidden">
-        <div className="absolute top-10 left-1/2 -translate-x-1/2 w-96 h-96 bg-sky-300/30 rounded-full blur-3xl pointer-events-none"></div>
-
         <div className="max-w-md w-full bg-white/90 backdrop-blur-2xl p-8 rounded-[2.5rem] shadow-xl border border-sky-100 relative z-10 space-y-6">
           <div className="text-center space-y-3">
             <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
@@ -821,12 +851,6 @@ export default function App() {
                 <Lock className="absolute left-3.5 text-slate-400" size={18} />
                 <input type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl pl-10 pr-4 py-3 text-sm focus:outline-none" required />
               </div>
-              {passwordError && (
-                <div className="flex items-center space-x-1 text-red-600 text-[11px] font-bold mt-1 ml-1 bg-red-50 p-2 rounded-xl border border-red-200">
-                  <AlertCircle size={14} className="shrink-0" />
-                  <span>{passwordError}</span>
-                </div>
-              )}
             </div>
 
             <button type="submit" className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-bold py-3.5 rounded-2xl text-sm shadow-lg mt-2">
@@ -973,18 +997,124 @@ export default function App() {
                   <Users size={14} className="mr-1.5 text-sky-600" /> Asistentes Confirmados ({validMembers.length})
                 </span>
                 <div className="flex flex-wrap gap-2">
-                  {validMembers.map((member) => (
-                    <div key={member} className="text-xs font-bold bg-sky-50 text-sky-700 px-3 py-1.5 rounded-xl border border-sky-200 flex items-center space-x-2">
-                      <span>👤 {member}</span>
-                    </div>
-                  ))}
+                  {validMembers.map((member) => {
+                    const canRemove = isCreator || member === currentUser.name;
+                    return (
+                      <div key={member} className="text-xs font-bold bg-sky-50 text-sky-700 px-3 py-1.5 rounded-xl border border-sky-200 flex items-center space-x-2">
+                        <span>👤 {member}</span>
+                        {canRemove && (
+                          <button type="button" onClick={() => handleRemoveMember(member)} className="text-slate-400 hover:text-red-600">
+                            <UserMinus size={13} />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div className="space-y-3">
-                <h4 className="text-xs font-black uppercase text-sky-800">Ruta y Sitios</h4>
-                {selectedSpots.map((spot) => renderSpotCard(spot, true, maxVotes, selectedSpots))}
+              <div className="flex bg-white/90 backdrop-blur-xl p-1 rounded-2xl border border-sky-100 shadow-sm" role="tablist">
+                <button onClick={() => setEventSubTab('spots')} role="tab" aria-selected={eventSubTab === 'spots'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'spots' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>Ruta y Sitios</button>
+                <button onClick={() => setEventSubTab('expenses')} role="tab" aria-selected={eventSubTab === 'expenses'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'expenses' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>Gastos</button>
+                <button onClick={() => setEventSubTab('gallery')} role="tab" aria-selected={eventSubTab === 'gallery'} className={`flex-1 py-2 text-xs font-bold rounded-xl transition ${eventSubTab === 'gallery' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>Fotos ({validPhotos.length})</button>
               </div>
+
+              {eventSubTab === 'spots' && (
+                <div className="space-y-4">
+                  <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
+                    <h3 className="text-xs font-black text-slate-800">Proponer nuevo sitio</h3>
+                    <form onSubmit={handleAddSpot} className="space-y-2.5">
+                      <input type="text" placeholder="Ej. Bar Shiko..." value={newSpotName} onChange={(e) => setNewSpotName(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" />
+                      <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow">
+                        🔍 Añadir a la ruta
+                      </button>
+                    </form>
+                  </div>
+
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-black uppercase text-sky-800 flex items-center justify-between">
+                      <span>Ruta Ordenada ({selectedSpots.length})</span>
+                      <span className="text-[10px] text-slate-500 font-medium">Usa ⬆️/⬇️ para reordenar</span>
+                    </h4>
+                    {selectedSpots.map((spot) => renderSpotCard(spot, true, maxVotes, selectedSpots))}
+                  </div>
+
+                  <div className="space-y-3 pt-2">
+                    <h4 className="text-xs font-black uppercase text-slate-700">Propuestas Pendientes ({pendingSpots.length})</h4>
+                    {pendingSpots.map((spot) => renderSpotCard(spot, false, maxVotes, selectedSpots))}
+                  </div>
+                </div>
+              )}
+
+              {eventSubTab === 'expenses' && (
+                <div className="space-y-5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm"><p className="text-[10px] font-bold text-slate-500">TOTAL GRUPO</p><p className="text-xl font-black text-emerald-600">{totalSpent.toFixed(2)}€</p></div>
+                    <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm"><p className="text-[10px] font-bold text-slate-500">POR PERSONA</p><p className="text-xl font-black text-sky-600">{perPerson.toFixed(2)}€</p></div>
+                  </div>
+
+                  <div className="bg-gradient-to-br from-slate-900 to-sky-950 text-white p-5 rounded-3xl shadow-lg space-y-3 border border-sky-400/20">
+                    <h3 className="text-xs font-black uppercase tracking-wider text-sky-300 flex items-center">
+                      <DollarSign size={16} className="mr-1 text-emerald-400" /> Reparto y Liquidación de Deudas
+                    </h3>
+                    {calculatedDebts.length === 0 ? (
+                      <p className="text-xs text-sky-200">¡Cuentas saldadas!</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {calculatedDebts.map((debt, index) => (
+                          <div key={index} className="bg-white/10 backdrop-blur-md p-3 rounded-2xl border border-white/10 flex justify-between items-center text-xs">
+                            <div>
+                              <span className="font-bold text-white">{debt.from}</span>
+                              <span className="text-sky-200 mx-1.5">debe pagar a</span>
+                              <span className="font-bold text-emerald-300">{debt.to}</span>
+                            </div>
+                            <span className="font-black text-emerald-400 text-sm bg-emerald-950/80 px-3 py-1 rounded-xl">
+                              {debt.amount.toFixed(2)}€
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <form onSubmit={handleAddExpense} className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
+                    <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto</h4>
+                    <input type="text" placeholder="Concepto..." value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
+                    <input type="number" step="0.01" placeholder="Importe (€)" value={expenseAmount} onChange={(e) => setExpenseAmount(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
+
+                    <select value={expenseSpotId} onChange={(e) => setExpenseSpotId(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none">
+                      <option value="">Selecciona un sitio del plan...</option>
+                      {validSpots.map((spot) => (
+                        <option key={spot.id} value={spot.id}>{spot.name}</option>
+                      ))}
+                    </select>
+
+                    <button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow mt-1">
+                      Añadir Gasto
+                    </button>
+                  </form>
+                </div>
+              )}
+
+              {eventSubTab === 'gallery' && (
+                <div className="space-y-5">
+                  <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
+                    <h3 className="text-xs font-bold text-slate-800">Subir nueva foto al plan</h3>
+                    <select value={photoSpotId} onChange={(e) => setPhotoSpotId(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required>
+                      <option value="">Selecciona el sitio de la foto...</option>
+                      {validSpots.map((spot) => (
+                        <option key={spot.id} value={spot.id}>{spot.name}</option>
+                      ))}
+                    </select>
+
+                    <label className="flex flex-col items-center justify-center border-2 border-dashed border-sky-300 bg-sky-50/60 rounded-3xl p-6 cursor-pointer hover:bg-sky-100 transition">
+                      <Camera className="w-6 h-6 text-sky-600 mb-1" />
+                      <span className="text-xs font-bold text-sky-900">{isUploadingPhoto ? 'Guardando foto...' : 'Tomar / Subir foto'}</span>
+                      <input type="file" accept="image/*" capture="environment" onChange={handlePhotoUpload} className="hidden" />
+                    </label>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </main>
@@ -993,9 +1123,10 @@ export default function App() {
   }
 
   const validEvents = Array.isArray(events) ? events : [];
-  const myEventsAll = validEvents.filter(e => Array.isArray(e.members) && e.members.includes(currentUser.name));
+  const myEventsAll = validEvents.filter(e => Array.isArray(e.members) && e.members.includes(currentUser?.name));
   const activeMyEvents = myEventsAll.filter(e => e.status !== 'closed');
   const closedMyEvents = myEventsAll.filter(e => e.status === 'closed');
+  const filteredSearchEvents = validEvents.filter(e => e.status !== 'closed' && (e.title?.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name?.toLowerCase().includes(searchQuery.toLowerCase())));
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
@@ -1005,8 +1136,8 @@ export default function App() {
           <span className="font-extrabold text-slate-800 text-base">Nosotros</span>
         </div>
         <div className="flex items-center space-x-3">
-          <span className="text-xs font-bold text-slate-700">Hola, {currentUser.name}</span>
-          <button onClick={() => setCurrentUser(null)} className="text-xs bg-sky-50 hover:bg-red-50 text-slate-600 px-3 py-1.5 rounded-full font-bold border border-sky-200">Salir</button>
+          <span className="text-xs font-bold text-slate-700">Hola, {currentUser?.name || 'Usuario'}</span>
+          <button onClick={handleLogout} className="text-xs bg-sky-50 hover:bg-red-50 text-slate-600 px-3 py-1.5 rounded-full font-bold border border-sky-200">Salir</button>
         </div>
       </header>
 
@@ -1030,24 +1161,59 @@ export default function App() {
               ))}
             </div>
 
-            {/* SECCIÓN DE HISTÓRICO DE SALIDAS CERRADAS */}
             <div className="space-y-3 pt-2">
               <h2 className="text-sm font-black text-slate-700 px-1 flex items-center">
                 <Archive size={16} className="mr-1.5 text-amber-600" /> Histórico de Salidas Cerradas ({closedMyEvents.length})
               </h2>
-              {closedMyEvents.length === 0 ? (
-                <p className="text-xs text-slate-400 px-1">No hay salidas cerradas todavía.</p>
-              ) : (
-                closedMyEvents.map((event) => (
-                  <article key={event.id} onClick={() => setActiveEvent(event)} className="bg-amber-50/60 rounded-2xl border border-amber-200 p-3.5 flex justify-between items-center cursor-pointer shadow-xs hover:shadow">
+              {closedMyEvents.map((event) => (
+                <article key={event.id} onClick={() => setActiveEvent(event)} className="bg-amber-50/60 rounded-2xl border border-amber-200 p-3.5 flex justify-between items-center cursor-pointer shadow-xs hover:shadow">
+                  <div>
+                    <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">🔒 Cerrada • {event.date}</span>
+                    <h3 className="font-black text-slate-800 text-sm mt-1">{event.title}</h3>
+                  </div>
+                  <span className="text-xs font-bold text-amber-800 bg-amber-100 px-3 py-2 rounded-xl border border-amber-300">Ver Historial →</span>
+                </article>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'search' && (
+          <div className="space-y-4">
+            <input 
+              type="text" 
+              placeholder="Buscar por título o creador..." 
+              value={searchQuery} 
+              onChange={(e) => setSearchQuery(e.target.value)} 
+              className="w-full bg-white/90 border border-sky-200 rounded-2xl px-4 py-3 text-sm text-slate-800" 
+            />
+            <div className="space-y-3">
+              <h2 className="text-sm font-black text-slate-800 px-1">Salidas Disponibles ({filteredSearchEvents.length})</h2>
+              {filteredSearchEvents.map((event) => {
+                const membersList = Array.isArray(event.members) ? event.members : [];
+                const pendingReq = Array.isArray(event.pendingRequests) ? event.pendingRequests : [];
+                const isMember = membersList.includes(currentUser?.name);
+                const hasRequested = pendingReq.includes(currentUser?.name);
+
+                return (
+                  <article key={event.id} className="bg-white/90 rounded-2xl border border-sky-100 p-4 shadow-sm flex justify-between items-center">
                     <div>
-                      <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2.5 py-0.5 rounded-full">🔒 Cerrada • {event.date}</span>
-                      <h3 className="font-black text-slate-800 text-sm mt-1">{event.title}</h3>
+                      <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">📅 {event.date} • {event.creator_name}</span>
+                      <h3 className="font-bold text-sm text-slate-800 mt-1">{event.title}</h3>
                     </div>
-                    <span className="text-xs font-bold text-amber-800 bg-amber-100 px-3 py-2 rounded-xl border border-amber-300">Ver Historial →</span>
+                    {isMember ? (
+                      <button onClick={() => setActiveEvent(event)} className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200">Ver Plan</button>
+                    ) : hasRequested ? (
+                      <div className="flex items-center space-x-1.5">
+                        <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1.5 rounded-xl border border-amber-200">Solicitado</span>
+                        <button onClick={() => handleCancelRequestJoin(event.id)} className="p-1.5 bg-red-50 text-red-600 rounded-xl border border-red-200"><X size={14} /></button>
+                      </div>
+                    ) : (
+                      <button onClick={() => handleRequestJoin(event.id)} className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl shadow">Unirme</button>
+                    )}
                   </article>
-                ))
-              )}
+                );
+              })}
             </div>
           </div>
         )}
@@ -1057,14 +1223,62 @@ export default function App() {
             <div className="bg-white/90 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-4">
               <div className="flex items-center space-x-3">
                 <div className="w-12 h-12 bg-sky-100 rounded-2xl flex items-center justify-center text-sky-700 font-black text-lg">
-                  {currentUser.name.charAt(0).toUpperCase()}
+                  {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
                 </div>
                 <div>
-                  <h2 className="font-black text-slate-800 text-base">{currentUser.name}</h2>
-                  <p className="text-xs text-slate-500">{currentUser.email}</p>
+                  <h2 className="font-black text-slate-800 text-base">{currentUser?.name || 'Usuario'}</h2>
+                  <p className="text-xs text-slate-500">{currentUser?.email || ''}</p>
                 </div>
               </div>
+
+              <form onSubmit={handleSaveProfile} className="pt-2 border-t border-sky-100 space-y-4">
+                <h3 className="text-xs font-black uppercase text-slate-700 flex items-center">
+                  <Edit3 size={14} className="mr-1 text-sky-600" /> Editar Datos del Perfil
+                </h3>
+
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700">Nombre de Usuario</label>
+                  <input type="text" value={editNameInput} onChange={(e) => setEditNameInput(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" required />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700">Correo Electrónico</label>
+                  <input type="email" value={editEmailInput} onChange={(e) => setEditEmailInput(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" required />
+                </div>
+
+                {profileMessage && <div className={`p-3 rounded-2xl text-xs font-bold ${profileMessage.startsWith('✅') ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{profileMessage}</div>}
+
+                <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-3 rounded-2xl text-xs shadow">
+                  Guardar Cambios
+                </button>
+              </form>
             </div>
+          </div>
+        )}
+
+        {activeTab === 'notifications' && (
+          <div className="space-y-4">
+            {isAdmin && pendingRegistrations.length > 0 && (
+              <div className="bg-white/90 p-5 rounded-[2.5rem] border border-emerald-100 shadow-sm space-y-3">
+                <h2 className="text-sm font-black text-slate-800 flex items-center">
+                  <ShieldCheck size={16} className="mr-1.5 text-emerald-600" /> Registros Pendientes ({pendingRegistrations.length})
+                </h2>
+                <div className="space-y-2">
+                  {pendingRegistrations.map(reg => (
+                    <div key={reg.id} className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/50 flex justify-between items-center text-xs">
+                      <div>
+                        <p className="font-bold text-slate-800">{reg.name}</p>
+                        <p className="text-[10px] text-slate-500">{reg.email}</p>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button onClick={() => handleApproveRegistration(reg.id, reg.name)} className="px-3 py-1.5 rounded-xl font-bold bg-emerald-600 text-white">Aprobar</button>
+                        <button onClick={() => handleRejectRegistration(reg.id)} className="px-3 py-1.5 rounded-xl font-bold bg-red-100 text-red-700">Rechazar</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -1091,14 +1305,24 @@ export default function App() {
         </div>
       )}
 
+      {/* BARRA DE NAVEGACIÓN INFERIOR */}
       <nav className="fixed bottom-3 left-4 right-4 bg-white/95 backdrop-blur-xl border border-sky-200 py-3 px-6 flex justify-around items-center z-40 rounded-[2rem] shadow-lg max-w-md mx-auto">
         <button onClick={() => setActiveTab('my-events')} className={`flex flex-col items-center ${activeTab === 'my-events' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
           <Calendar size={20} />
           <span className="text-[10px] mt-0.5">Mis Salidas</span>
         </button>
+        <button onClick={() => setActiveTab('search')} className={`flex flex-col items-center ${activeTab === 'search' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
+          <Search size={20} />
+          <span className="text-[10px] mt-0.5">Buscar</span>
+        </button>
         <button onClick={() => setActiveTab('profile')} className={`flex flex-col items-center ${activeTab === 'profile' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
           <Settings size={20} />
           <span className="text-[10px] mt-0.5">Perfil</span>
+        </button>
+        <button onClick={() => setActiveTab('notifications')} className={`flex flex-col items-center relative ${activeTab === 'notifications' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
+          <Inbox size={20} />
+          <span className="text-[10px] mt-0.5">Aprobaciones</span>
+          {pendingRegistrations.length > 0 && <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">{pendingRegistrations.length}</span>}
         </button>
       </nav>
     </div>
