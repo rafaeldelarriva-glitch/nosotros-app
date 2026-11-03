@@ -1,25 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Users, MapPin, DollarSign, Plus, CheckCircle, 
-  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus, UserMinus, ShieldAlert
+  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus, UserMinus, ShieldAlert, KeyRound
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
-
-const PLAN_IMAGES = {
-  cervecitas: 'https://images.unsplash.com/photo-1535958636474-b021ee887b13?auto=format&fit=crop&w=600&q=80',
-  tapas: 'https://images.unsplash.com/photo-1515443961218-a51367888e4b?auto=format&fit=crop&w=600&q=80',
-  cena: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80',
-  barbacoa: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?auto=format&fit=crop&w=600&q=80',
-  default: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=600&q=80'
-};
-
-const getPlanCover = (title = '') => {
-  const t = title.toLowerCase();
-  if (t.includes('cerveza') || t.includes('tapa') || t.includes('caña')) return PLAN_IMAGES.tapas;
-  if (t.includes('cena') || t.includes('restaurante')) return PLAN_IMAGES.cena;
-  if (t.includes('barbacoa') || t.includes('campo')) return PLAN_IMAGES.barbacoa;
-  return PLAN_IMAGES.default;
-};
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -536,6 +520,21 @@ export default function App() {
     }
   };
 
+  // FUNCIÓN PARA RESETEAR CONTRASEÑA DESDE EL PANEL DE ADMIN
+  const handleAdminResetPassword = async (userEmail) => {
+    if (!confirm(`¿Enviar un enlace de restablecimiento de contraseña a ${userEmail}?`)) return;
+
+    const { error } = await supabase.auth.resetPasswordForEmail(userEmail, {
+      redirectTo: window.location.origin,
+    });
+
+    if (error) {
+      alert('Error al enviar el correo de recuperación: ' + error.message);
+    } else {
+      alert(`Correo de restablecimiento enviado correctamente a ${userEmail}. Podrá cambiar su contraseña al pulsar el enlace.`);
+    }
+  };
+
   const handleRequestJoin = async (eventId) => {
     await supabase.from('event_members').insert([{
       event_id: eventId,
@@ -694,7 +693,7 @@ export default function App() {
           </a>
         </div>
 
-        {/* COMENTARIOS Y RECOMENDACIONES EN EL SITIO CON SCROLL COMPACTO */}
+        {/* COMENTARIOS Y RECOMENDACIONES CON SCROLL COMPACTO */}
         <div className="pt-2 border-t border-sky-100 space-y-2">
           <div className="flex items-center space-x-1 text-[11px] font-bold text-slate-700">
             <MessageSquare size={12} className="text-sky-600" />
@@ -862,7 +861,6 @@ export default function App() {
     const selectedSpots = (activeEvent.spots || []).filter(s => s.active_now);
     const pendingSpots = (activeEvent.spots || []).filter(s => !s.active_now);
 
-    const coverImage = getPlanCover(activeEvent.title);
     const calculatedDebts = calculateDebts(activeEvent.members, activeEvent.expenses);
     const isCreator = activeEvent.creator_name === currentUser.name;
     const isClosed = activeEvent.status === 'closed';
@@ -872,7 +870,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
-        {/* BOTÓN DE VOLVER FLOTANTE (FIJO EN PANTALLA) PARA NO TENER QUE SUBIR ARRIBA */}
+        {/* BOTÓN DE VOLVER FLOTANTE */}
         <div className="fixed top-3 left-4 z-50">
           <button 
             onClick={() => setActiveEvent(null)} 
@@ -883,26 +881,19 @@ export default function App() {
           </button>
         </div>
 
-        {/* CABECERA ESTRECHA Y CLARA */}
-        <div className="relative h-28 w-full bg-sky-900 mt-0">
-          <img src={coverImage} alt="" className="w-full h-full object-cover opacity-40 brightness-115" aria-hidden="true" />
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/20 to-transparent"></div>
-          
-          <div className="absolute bottom-3 left-4 right-4 text-white flex justify-between items-end">
+        {/* CABECERA MINIMALISTA, MUY ESTRECHA Y CLARA */}
+        <div className="relative h-14 w-full bg-gradient-to-r from-sky-100 via-blue-100 to-indigo-50 border-b border-sky-200 flex items-end px-4 pb-2 shadow-xs">
+          <div className="w-full flex justify-between items-end">
             <div>
-              <div className="flex items-center space-x-2 mb-0.5">
-                <span className="text-[9px] font-bold uppercase tracking-wider bg-white/20 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/20 text-sky-100">
-                  📅 {activeEvent.date}
-                </span>
-                {isClosed && (
-                  <span className="text-[9px] font-black uppercase tracking-wider bg-amber-500 text-white px-2 py-0.5 rounded-full shadow">
-                    🔒 Cerrada
-                  </span>
-                )}
-              </div>
-              <h1 className="text-xl font-black leading-tight drop-shadow-sm truncate max-w-[260px]">{activeEvent.title}</h1>
+              <h1 className="text-sm font-black text-slate-800 truncate max-w-[210px]">{activeEvent.title}</h1>
+              <span className="text-[10px] text-slate-500">📅 {activeEvent.date}</span>
             </div>
-            <p className="text-[11px] text-sky-200 font-medium shrink-0">Org: <span className="font-bold text-white">{activeEvent.creator_name}</span></p>
+            <div className="flex items-center space-x-2">
+              {isClosed && <span className="text-[9px] font-bold bg-amber-500 text-white px-2 py-0.5 rounded-full shadow">🔒 Cerrada</span>}
+              <span className="text-[10px] font-bold text-sky-800 bg-white/80 px-2.5 py-0.5 rounded-full border border-sky-200 shadow-2xs">
+                Org: {activeEvent.creator_name}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1503,8 +1494,10 @@ export default function App() {
   const totalPages = Math.ceil(filteredMyEvents.length / itemsPerPage) || 1;
   const paginatedEvents = filteredMyEvents.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
+  // EXCLUIR PLANES CERRADOS DEL BUSCADOR DE SALIDAS DISPONIBLES
   const filteredSearchEvents = events.filter(e => 
-    e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase())
+    e.status !== 'closed' &&
+    (e.title.toLowerCase().includes(searchQuery.toLowerCase()) || e.creator_name.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   // -------------------------------------------------------------
@@ -1553,31 +1546,27 @@ export default function App() {
                 </div>
               ) : (
                 paginatedEvents.map((event) => {
-                  const cover = getPlanCover(event.title);
                   const isClosed = event.status === 'closed';
                   return (
                     <article 
                       key={event.id} 
                       onClick={() => setActiveEvent(event)} 
-                      className="bg-white/90 backdrop-blur-2xl rounded-[2.5rem] border border-sky-100 overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer group"
+                      className="bg-white/90 backdrop-blur-2xl rounded-2xl border border-sky-100 overflow-hidden shadow-sm hover:shadow-md transition cursor-pointer group p-3.5 flex justify-between items-center"
                     >
-                      {/* CABECERA DE TARJETA MÁS ESTRECHA Y CLARA (h-20 en vez de h-32) */}
-                      <div className="h-20 w-full relative bg-sky-100">
-                        <img src={cover} alt="" className="w-full h-full object-cover opacity-50 brightness-110 group-hover:scale-105 transition duration-300" aria-hidden="true" />
-                        <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent"></div>
-                        <div className="absolute top-2 right-3 flex gap-1">
-                          {isClosed && <span className="text-[9px] font-bold bg-amber-500 text-white px-2 py-0.5 rounded-full shadow">🔒 Cerrada</span>}
-                          <span className="text-[9px] font-bold bg-white/95 backdrop-blur-md text-slate-800 px-2.5 py-0.5 rounded-full shadow border border-sky-100">📅 {event.date}</span>
+                      <div className="space-y-1 pr-2">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-[10px] font-bold bg-sky-50 text-sky-700 px-2.5 py-0.5 rounded-full border border-sky-200">
+                            📅 {event.date}
+                          </span>
+                          {isClosed && <span className="text-[10px] font-bold bg-amber-500 text-white px-2.5 py-0.5 rounded-full">🔒 Cerrada</span>}
                         </div>
-                        <h3 className="absolute bottom-2.5 left-4 right-4 text-white font-black text-sm drop-shadow truncate">{event.title}</h3>
+                        <h3 className="font-black text-slate-800 text-sm">{event.title}</h3>
+                        <p className="text-[11px] text-slate-500">Organiza: <span className="font-bold text-slate-700">{event.creator_name}</span></p>
                       </div>
-                      
-                      <div className="p-3.5 flex justify-between items-center bg-white/50">
-                        <p className="text-[11px] text-slate-600 font-medium">Organiza: <span className="font-bold text-slate-800">{event.creator_name}</span></p>
-                        <span className="text-[11px] font-bold text-sky-700 bg-sky-50 px-3 py-1 rounded-xl border border-sky-200 group-hover:bg-sky-600 group-hover:text-white transition">
-                          {isClosed ? 'Ver Timeline →' : 'Entrar →'}
-                        </span>
-                      </div>
+
+                      <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200 group-hover:bg-sky-600 group-hover:text-white transition shrink-0">
+                        {isClosed ? 'Timeline →' : 'Entrar →'}
+                      </span>
                     </article>
                   );
                 })
@@ -1613,35 +1602,36 @@ export default function App() {
             
             <div className="space-y-3">
               <h2 className="text-sm font-black text-slate-800 px-1">Salidas Disponibles</h2>
-              {filteredSearchEvents.map((event) => {
-                const isMember = event.members.includes(currentUser.name);
-                const isPending = event.pendingInvitations.includes(currentUser.name);
-                const hasRequested = event.pendingRequests.includes(currentUser.name);
-                const cover = getPlanCover(event.title);
+              {filteredSearchEvents.length === 0 ? (
+                <p className="text-xs text-slate-400 px-1 italic">No hay salidas activas disponibles para unirse.</p>
+              ) : (
+                filteredSearchEvents.map((event) => {
+                  const isMember = event.members.includes(currentUser.name);
+                  const isPending = event.pendingInvitations.includes(currentUser.name);
+                  const hasRequested = event.pendingRequests.includes(currentUser.name);
 
-                return (
-                  <article key={event.id} className="bg-white/90 backdrop-blur-2xl rounded-[2.5rem] border border-sky-100 overflow-hidden shadow-sm flex flex-col">
-                    <div className="h-20 w-full relative bg-sky-100">
-                      <img src={cover} alt="" className="w-full h-full object-cover opacity-50 brightness-110" aria-hidden="true" />
-                      <div className="absolute inset-0 bg-black/30"></div>
-                      <h3 className="absolute bottom-2.5 left-4 text-white font-bold text-sm drop-shadow truncate max-w-[260px]">{event.title}</h3>
-                    </div>
-                    
-                    <div className="p-3.5 flex justify-between items-center bg-white/50">
-                      <span className="text-[11px] text-slate-600 font-medium">{event.date} • {event.creator_name}</span>
+                  return (
+                    <article key={event.id} className="bg-white/90 backdrop-blur-2xl rounded-2xl border border-sky-100 p-4 shadow-sm flex justify-between items-center">
+                      <div className="space-y-0.5 pr-2">
+                        <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full border border-sky-200">
+                          📅 {event.date} • {event.creator_name}
+                        </span>
+                        <h3 className="font-bold text-sm text-slate-800">{event.title}</h3>
+                      </div>
+
                       {isMember ? (
-                        <button onClick={() => setActiveEvent(event)} className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-1 rounded-xl border border-sky-200">Ver Plan</button>
+                        <button onClick={() => setActiveEvent(event)} className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200">Ver Plan</button>
                       ) : hasRequested ? (
-                        <span className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1 rounded-xl border border-amber-200">Solicitado</span>
+                        <span className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-2 rounded-xl border border-amber-200">Solicitado</span>
                       ) : isPending ? (
-                        <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-1 rounded-xl border border-sky-200">Invitado</span>
+                        <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200">Invitado</span>
                       ) : (
-                        <button onClick={() => handleRequestJoin(event.id)} className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-3 py-1 rounded-xl shadow">Unirme</button>
+                        <button onClick={() => handleRequestJoin(event.id)} className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl shadow">Unirme</button>
                       )}
-                    </div>
-                  </article>
-                );
-              })}
+                    </article>
+                  );
+                })
+              )}
             </div>
           </div>
         )}
@@ -1682,7 +1672,7 @@ export default function App() {
             {isAdmin && (
               <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-red-100 shadow-sm space-y-3">
                 <h2 className="text-sm font-black text-slate-800 flex items-center">
-                  <ShieldAlert size={16} className="mr-1.5 text-red-600" /> Panel de Administrador (Bloquear/Gestionar Usuarios)
+                  <ShieldAlert size={16} className="mr-1.5 text-red-600" /> Panel de Administrador (Gestión de Usuarios)
                 </h2>
                 <div className="space-y-2">
                   {registeredUsers.map(u => (
@@ -1691,12 +1681,22 @@ export default function App() {
                         <p className="font-bold text-slate-800">{u.name} {u.is_blocked && <span className="text-red-600">(Bloqueado)</span>}</p>
                         <p className="text-[10px] text-slate-500">{u.email}</p>
                       </div>
-                      <button 
-                        onClick={() => handleToggleBlockUser(u.id, u.is_blocked)}
-                        className={`px-3 py-1.5 rounded-xl font-bold text-[10px] transition ${u.is_blocked ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}
-                      >
-                        {u.is_blocked ? 'Desbloquear' : 'Bloquear'}
-                      </button>
+                      <div className="flex gap-1.5">
+                        <button 
+                          onClick={() => handleAdminResetPassword(u.email)}
+                          title="Enviar enlace de recuperación de contraseña"
+                          className="px-2.5 py-1.5 rounded-xl font-bold text-[10px] bg-sky-600 hover:bg-sky-700 text-white transition flex items-center space-x-1"
+                        >
+                          <KeyRound size={12} />
+                          <span>Resetear Pass</span>
+                        </button>
+                        <button 
+                          onClick={() => handleToggleBlockUser(u.id, u.is_blocked)}
+                          className={`px-2.5 py-1.5 rounded-xl font-bold text-[10px] transition ${u.is_blocked ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}
+                        >
+                          {u.is_blocked ? 'Desbloquear' : 'Bloquear'}
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
