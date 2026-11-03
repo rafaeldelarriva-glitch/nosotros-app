@@ -2081,7 +2081,12 @@ export default function App() {
     return (!q || String(e.title || '').toLocaleLowerCase('es').includes(q) || String(e.creator_name || '').toLocaleLowerCase('es').includes(q) || String(e.description || '').toLocaleLowerCase('es').includes(q))
       && (!from || (date && date >= from)) && (!to || (date && date <= to));
   };
-  const filteredSearchEvents = validEvents.filter(e => e.status !== 'closed' && matchesPlanFilters(e, searchQuery, searchPlanFrom, searchPlanTo));
+  // Privacidad de la búsqueda: mostrar solo planes a los que pertenece el usuario o a los que ha sido invitado.
+  const filteredSearchEvents = validEvents.filter(e =>
+    e.status !== 'closed' &&
+    (e.creator_id === currentUser?.id || e.members?.includes(currentUser?.name) || e.pendingInvitations?.includes(currentUser?.name)) &&
+    matchesPlanFilters(e, searchQuery, searchPlanFrom, searchPlanTo)
+  );
   const filteredMyEvents = myEventsAll.filter(e => (myPlanStatus === 'all' || (myPlanStatus === 'closed' ? e.status === 'closed' : e.status !== 'closed')) && matchesPlanFilters(e, myPlanQuery, myPlanFrom, myPlanTo));
   const PLAN_PAGE_SIZE = 6;
   const paginatePlans = (items, page) => items.slice((page - 1) * PLAN_PAGE_SIZE, page * PLAN_PAGE_SIZE);
@@ -2238,13 +2243,11 @@ export default function App() {
             </div>
             <button type="button" onClick={() => { setSearchQuery(''); setSearchPlanFrom(''); setSearchPlanTo(''); setSearchPlanPage(1); }} className="text-xs font-bold text-sky-700">Limpiar filtros</button>
             <div className="space-y-3">
-              <h2 className="text-sm font-black text-slate-800 px-1">Salidas Disponibles ({filteredSearchEvents.length})</h2>
-              {filteredSearchEvents.length === 0 && <p className="text-xs text-slate-600">No hay planes que coincidan con los filtros.</p>}
+              <h2 className="text-sm font-black text-slate-800 px-1">Planes en los que participas o estás invitado ({filteredSearchEvents.length})</h2>
+              {filteredSearchEvents.length === 0 && <p className="text-xs text-slate-600">No tienes planes ni invitaciones que coincidan con los filtros.</p>}
               {visibleSearchEvents.map((event) => {
                 const membersList = Array.isArray(event.members) ? event.members : [];
-                const pendingReq = Array.isArray(event.pendingRequests) ? event.pendingRequests : [];
-                const isMember = membersList.includes(currentUser?.name);
-                const hasRequested = pendingReq.includes(currentUser?.name);
+                const isMember = membersList.includes(currentUser?.name) || event.creator_id === currentUser?.id;
                 const isInvited = (event.pendingInvitations || []).includes(currentUser?.name);
 
                 return (
@@ -2261,9 +2264,7 @@ export default function App() {
                         <button type="button" disabled={processingInvitationId === event.id} onClick={() => handleCalendarInvitation(event.id, true)} className="bg-emerald-600 text-white text-xs font-bold px-3 py-2 rounded-xl">Aceptar invitación</button>
                         <button type="button" disabled={processingInvitationId === event.id} onClick={() => handleCalendarInvitation(event.id, false)} className="text-xs font-bold text-red-700 border border-red-200 px-3 py-2 rounded-xl">Rechazar</button>
                       </div>
-                    ) : (
-                      <span className="text-xs text-slate-500">Solo por invitación</span>
-                    )}
+                    ) : null}
                   </article>
                 );
               })}
