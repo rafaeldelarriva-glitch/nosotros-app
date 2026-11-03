@@ -565,6 +565,24 @@ export default function App() {
     fetchAppData();
   };
 
+  // CANCELAR SOLICITUD DE UNIRSE A UN PLAN (SOLICITANTE)
+  const handleCancelRequestJoin = async (eventId) => {
+    if (!confirm('¿Quieres cancelar tu solicitud para unirte a esta salida?')) return;
+    try {
+      const { error } = await supabase
+        .from('event_members')
+        .delete()
+        .eq('event_id', eventId)
+        .eq('user_name', currentUser.name)
+        .eq('status', 'pending_request');
+
+      if (error) throw error;
+      fetchAppData();
+    } catch (err) {
+      alert('Error al cancelar la solicitud: ' + err.message);
+    }
+  };
+
   const handleApproveRequest = async (eventId, userName) => {
     try {
       const { error } = await supabase.from('event_members').update({ status: 'member' }).eq('event_id', eventId).eq('user_name', userName);
@@ -984,7 +1002,6 @@ export default function App() {
           </button>
         </div>
 
-        {/* CABECERA CON NOMBRE DEL PLAN BIEN VISIBLE */}
         <div className="relative bg-gradient-to-r from-sky-100 via-blue-100 to-indigo-50 border-b border-sky-200 pt-12 pb-4 px-4 shadow-xs">
           <div className="max-w-md mx-auto space-y-1">
             <div className="flex justify-between items-center">
@@ -1024,7 +1041,6 @@ export default function App() {
                   <p className="text-[11px] text-slate-500">Pulsa sobre cada parada para consultar sus asistentes, gastos y tickets</p>
                 </div>
 
-                {/* ASISTENTES GENERALES DEL PLAN CERRADO */}
                 <div className="bg-sky-50/80 p-3.5 rounded-2xl border border-sky-200 space-y-1.5">
                   <span className="text-[11px] font-bold text-slate-700 flex items-center">
                     <Users size={13} className="mr-1 text-sky-600" /> Asistentes Totales del Plan ({validMembers.length})
@@ -1533,11 +1549,20 @@ export default function App() {
                     {isMember ? (
                       <button onClick={() => setActiveEvent(event)} className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border">Ver Plan</button>
                     ) : hasRequested ? (
-                      <span className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-2 rounded-xl">Solicitado</span>
+                      <div className="flex items-center space-x-1.5">
+                        <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-1.5 rounded-xl border border-amber-200">Solicitado</span>
+                        <button 
+                          onClick={() => handleCancelRequestJoin(event.id)} 
+                          title="Cancelar solicitud"
+                          className="p-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl transition border border-red-200"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
                     ) : isPending ? (
-                      <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl">Invitado</span>
+                      <span className="text-xs font-bold text-sky-700 bg-sky-50 px-3 py-2 rounded-xl border border-sky-200">Invitado</span>
                     ) : (
-                      <button onClick={() => handleRequestJoin(event.id)} className="bg-sky-600 text-white text-xs font-bold px-3.5 py-2 rounded-xl shadow">Unirme</button>
+                      <button onClick={() => handleRequestJoin(event.id)} className="bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl shadow">Unirme</button>
                     )}
                   </article>
                 );
