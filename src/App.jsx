@@ -2373,9 +2373,9 @@ export default function App() {
         <button onClick={() => setActiveTab('notifications')} className={`flex flex-col items-center relative ${activeTab === 'notifications' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
           <Inbox size={20} />
           <span className="text-[10px] mt-0.5">Aprobaciones</span>
-          {(pendingRegistrations.length + allPendingPlanRequests.length) > 0 && (
-            <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
-              {pendingRegistrations.length + allPendingPlanRequests.length}
+          {(myPendingInvitations.length + allPendingPlanRequests.length + (isAdmin ? pendingRegistrations.length : 0)) > 0 && (
+            <span aria-label={`${myPendingInvitations.length + allPendingPlanRequests.length + (isAdmin ? pendingRegistrations.length : 0)} aprobaciones pendientes`} className="absolute -top-2 -right-2 bg-red-600 text-white text-[9px] min-w-5 h-5 px-1 rounded-full flex items-center justify-center font-bold ring-2 ring-white">
+              {myPendingInvitations.length + allPendingPlanRequests.length + (isAdmin ? pendingRegistrations.length : 0)}
             </span>
           )}
         </button>
