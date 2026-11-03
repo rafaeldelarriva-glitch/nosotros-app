@@ -713,13 +713,12 @@ export default function App() {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
     
+    // Respetamos estrictamente lo que el usuario dejó marcado en pantalla
     const finalParticipants = (Array.isArray(expenseParticipants) && expenseParticipants.length > 0) 
       ? expenseParticipants 
       : [currentUser.name];
 
-    console.log("Enviando participantes a Supabase:", finalParticipants);
-
-    const { data, error } = await supabase.from('expenses').insert([{
+    const { error } = await supabase.from('expenses').insert([{
       event_id: activeEvent.id,
       description: expenseDesc.trim(),
       amount: parseFloat(expenseAmount),
@@ -727,20 +726,18 @@ export default function App() {
       spot_id: expenseSpotId || null,
       receipt_url: expenseReceiptUrl || null,
       participants: finalParticipants
-    }]).select();
+    }]);
 
     if (error) {
-      alert('❌ Error de Supabase al guardar participantes: ' + error.message);
+      alert('❌ Error al guardar el gasto: ' + error.message);
       return;
     }
-
-    console.log("Gasto guardado con éxito en BD:", data);
 
     setExpenseDesc('');
     setExpenseAmount('');
     setExpenseSpotId('');
     setExpenseReceiptUrl('');
-    setExpenseParticipants(activeEvent.members || []);
+    // OJO: YA NO RESETEAMOS LOS PARTICIPANTES AQUÍ PARA QUE SE MANTENGAN TUS PREFERENCIAS
     await refreshAllData();
   };
 
@@ -783,7 +780,7 @@ export default function App() {
     await refreshAllData();
   };
 
-  // CÁLCULO INTELIGENTE DE DEUDAS (BASADO ESTRICTAMENTE EN EXP.PARTICIPANTS)
+  // CÁLCULO INTELIGENTE DE DEUDAS (REPARTO ESTRICTO SEGÚN EXP.PARTICIPANTS)
   const calculateDebts = (members = [], expenses = []) => {
     if (!Array.isArray(members) || members.length === 0) return [];
     const balancesMap = {};
@@ -793,6 +790,7 @@ export default function App() {
       const amount = Number(exp.amount) || 0;
       balancesMap[exp.paid_by] = (balancesMap[exp.paid_by] || 0) + amount;
 
+      // Usamos el array guardado en la base de datos. Si no viniera, por seguridad usa todos.
       const parts = (Array.isArray(exp.participants) && exp.participants.length > 0) 
         ? exp.participants 
         : members;
