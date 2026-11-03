@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Users, MapPin, DollarSign, Plus, CheckCircle, 
   Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus, UserMinus, ShieldAlert, KeyRound, Archive, Share2, ArrowUp, ArrowDown, Radio, Settings, ShieldCheck, Edit3, QrCode, ExternalLink, Ban, UserCheck, Crosshair, Key
@@ -16,6 +16,65 @@ export default function App() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authFeedback, setAuthFeedback] = useState('');
+
+  // Avisos y confirmaciones propios de React: sin alert/confirm/prompt del navegador.
+  const [appNotice, setAppNotice] = useState('');
+  const [appDialog, setAppDialog] = useState(null);
+  const dialogResolve = useRef(null);
+  const noticeTimer = useRef(null);
+  const alert = (message) => {
+    setAppNotice(String(message ?? ''));
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setAppNotice(''), 7000);
+  };
+  const confirm = (message) => new Promise(resolve => {
+    dialogResolve.current = resolve;
+    setAppDialog({ kind: 'confirm', message: String(message) });
+  });
+  const prompt = (message) => new Promise(resolve => {
+    dialogResolve.current = resolve;
+    setAppDialog({ kind: 'prompt', message: String(message), value: '' });
+  });
+  const finishDialog = (result) => {
+    const resolve = dialogResolve.current;
+    dialogResolve.current = null;
+    setAppDialog(null);
+    if (resolve) resolve(result);
+  };
+  useEffect(() => () => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    if (dialogResolve.current) dialogResolve.current(null);
+  }, []);
+  const renderAppMessages = () => (
+    <>
+      {appNotice && (
+        <div role="status" aria-live="polite" className="fixed bottom-24 left-4 right-4 mx-auto max-w-md z-[100] bg-slate-900 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-start gap-3 text-sm">
+          <span className="flex-1 whitespace-pre-line break-words">{appNotice}</span>
+          <button type="button" onClick={() => setAppNotice('')} aria-label="Cerrar aviso" className="p-1 rounded-lg hover:bg-slate-700"><X size={18} /></button>
+        </div>
+      )}
+      {appDialog && (
+        <div className="fixed inset-0 z-[110] bg-slate-950/70 flex items-center justify-center p-4" role="presentation">
+          <div role="dialog" aria-modal="true" aria-labelledby="app-dialog-title" className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 space-y-4">
+            <h2 id="app-dialog-title" className="font-black text-lg text-slate-900">{appDialog.kind === 'prompt' ? 'Confirmación de seguridad' : 'Confirmar operación'}</h2>
+            <p className="whitespace-pre-line break-words text-sm text-slate-700">{appDialog.message}</p>
+            {appDialog.kind === 'prompt' && (
+              <input autoFocus type="text" aria-label="Texto de confirmación" autoComplete="off" value={appDialog.value}
+                onChange={e => setAppDialog(d => d ? { ...d, value: e.target.value } : d)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); finishDialog(appDialog.value); } }}
+                className="w-full rounded-xl border border-slate-300 p-3 text-base focus:outline-sky-600" placeholder="Escribe ELIMINAR" />
+            )}
+            <div className="flex gap-3">
+              <button type="button" onClick={() => finishDialog(appDialog.kind === 'prompt' ? null : false)} className="flex-1 rounded-xl border border-slate-300 p-3 text-sm font-bold">Cancelar</button>
+              <button type="button" onClick={() => finishDialog(appDialog.kind === 'prompt' ? appDialog.value : true)} className="flex-1 rounded-xl bg-sky-700 text-white p-3 text-sm font-bold">Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 
   // Navegación
   const [activeTab, setActiveTab] = useState('my-events');
@@ -323,19 +382,28 @@ export default function App() {
 
   const handleAuth = async (e) => {
     e.preventDefault();
+    if (authSubmitting) return;
+    setAuthFeedback('');
 
     if (authMode === 'register') {
-      if (!email || !password || !name) return;
+      if (!email.trim() || !password || !name.trim()) { setAuthFeedback('Completa el nombre, correo y contraseña.'); return; }
       const errorMsg = validateStrongPassword(password);
       if (errorMsg) {
         setPasswordError(errorMsg);
+        setAuthFeedback('La contraseña no cumple los requisitos: ' + errorMsg);
         return;
       }
       setPasswordError('');
 
-      const { data, error } = await supabase.auth.signUp({ email, password });
+      setAuthSubmitting(true);
+      try {
+      const { data, error } = await supabase.auth.signUp({ email: email.trim().toLowerCase(), password });
       if (error) {
-        alert(error.message);
+        setAuthFeedback('No se pudo crear la cuenta: ' + error.message);
+        return;
+      }
+      if (!data?.user) {
+        setAuthFeedback('Supabase no ha devuelto una cuenta nueva. Comprueba si el correo ya está registrado.');
         return;
       }
       if (data.user) {
@@ -352,15 +420,21 @@ export default function App() {
           const { data: existingProfile, error: lookupError } = await supabase.from('profiles')
             .select('id, is_approved').eq('id', data.user.id).maybeSingle();
           if (lookupError || !existingProfile) {
-            alert('La cuenta de autenticación se creó, pero no se pudo guardar el perfil para su aprobación: ' + profileCreateError.message + '. Contacta con el administrador.');
+            setAuthFeedback('La cuenta de autenticación se creó, pero no se pudo guardar el perfil: ' + profileCreateError.message + '. Si Supabase exige confirmar el correo, confirma primero el enlace recibido y contacta con el administrador para completar el perfil.');
             await supabase.auth.signOut();
             return;
           }
         }
 
-        alert('✅ Cuenta registrada. El administrador debe aprobar tu usuario antes de poder entrar.');
+        setAuthFeedback('✅ Solicitud registrada. ' + (data.session ? 'El administrador debe aprobar tu usuario.' : 'Comprueba también tu correo por si Supabase exige confirmación. El administrador debe aprobar tu usuario.'));
         await supabase.auth.signOut();
         setAuthMode('login');
+      }
+      } catch (err) {
+        console.error('Error registrando usuario:', err);
+        setAuthFeedback('Error al crear la cuenta: ' + (err?.message || 'Error desconocido'));
+      } finally {
+        setAuthSubmitting(false);
       }
     } else {
       if (!usernameOrEmail || !password) return;
@@ -458,7 +532,7 @@ export default function App() {
     if (!isAdmin || userId === currentUser?.id) return;
     const target = registeredUsers.find(u => u.id === userId);
     if (!target || target.role === 'admin' || target.is_approved || target.is_blocked) return;
-    if (!window.confirm(`¿Rechazar la solicitud de ${target.name}?\n\nLa cuenta quedará bloqueada y no aprobada. NO se eliminará el perfil ni ningún plan, gasto, participación o dato histórico.`)) return;
+    if (!(await confirm(`¿Rechazar la solicitud de ${target.name}?\n\nLa cuenta quedará bloqueada y no aprobada. NO se eliminará el perfil ni ningún plan, gasto, participación o dato histórico.`))) return;
     try {
       const { data, error } = await supabase.from('profiles')
         .update({ is_approved: false, is_blocked: true })
@@ -477,7 +551,7 @@ export default function App() {
     if (!isAdmin || userId === currentUser?.id) return;
     const target = registeredUsers.find(u => u.id === userId);
     if (!target || target.role === 'admin') return;
-    if (!window.confirm(`¿${currentBlockedState ? 'Desbloquear' : 'Bloquear'} a ${userName}?\n\nEsta acción NO elimina el perfil ni modifica planes, gastos o participaciones.${currentBlockedState && !target.is_approved ? '\n\nLa cuenta seguirá pendiente de aprobación.' : ''}`)) return;
+    if (!(await confirm(`¿${currentBlockedState ? 'Desbloquear' : 'Bloquear'} a ${userName}?\n\nEsta acción NO elimina el perfil ni modifica planes, gastos o participaciones.${currentBlockedState && !target.is_approved ? '\n\nLa cuenta seguirá pendiente de aprobación.' : ''}`))) return;
     try {
       const { data, error } = await supabase.from('profiles')
         .update({ is_blocked: !currentBlockedState })
@@ -587,7 +661,7 @@ export default function App() {
   };
 
   const handleRejectEventJoin = async (eventId, userName) => {
-    if (!confirm(`¿Rechazar la solicitud de ${userName}?`)) return;
+    if (!(await confirm(`¿Rechazar la solicitud de ${userName}?`))) return;
     try {
       await supabase.from('event_members').delete().eq('event_id', eventId).eq('user_name', userName);
       await refreshAllData();
@@ -604,8 +678,8 @@ export default function App() {
       alert('Solo el creador del plan o un administrador puede eliminarlo.');
       return;
     }
-    if (!window.confirm(`⚠️ Vas a eliminar DEFINITIVAMENTE «${eventTitle}».\n\nSe perderán sus participantes, lugares, gastos, comentarios y fotografías. Esta acción no se puede deshacer.\n\n¿Quieres continuar?`)) return;
-    const typed = window.prompt('Para confirmar el borrado definitivo, escribe ELIMINAR (en mayúsculas):');
+    if (!(await confirm(`⚠️ Vas a eliminar DEFINITIVAMENTE «${eventTitle}».\n\nSe perderán sus participantes, lugares, gastos, comentarios y fotografías. Esta acción no se puede deshacer.\n\n¿Quieres continuar?`))) return;
+    const typed = await prompt('Para confirmar el borrado definitivo, escribe ELIMINAR (en mayúsculas):');
     if (typed !== 'ELIMINAR') {
       if (typed !== null) alert('Eliminación cancelada: debes escribir ELIMINAR exactamente.');
       return;
@@ -810,7 +884,7 @@ export default function App() {
   };
 
   const handleRemoveMember = async (memberName) => {
-    if (!confirm(`¿Estás seguro de quitar a ${memberName}?`)) return;
+    if (!(await confirm(`¿Estás seguro de quitar a ${memberName}?`))) return;
     await supabase.from('event_members').delete().eq('event_id', activeEvent.id).eq('user_name', memberName);
     if (memberName === currentUser.name) setActiveEvent(null);
     await refreshAllData();
@@ -891,7 +965,7 @@ export default function App() {
   };
 
   const handleDeleteSpot = async (spotId) => {
-    if (!confirm('¿Eliminar sitio?')) return;
+    if (!(await confirm('¿Eliminar sitio?'))) return;
     await supabase.from('spots').delete().eq('id', spotId);
     await refreshAllData();
   };
@@ -925,7 +999,7 @@ export default function App() {
   const handleDeleteExpense = async (expense) => {
     if (!expense?.id || !activeEvent?.id || deletingExpenseId) return;
 
-    const confirmed = window.confirm(
+    const confirmed = await confirm(
       `¿Quieres eliminar el gasto \"${expense.description}\" de ${Number(expense.amount || 0).toFixed(2)}€?\n\nSe actualizarán automáticamente el total y la liquidación de deudas. Esta acción no se puede deshacer.`
     );
     if (!confirmed) return;
@@ -1055,7 +1129,7 @@ export default function App() {
   };
 
   const handleCloseEvent = async () => {
-    if (!confirm('¿Cerrar salida?')) return;
+    if (!(await confirm('¿Cerrar salida?'))) return;
     await supabase.from('events').update({ status: 'closed' }).eq('id', activeEvent.id);
     await refreshAllData();
   };
@@ -1066,7 +1140,7 @@ export default function App() {
   };
 
   const handleCancelRequestJoin = async (eventId) => {
-    if (!confirm('¿Cancelar solicitud?')) return;
+    if (!(await confirm('¿Cancelar solicitud?'))) return;
     await supabase.from('event_members').delete().eq('event_id', eventId).eq('user_name', currentUser.name).eq('status', 'pending_request');
     await refreshAllData();
   };
@@ -1364,10 +1438,10 @@ export default function App() {
           </div>
 
           <div className="flex bg-sky-50 p-1.5 rounded-2xl border border-sky-100" role="tablist">
-            <button role="tab" aria-selected={authMode === 'login'} onClick={() => { setAuthMode('login'); setPasswordError(''); }} className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all ${authMode === 'login' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>
+            <button role="tab" aria-selected={authMode === 'login'} onClick={() => { setAuthMode('login'); setPasswordError(''); setAuthFeedback(''); }} className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all ${authMode === 'login' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>
               Iniciar Sesión
             </button>
-            <button role="tab" aria-selected={authMode === 'register'} onClick={() => { setAuthMode('register'); setPasswordError(''); }} className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all ${authMode === 'register' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>
+            <button role="tab" aria-selected={authMode === 'register'} onClick={() => { setAuthMode('register'); setPasswordError(''); setAuthFeedback(''); }} className={`flex-1 py-3 text-xs font-bold rounded-xl transition-all ${authMode === 'register' ? 'bg-sky-600 text-white shadow-md' : 'text-slate-600'}`}>
               Crear Cuenta
             </button>
           </div>
@@ -1409,11 +1483,18 @@ export default function App() {
               </div>
             </div>
 
-            <button type="submit" className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-bold py-3.5 rounded-2xl text-sm shadow-lg mt-2">
-              {authMode === 'login' ? 'Entrar a mi cuenta' : 'Registrarme (Requiere aprobación)'}
+            {authMode === 'register' && (
+              <p className="text-xs text-slate-600 leading-relaxed">La contraseña necesita 8 caracteres como mínimo, una mayúscula, un número y un símbolo (por ejemplo, ! o @).</p>
+            )}
+            {(passwordError || authFeedback) && (
+              <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-800">{authFeedback || passwordError}</div>
+            )}
+            <button type="submit" disabled={authSubmitting} className="disabled:opacity-60 disabled:cursor-wait w-full bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-700 hover:to-indigo-700 text-white font-bold py-3.5 rounded-2xl text-sm shadow-lg mt-2">
+              {authSubmitting ? 'Creando cuenta...' : authMode === 'login' ? 'Entrar a mi cuenta' : 'Registrarme (Requiere aprobación)'}
             </button>
           </form>
         </div>
+        {renderAppMessages()}
       </main>
     );
   }
@@ -1933,6 +2014,7 @@ export default function App() {
           </div>
         )}
 
+        {renderAppMessages()}
         {viewingReceiptUrl && (
           <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white max-w-sm w-full p-4 rounded-[2rem] shadow-2xl space-y-4 border border-sky-100 text-center">
@@ -2424,6 +2506,7 @@ export default function App() {
         </div>
       )}
 
+      {renderAppMessages()}
       {/* BARRA DE NAVEGACIÓN INFERIOR */}
       <nav aria-label="Navegación principal" className="fixed bottom-3 left-4 right-4 bg-white/95 backdrop-blur-xl border border-sky-200 py-3 px-6 flex justify-around items-center z-40 rounded-[2rem] shadow-lg max-w-md mx-auto">
         <button onClick={() => setActiveTab('my-events')} className={`flex flex-col items-center ${activeTab === 'my-events' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
