@@ -101,9 +101,10 @@ export default function App() {
     }
   }, [currentUser]);
 
+  // Cada vez que se abre un evento o cambian sus miembros, inicializamos los participantes seleccionados con todos los miembros
   useEffect(() => {
     if (activeEvent && Array.isArray(activeEvent.members)) {
-      setExpenseParticipants(activeEvent.members);
+      setExpenseParticipants([...activeEvent.members]);
     }
   }, [activeEvent]);
 
@@ -710,7 +711,8 @@ export default function App() {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
     
-    const finalParticipants = (expenseParticipants.length > 0) ? expenseParticipants : activeEvent.members;
+    // Respetar estrictamente los participantes seleccionados en los botones (si hay alguno marcado). Si el usuario desmarcó a alguien, se queda desmarcado.
+    const finalParticipants = (expenseParticipants.length > 0) ? expenseParticipants : [currentUser.name];
 
     await supabase.from('expenses').insert([{
       event_id: activeEvent.id,
@@ -769,7 +771,7 @@ export default function App() {
     await refreshAllData();
   };
 
-  // CÁLCULO INTELIGENTE DE DEUDAS (COMPATIBLE CON GASTOS ANTIGUOS SIN PARTICIPANTES)
+  // CÁLCULO INTELIGENTE DE DEUDAS
   const calculateDebts = (members = [], expenses = []) => {
     if (!Array.isArray(members) || members.length === 0) return [];
     const balancesMap = {};
