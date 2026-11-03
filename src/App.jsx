@@ -65,6 +65,7 @@ export default function App() {
   // Sitios, Autocompletado OpenStreetMap y GPS
   const [newSpotName, setNewSpotName] = useState('');
   const [osmSuggestions, setOsmSuggestions] = useState([]);
+  const [spotSearchError, setSpotSearchError] = useState('');
   const [isSearchingOsm, setIsSearchingOsm] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [searchLocation, setSearchLocation] = useState(null);
@@ -133,12 +134,14 @@ export default function App() {
     }
   }, [activeEvent?.id]);
 
-  // Búsqueda de sitios con Photon (OpenStreetMap), priorizando la ubicación GPS del usuario cuando la autoriza.
+  // Autocompletado tolerante a búsquedas parciales. Photon no garantiza
+  // coincidencias por subcadenas: probamos también los términos individuales.
   useEffect(() => {
     const query = newSpotName.trim();
-    if (query.length < 3) {
+    if (query.length < 2) {
       setOsmSuggestions([]);
       setIsSearchingOsm(false);
+      setSpotSearchError('');
       return;
     }
 
@@ -146,52 +149,65 @@ export default function App() {
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       setIsSearchingOsm(true);
+      setSpotSearchError('');
       try {
-        const params = new URLSearchParams({
-          q: query,
-          zoom: searchLocation ? '14' : '12',
-          limit: '8',
-          lang: 'es',
-          countrycode: 'es'
+        const normalize = value => String(value || '').normalize('NFD')
+          .replace(/[\\u0300-\\u036f]/g, '').toLowerCase().trim();
+        const words = query.split(/\\s+/).filter(w => w.length >= 2);
+        const queries = [...new Set([query, ...(words.length > 1 ? words : [])])].slice(0, 4);
+        const requests = queries.map(async (term) => {
+          const params = new URLSearchParams({
+            q: term, limit: '30', lang: 'es'
+          });
+          if (searchLocation && Number.isFinite(searchLocation.lat) && Number.isFinite(searchLocation.lon)) {
+            params.set('lat', String(searchLocation.lat));
+            params.set('lon', String(searchLocation.lon));
+            params.set('zoom', '14');
+          }
+          const res = await fetch(`https://photon.komoot.io/api/?${params}`, {
+            signal: controller.signal,
+            headers: { Accept: 'application/json' }
+          });
+          if (!res.ok) throw new Error(`Photon respondió ${res.status}`);
+          const data = await res.json();
+          return Array.isArray(data.features) ? data.features : [];
         });
-        // Photon usa lat/lon como sesgo geográfico: acerca los primeros resultados a la ubicación del usuario.
-        if (searchLocation?.lat && searchLocation?.lon) {
-          params.set('lat', String(searchLocation.lat));
-          params.set('lon', String(searchLocation.lon));
-        }
-        const res = await fetch(`https://photon.komoot.io/api/?${params.toString()}`, {
-          signal: controller.signal,
-          headers: { Accept: 'application/json' }
-        });
-        if (!res.ok) throw new Error(`Error de búsqueda (${res.status})`);
-        const data = await res.json();
-        const features = Array.isArray(data?.features) ? data.features : [];
-        const suggestions = features.map((feature, index) => {
+        const results = await Promise.allSettled(requests);
+        if (cancelled) return;
+        const successful = results.filter(r => r.status === 'fulfilled');
+        if (!successful.length) throw new Error('Servicio de búsqueda no disponible');
+        const unique = new Map();
+        successful.flatMap(r => r.value).forEach(feature => {
           const props = feature.properties || {};
-          const mainName = props.name || props.street || props.city || 'Lugar sin nombre';
-          const locality = [props.district, props.city, props.state, props.country]
-            .filter((value, i, arr) => value && arr.indexOf(value) === i && value !== mainName)
-            .join(', ');
-          return {
-            id: props.osm_id || `${mainName}-${index}`,
-            name: mainName,
-            display_name: locality ? `${mainName} · ${locality}` : mainName,
-            lat: feature.geometry?.coordinates?.[1],
-            lon: feature.geometry?.coordinates?.[0],
-            properties: props
-          };
+          const mainName = props.name || props.street || props.city || '';
+          if (!mainName) return;
+          const locality = [props.street, props.district, props.city, props.state, props.country]
+            .filter((v, i, a) => v && v !== mainName && a.indexOf(v) === i).join(', ');
+          const display_name = locality ? `${mainName} · ${locality}` : mainName;
+          const haystack = normalize(display_name);
+          const matchCount = words.filter(w => haystack.includes(normalize(w))).length;
+          if (!matchCount && !haystack.includes(normalize(query))) return;
+          const coords = feature.geometry?.coordinates || [];
+          const id = `${props.osm_type || ''}-${props.osm_id || ''}-${coords.join(',')}-${mainName}`;
+          const inSpain = normalize(props.country) === 'espana' || normalize(props.country) === 'spain' || props.countrycode === 'ES';
+          const score = (haystack.includes(normalize(query)) ? 100 : 0) +
+            matchCount * 15 + (inSpain ? 10 : 0) +
+            (normalize(mainName).startsWith(normalize(query)) ? 30 : 0);
+          if (!unique.has(id)) unique.set(id, {
+            id, name: mainName, display_name, lat: coords[1], lon: coords[0], score
+          });
         });
-        if (!cancelled) setOsmSuggestions(suggestions);
+        setOsmSuggestions([...unique.values()].sort((a, b) => b.score - a.score).slice(0, 12));
       } catch (err) {
-        if (err.name !== 'AbortError') {
-          console.error('Error buscando sitios con Photon:', err);
-          if (!cancelled) setOsmSuggestions([]);
+        if (err.name !== 'AbortError' && !cancelled) {
+          console.error('Error buscando establecimientos:', err);
+          setSpotSearchError('No se ha podido consultar el buscador. Puedes escribir el nombre manualmente.');
+          setOsmSuggestions([]);
         }
       } finally {
         if (!cancelled) setIsSearchingOsm(false);
       }
-    }, 450);
-
+    }, 500);
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -518,22 +534,34 @@ export default function App() {
   };
 
   const handleDeleteEvent = async (eventId, eventTitle) => {
-    if (!confirm(`⚠️ ¿Estás seguro de ELIMINAR por completo el plan "${eventTitle}"? Esta acción borrará sus sitios, gastos y fotos asociados.`)) return;
+    if (!currentUser || !activeEvent || activeEvent.id !== eventId) return;
+    const authorized = currentUser.role === 'admin' || activeEvent.creator_id === currentUser.id ||
+      (!activeEvent.creator_id && activeEvent.creator_name === currentUser.name);
+    if (!authorized) {
+      alert('Solo el creador del plan o un administrador puede eliminarlo.');
+      return;
+    }
+    if (!window.confirm(`⚠️ Vas a eliminar DEFINITIVAMENTE «${eventTitle}».\n\nSe perderán sus participantes, lugares, gastos, comentarios y fotografías. Esta acción no se puede deshacer.\n\n¿Quieres continuar?`)) return;
+    const typed = window.prompt('Para confirmar el borrado definitivo, escribe ELIMINAR (en mayúsculas):');
+    if (typed !== 'ELIMINAR') {
+      if (typed !== null) alert('Eliminación cancelada: debes escribir ELIMINAR exactamente.');
+      return;
+    }
     try {
-      await supabase.from('spots').delete().eq('event_id', eventId);
-      await supabase.from('expenses').delete().eq('event_id', eventId);
-      await supabase.from('photos').delete().eq('event_id', eventId);
-      await supabase.from('comments').delete().eq('event_id', eventId);
-      await supabase.from('event_members').delete().eq('event_id', eventId);
-      
-      const { error } = await supabase.from('events').delete().eq('id', eventId);
+      // La protección real de estas operaciones debe estar configurada también en las políticas RLS de Supabase.
+      for (const table of ['spots', 'expenses', 'photos', 'comments', 'event_members']) {
+        const { error } = await supabase.from(table).delete().eq('event_id', eventId);
+        if (error) throw new Error(`${table}: ${error.message}`);
+      }
+      const { data, error } = await supabase.from('events').delete().eq('id', eventId).select('id');
       if (error) throw error;
-
-      alert(`✅ Plan "${eventTitle}" eliminado correctamente.`);
+      if (!data?.length) throw new Error('Supabase no confirmó el borrado. Revisa los permisos RLS.');
+      alert(`Plan «${eventTitle}» eliminado definitivamente.`);
       setActiveEvent(null);
       await refreshAllData();
     } catch (err) {
-      alert('Error al eliminar el plan: ' + err.message);
+      alert('No se pudo completar la eliminación. Puede haber datos asociados eliminados parcialmente. ' + (err.message || 'Error desconocido'));
+      await refreshAllData();
     }
   };
 
@@ -1341,7 +1369,7 @@ export default function App() {
     const pendingSpots = validSpots.filter(s => !s.active_now);
 
     const calculatedDebts = calculateDebts(validMembers, validExpenses);
-    const isCreator = activeEvent.creator_name === currentUser.name;
+    const isCreator = activeEvent.creator_id === currentUser.id || (!activeEvent.creator_id && activeEvent.creator_name === currentUser.name);
     const isClosed = activeEvent.status === 'closed';
     const maxVotes = Math.max(0, ...validSpots.map(s => s.votes || 0));
 
@@ -1409,12 +1437,6 @@ export default function App() {
               <p className="text-[10px] text-slate-500">En la ruta del plan</p>
             </div>
           </section>
-          {canDeleteEvent && (
-            <button onClick={() => handleDeleteEvent(activeEvent.id, activeEvent.title)} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow-lg flex items-center justify-center space-x-2 transition">
-              <Trash2 size={16} /> <span>Eliminar este Plan por completo</span>
-            </button>
-          )}
-
           {isCreator && !isClosed && (
             <button onClick={handleCloseEvent} className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow-lg flex items-center justify-center space-x-2 border border-amber-500/30">
               <Flag size={16} /> <span>Cerrar Salida y Generar Línea Temporal</span>
@@ -1613,7 +1635,7 @@ export default function App() {
                       )}
                       {newSpotName.trim().length >= 3 && !isSearchingOsm && osmSuggestions.length === 0 && (
                         <p className="text-[10px] text-slate-500 px-1">
-                          No hay coincidencias. Puedes añadir el nombre manualmente.
+                          {spotSearchError || 'No hay coincidencias en OpenStreetMap. Puedes añadir el nombre manualmente.'}
                         </p>
                       )}
                       <p className="text-[10px] text-slate-400 px-1">
@@ -1815,6 +1837,17 @@ export default function App() {
                 </div>
               )}
             </>
+          )}
+          {canDeleteEvent && (
+            <section aria-label="Zona de peligro" className="mt-10 pt-6 border-t-2 border-red-200 space-y-3">
+              <p className="text-[11px] font-black uppercase tracking-wider text-red-700">Zona de peligro · Última opción</p>
+              <p className="text-xs text-slate-600">Eliminar el plan borra definitivamente sus participantes, lugares, gastos, comentarios y fotos. Si solo ha terminado la salida, utiliza «Cerrar salida» para conservar el historial.</p>
+              <button type="button" onClick={() => handleDeleteEvent(activeEvent.id, activeEvent.title)}
+                className="w-full flex items-center justify-center gap-2 rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-xs font-bold text-red-700 hover:bg-red-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-600 transition">
+                <Trash2 size={16} /> Eliminar plan definitivamente
+              </button>
+              <p className="text-[10px] text-red-700 text-center">Solo el creador o un administrador · Requiere doble confirmación</p>
+            </section>
           )}
         </main>
 
