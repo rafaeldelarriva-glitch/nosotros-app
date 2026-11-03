@@ -63,7 +63,7 @@ export default function App() {
   // Modal para ver tickets grandes
   const [viewingReceiptUrl, setViewingReceiptUrl] = useState(null);
 
-  // Modal de Recuperación de Contraseña con Solicitud al Admin
+  // Modal de Recuperación de Contraseña
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetEmailInput, setResetEmailInput] = useState('');
   const [resetNewPasswordInput, setResetNewPasswordInput] = useState('');
@@ -227,7 +227,7 @@ export default function App() {
     }
   };
 
-  // ENVIAR SOLICITUD DE NUEVA CONTRASEÑA AL ADMINISTRADOR (Limpio de alertas de esquema)
+  // SOLICITUD DE CAMBIO DE CLAVE AL ADMIN
   const handleRequestPasswordChange = async (e) => {
     e.preventDefault();
     if (!resetEmailInput || !resetNewPasswordInput) {
@@ -260,12 +260,13 @@ export default function App() {
     }
   };
 
+  // APROBAR SOLICITUD DE CONTRASEÑA
   const handleApprovePasswordRequest = async (reqId, targetEmail, requestedPassword) => {
     if (!confirm(`¿Aprobar el cambio de contraseña para ${targetEmail}?`)) return;
 
     try {
       await supabase.from('password_requests').update({ status: 'approved' }).eq('id', reqId);
-      alert(`🔑 Solicitud aprobada para ${targetEmail}. Recuerda actualizar su clave si es necesario.`);
+      alert(`✅ Solicitud aprobada para ${targetEmail}.\n\n⚠️ RECUERDA: Para que el usuario pueda iniciar sesión con la clave "${requestedPassword}", ve a tu panel de Supabase > Authentication > Users, pulsa en "Update user" para ${targetEmail} y asígnale esta nueva contraseña.`);
       fetchPasswordRequests();
     } catch (err) {
       alert('Error al aprobar la solicitud: ' + err.message);
