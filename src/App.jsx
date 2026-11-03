@@ -50,6 +50,10 @@ export default function App() {
   // Sitios, GPS y Mapas
   const [newSpotName, setNewSpotName] = useState('');
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [showGpsModal, setShowGpsModal] = useState(false);
+  const [gpsCustomName, setGpsCustomName] = useState('');
+  const [tempCoords, setTempCoords] = useState(null);
+
   const [mapSuggestions, setMapSuggestions] = useState([]);
   const [isSearchingMaps, setIsSearchingMaps] = useState(false);
 
@@ -82,13 +86,13 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Búsqueda de lugares mejorada (Nominatim + fallback local)
+  // Búsqueda acotada a España/Cádiz
   useEffect(() => {
     const timer = setTimeout(async () => {
       if (newSpotName.trim().length > 2) {
         setIsSearchingMaps(true);
         try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(newSpotName)}&limit=5`);
+          const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(newSpotName + ' Cádiz España')}&limit=5`);
           const data = await res.json();
           setMapSuggestions(data || []);
         } catch (err) {
@@ -187,7 +191,6 @@ export default function App() {
       }
       if (data.user) {
         const userDisplayName = name.trim() || email.split('@')[0];
-        // Primer usuario registrado puede ser admin por defecto o pendiente de aprobación
         await supabase.from('profiles').insert([{ 
           id: data.user.id, 
           name: userDisplayName, 
@@ -292,14 +295,19 @@ export default function App() {
     }
   };
 
-  // Añadir sitio con nombre personalizado (soluciona bares locales como Bar Shiko en Valdelagrana)
-  const handleAddSpot = async (e) => {
-    e.preventDefault();
-    if (!newSpotName.trim() || !activeEvent) return;
+  const handleAddSpot = async (e, customName = null) => {
+    if (e) e.preventDefault();
+    const targetName = customName || newSpotName;
+    if (!targetName.trim() || !activeEvent) return;
+
+    // Asegurar contexto local en el nombre si no lo incluye
+    const formattedSpotName = targetName.toLowerCase().includes('valdelagrana') || targetName.toLowerCase().includes('el puerto') 
+      ? targetName.trim() 
+      : `${targetName.trim()}, Valdelagrana, El Puerto de Santa María`;
 
     const { error } = await supabase.from('spots').insert([{
       event_id: activeEvent.id,
-      name: newSpotName.trim(),
+      name: formattedSpotName,
       category: 'bar',
       votes: 1,
       suggested_by: currentUser.name,
@@ -317,39 +325,25 @@ export default function App() {
   };
 
   const handleSelectSuggestion = async (displayName) => {
-    setNewSpotName(displayName);
-    setMapSuggestions([]);
+    handleAddSpot(null, displayName);
   };
 
-  // GPS con nombre personalizado
-  const handleAddCurrentLocation = () => {
+  // Capturar coordenadas GPS primero y abrir modal de asignación de nombre
+  const handleStartGpsCapture = () => {
     if (!navigator.geolocation) {
       alert('Tu navegador no soporta geolocalización GPS.');
       return;
     }
 
-    const customSpotName = prompt('¿Qué nombre le ponemos a esta ubicación GPS? (ej. Bar Shiko Valdelagrana)', 'Ubicación GPS');
-    if (!customSpotName || !customSpotName.trim()) return;
-
     setIsGettingLocation(true);
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const lat = position.coords.latitude;
-        const lon = position.coords.longitude;
-        // Nombre limpio con el título que el usuario elija y coordenadas para Google Maps
-        const finalSpotName = `${customSpotName.trim()} (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
-
-        await supabase.from('spots').insert([{
-          event_id: activeEvent.id,
-          name: finalSpotName,
-          category: 'gps',
-          votes: 1,
-          suggested_by: currentUser.name,
-          active_now: true
-        }]);
-
+      (position) => {
+        setTempCoords({
+          lat: position.coords.latitude,
+          lon: position.coords.longitude
+        });
         setIsGettingLocation(false);
-        fetchAppData();
+        setShowGpsModal(true);
       },
       (error) => {
         console.error('Error obteniendo GPS:', error);
@@ -358,6 +352,32 @@ export default function App() {
       },
       { enableHighAccuracy: true }
     );
+  };
+
+  const handleSaveGpsSpot = async (e) => {
+    e.preventDefault();
+    if (!gpsCustomName.trim() || !tempCoords || !activeEvent) return;
+
+    const finalSpotName = `${gpsCustomName.trim()} (${tempCoords.lat.toFixed(4)}, ${tempCoords.lon.toFixed(4)})`;
+
+    const { error } = await supabase.from('spots').insert([{
+      event_id: activeEvent.id,
+      name: finalSpotName,
+      category: 'gps',
+      votes: 1,
+      suggested_by: currentUser.name,
+      active_now: true
+    }]);
+
+    if (error) {
+      alert('Error guardando la posición GPS: ' + error.message);
+      return;
+    }
+
+    setShowGpsModal(false);
+    setGpsCustomName('');
+    setTempCoords(null);
+    fetchAppData();
   };
 
   const handleVoteSpot = async (spotId, currentVotes) => {
@@ -393,7 +413,6 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  // Gastos robustos con actualización de BD inmediata
   const handleAddExpense = async (e) => {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
@@ -447,7 +466,6 @@ export default function App() {
     fetchAppData();
   };
 
-  // Comentarios robustos con recarga de BD
   const handleAddGeneralComment = async (e) => {
     e.preventDefault();
     if (!generalCommentInput.trim() || !activeEvent) return;
@@ -503,7 +521,6 @@ export default function App() {
     }
   };
 
-  // Gestión de bloqueo y usuarios administradores
   const handleToggleBlockUser = async (userId, currentBlockState) => {
     const { error } = await supabase
       .from('profiles')
@@ -550,7 +567,7 @@ export default function App() {
   const myApprovalRequests = events.filter(e => e.creator_name === currentUser?.name && e.pendingRequests.length > 0);
   const totalNotifications = myInvitations.length + myApprovalRequests.reduce((acc, curr) => acc + curr.pendingRequests.length, 0);
 
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.email === 'rafa@ejemplo.com'; // Puedes ajustar tu email de admin aquí
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.email === 'rafa@ejemplo.com';
 
   const filteredUsersToInvite = registeredUsers.filter(u => 
     !u.is_blocked &&
@@ -940,7 +957,6 @@ export default function App() {
                           {/* DETALLE DESPLEGABLE EN LA LÍNEA TEMPORAL */}
                           {isExpanded && (
                             <div className="mt-4 pt-4 border-t border-sky-200/60 space-y-4 animate-fadeIn">
-                              {/* Botón de Google Maps rápido para la parada */}
                               <a 
                                 href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(spot.name)}`} 
                                 target="_blank" 
@@ -951,7 +967,6 @@ export default function App() {
                                 <Navigation size={14} /> <span>Abrir navegación en Google Maps</span>
                               </a>
 
-                              {/* Gastos y Tickets */}
                               <div className="space-y-2">
                                 <div className="flex justify-between items-center text-xs font-bold text-slate-700">
                                   <span className="flex items-center"><Receipt size={14} className="mr-1 text-emerald-600" /> Gastos y Tickets</span>
@@ -986,7 +1001,6 @@ export default function App() {
                                 )}
                               </div>
 
-                              {/* Fotos */}
                               <div className="space-y-2">
                                 <span className="text-xs font-bold text-slate-700 flex items-center">
                                   <Camera size={14} className="mr-1 text-indigo-600" /> Álbum de este momento
@@ -1007,7 +1021,6 @@ export default function App() {
                                 )}
                               </div>
 
-                              {/* Comentarios */}
                               <div className="space-y-2">
                                 <span className="text-xs font-bold text-slate-700 flex items-center">
                                   <MessageSquare size={14} className="mr-1 text-sky-600" /> Comentarios y Recomendaciones
@@ -1036,7 +1049,7 @@ export default function App() {
             </div>
           ) : (
             <>
-              {/* ASISTENTES CONFIRMADOS CON OPCIÓN DE BAJA */}
+              {/* ASISTENTES CONFIRMADOS */}
               <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center">
@@ -1143,17 +1156,17 @@ export default function App() {
                     
                     <button 
                       type="button"
-                      onClick={handleAddCurrentLocation}
+                      onClick={handleStartGpsCapture}
                       disabled={isGettingLocation}
                       className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow hover:opacity-95 flex items-center justify-center space-x-2 transition"
                     >
                       <Compass size={16} className={isGettingLocation ? "animate-spin" : ""} />
-                      <span>{isGettingLocation ? 'Obteniendo GPS...' : '📍 Marcar mi ubicación GPS con nombre'}</span>
+                      <span>{isGettingLocation ? 'Obteniendo GPS...' : '📍 Marcar mi ubicación GPS actual'}</span>
                     </button>
 
                     <div className="relative pt-1">
                       <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-sky-100"></div></div>
-                      <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400 font-bold">o escribe el nombre del bar</span></div>
+                      <div className="relative flex justify-center text-[10px] uppercase"><span className="bg-white px-2 text-slate-400 font-bold">o busca o añade tu sitio</span></div>
                     </div>
 
                     <form onSubmit={handleAddSpot} className="space-y-2.5 relative">
@@ -1188,7 +1201,7 @@ export default function App() {
                       )}
 
                       <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow transition mt-2">
-                        🔍 Añadir propuesta a la lista
+                        🔍 Añadir "{newSpotName || 'propuesta'}" a la ruta
                       </button>
                     </form>
                   </div>
@@ -1413,6 +1426,46 @@ export default function App() {
           )}
         </main>
 
+        {/* MODAL PARA NOMBRE DE UBICACIÓN GPS */}
+        {showGpsModal && (
+          <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white max-w-sm w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-sky-100">
+              <div className="text-center space-y-1">
+                <Compass className="w-8 h-8 text-emerald-600 mx-auto" />
+                <h3 className="font-black text-slate-800 text-base">Guardar Ubicación GPS</h3>
+                <p className="text-xs text-slate-500">Escribe el nombre del sitio donde os encontráis</p>
+              </div>
+
+              <form onSubmit={handleSaveGpsSpot} className="space-y-3">
+                <input 
+                  type="text" 
+                  placeholder="Ej. Bar Shiko, Valdelagrana..." 
+                  value={gpsCustomName} 
+                  onChange={(e) => setGpsCustomName(e.target.value)} 
+                  className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-3 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  required
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <button 
+                    type="button" 
+                    onClick={() => { setShowGpsModal(false); setTempCoords(null); }}
+                    className="w-1/2 bg-sky-50 text-slate-700 font-bold py-2.5 rounded-2xl text-xs hover:bg-sky-100 transition border border-sky-200"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    type="submit" 
+                    className="w-1/2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 rounded-2xl text-xs shadow transition"
+                  >
+                    Guardar Sitio
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {/* MODAL PARA VISUALIZAR TICKET EN GRANDE */}
         {viewingReceiptUrl && (
           <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1577,7 +1630,7 @@ export default function App() {
               ))}
             </div>
 
-            {/* SECCIÓN DE ADMINISTRADOR: CONTROL DE USUARIOS REGISTRADOS */}
+            {/* SECCIÓN DE ADMINISTRADOR */}
             {isAdmin && (
               <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-red-100 shadow-sm space-y-3">
                 <h2 className="text-base font-black text-slate-800 flex items-center">
