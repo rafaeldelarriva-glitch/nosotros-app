@@ -114,8 +114,7 @@ export default function App() {
     try {
       const { data, error } = await supabase.from('password_requests').select('*').eq('status', 'pending');
       if (error) {
-        // Si la tabla no existe aún, evitamos que rompa la app
-        console.warn('Tabla password_requests posiblemente no creada:', error.message);
+        console.warn('Error cargando solicitudes de clave:', error.message);
         setPasswordRequests([]);
         return;
       }
@@ -228,7 +227,7 @@ export default function App() {
     }
   };
 
-  // ENVIAR SOLICITUD DE NUEVA CONTRASEÑA AL ADMINISTRADOR
+  // ENVIAR SOLICITUD DE NUEVA CONTRASEÑA AL ADMINISTRADOR (Limpio de alertas de esquema)
   const handleRequestPasswordChange = async (e) => {
     e.preventDefault();
     if (!resetEmailInput || !resetNewPasswordInput) {
@@ -249,31 +248,24 @@ export default function App() {
         status: 'pending'
       }]);
 
-      if (error) {
-        // Si no existe la tabla en Supabase, avisamos de la sentencia SQL necesaria
-        alert('ℹ️ Para activar esta función en Supabase, ejecuta esta línea SQL en tu panel:\n\ncreate table password_requests (id uuid default gen_random_uuid() primary key, email text, new_password text, status text default \'pending\', created_at timestamp with time zone default timezone(\'utc\'::text, now()));');
-        return;
-      }
+      if (error) throw error;
 
       alert('✅ Solicitud enviada correctamente al administrador. Cuando la apruebe desde su panel, podrás acceder con tu nueva clave.');
       setShowResetModal(false);
       setResetEmailInput('');
       setResetNewPasswordInput('');
     } catch (err) {
-      console.error(err);
-      alert('Error al enviar la solicitud.');
+      console.error('Error detallado al solicitar cambio de clave:', err.message);
+      alert('Error al enviar la solicitud: ' + err.message);
     }
   };
 
-  // APROBAR SOLICITUD DE CONTRASEÑA POR PARTE DEL ADMIN
   const handleApprovePasswordRequest = async (reqId, targetEmail, requestedPassword) => {
     if (!confirm(`¿Aprobar el cambio de contraseña para ${targetEmail}?`)) return;
 
     try {
-      // Marcamos la solicitud como aprobada
       await supabase.from('password_requests').update({ status: 'approved' }).eq('id', reqId);
-      
-      alert(`🔑 Solicitud aprobada para ${targetEmail}. (Nota: Como Supabase requiere permisos de Auth Admin para modificar claves de otros usuarios, asegúrate de actualizar su clave en el panel de autenticación de Supabase o comunicársela).`);
+      alert(`🔑 Solicitud aprobada para ${targetEmail}. Recuerda actualizar su clave si es necesario.`);
       fetchPasswordRequests();
     } catch (err) {
       alert('Error al aprobar la solicitud: ' + err.message);
@@ -638,7 +630,6 @@ export default function App() {
   const myInvitations = events.filter(e => e.pendingInvitations.includes(currentUser?.name));
   const myApprovalRequests = events.filter(e => e.creator_name === currentUser?.name && e.pendingRequests.length > 0);
   
-  // Total notificaciones incluye invitaciones, solicitudes a eventos y solicitudes pendientes de contraseña (si es admin)
   const isAdmin = currentUser?.role === 'admin' || currentUser?.email === 'rafa@ejemplo.com';
   const totalNotifications = myInvitations.length + myApprovalRequests.reduce((acc, curr) => acc + curr.pendingRequests.length, 0) + (isAdmin ? passwordRequests.length : 0);
 
