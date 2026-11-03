@@ -55,7 +55,7 @@ export default function App() {
   const [customQrLabel, setCustomQrLabel] = useState('');
   const [customQrUrl, setCustomQrUrl] = useState('');
 
-  // Gastos y Tickets Inteligentes
+  // Gastos y Tickets Inteligentes (Garantizamos array limpio)
   const [expenseDesc, setExpenseDesc] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseSpotId, setExpenseSpotId] = useState('');
@@ -101,7 +101,7 @@ export default function App() {
     }
   }, [currentUser]);
 
-  // Inicializar o sincronizar los participantes del gasto de forma limpia al cambiar de evento
+  // Sincronizar participantes al entrar al evento
   useEffect(() => {
     if (activeEvent && Array.isArray(activeEvent.members)) {
       setExpenseParticipants([...activeEvent.members]);
@@ -699,30 +699,34 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
+  // MANEJO BLINDADO DE SELECCIÓN DE PARTICIPANTES EN EL GASTO
   const handleToggleExpenseParticipant = (memberName) => {
     setExpenseParticipants(prev => {
-      const current = Array.isArray(prev) ? prev : [];
-      if (current.includes(memberName)) {
-        if (current.length === 1) return current; // Evitar desmarcar a todos
-        return current.filter(m => m !== memberName);
+      const list = Array.isArray(prev) ? [...prev] : [];
+      if (list.includes(memberName)) {
+        if (list.length === 1) return list; // Evitar dejar 0 participantes
+        return list.filter(m => m !== memberName);
       } else {
-        return [...current, memberName];
+        return [...list, memberName];
       }
     });
   };
 
-  // ---------------------------------------------------------------------------
-  // MANEJADOR DE GASTOS BLINDADO: Asegura array de JavaScript puro y nativo
-  // ---------------------------------------------------------------------------
+  // ENVIAR GASTO CON REPARTO INTELIGENTE REAL
   const handleAddExpense = async (e) => {
     e.preventDefault();
     if (!expenseDesc.trim() || !expenseAmount || !activeEvent) return;
     
+    // Tomamos exactamente los participantes marcados en el state o por defecto todos
     const finalParticipants = (Array.isArray(expenseParticipants) && expenseParticipants.length > 0)
-      ? [...expenseParticipants]
+      ? expenseParticipants
       : [...activeEvent.members];
 
-    console.log("🚀 [GASTO] Guardando participantes:", finalParticipants);
+    console.log("💰 ENVIANDO GASTO A SUPABASE:", {
+      description: expenseDesc.trim(),
+      amount: parseFloat(expenseAmount),
+      participants: finalParticipants
+    });
 
     const { error } = await supabase.from('expenses').insert([{
       event_id: activeEvent.id,
@@ -731,7 +735,7 @@ export default function App() {
       paid_by: currentUser.name,
       spot_id: expenseSpotId || null,
       receipt_url: expenseReceiptUrl || null,
-      participants: finalParticipants // Array nativo compatible con jsonb / text[] de Supabase
+      participants: finalParticipants // Array exacto seleccionado por el usuario
     }]);
 
     if (error) {
@@ -743,7 +747,6 @@ export default function App() {
     setExpenseAmount('');
     setExpenseSpotId('');
     setExpenseReceiptUrl('');
-    // Mantenemos la última selección del usuario activa para su comodidad
     await refreshAllData();
   };
 
@@ -787,7 +790,7 @@ export default function App() {
   };
 
   // ---------------------------------------------------------------------------
-  // ALGORITMO DE LIQUIDACIÓN Y REPARTO INTELIGENTE DE DEUDAS PERFECTO
+  // ALGORITMO DE LIQUIDACIÓN INTELIGENTE DE DEUDAS PERFECTO Y BLINDADO
   // ---------------------------------------------------------------------------
   const calculateDebts = (members = [], expenses = []) => {
     if (!Array.isArray(members) || members.length === 0) return [];
@@ -799,19 +802,19 @@ export default function App() {
       const amount = Number(exp.amount) || 0;
       const paidBy = exp.paid_by;
       
-      // Quien paga suma saldo a favor
+      // Quien paga suma saldo positivo
       if (balancesMap[paidBy] !== undefined) {
         balancesMap[paidBy] += amount;
       }
 
-      // Obtener participantes reales de este gasto (si no viene definido o está vacío, reparte entre todos los miembros)
+      // Tomar estrictamente los participantes del gasto (si no están definidos, se reparte entre todos)
       const parts = (Array.isArray(exp.participants) && exp.participants.length > 0)
         ? exp.participants
         : members;
 
       const share = amount / parts.length;
 
-      // Cada participante del gasto asume su parte proporcional
+      // Cada participante del gasto asume su parte proporcional restándola de su balance
       parts.forEach(p => {
         if (balancesMap[p] !== undefined) {
           balancesMap[p] -= share;
