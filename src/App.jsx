@@ -40,6 +40,7 @@ export default function App() {
   const [newTitle, setNewTitle] = useState('');
   const [newDate, setNewDate] = useState('');
   const [newInvitees, setNewInvitees] = useState([]);
+  const [inviteSearch, setInviteSearch] = useState('');
   const [isCreatingEvent, setIsCreatingEvent] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -706,6 +707,7 @@ export default function App() {
       setNewTitle('');
       setNewDate('');
       setNewInvitees([]);
+      setInviteSearch('');
       setShowCreateModal(false);
       await refreshAllData();
     } catch (err) {
@@ -2274,22 +2276,46 @@ export default function App() {
                 <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-sm" required />
               </div>
               <fieldset className="space-y-2">
-                <legend className="text-xs font-bold text-slate-700">Invitar usuarios ahora (opcional)</legend>
-                <p className="text-[11px] text-slate-500">Recibirán una invitación pendiente en Aprobaciones y podrán aceptarla o rechazarla.</p>
-                <div className="max-h-40 overflow-y-auto rounded-2xl border border-sky-200 bg-sky-50/50 p-2 space-y-1">
-                  {registeredUsers.filter(u => u.name && u.id !== currentUser?.id && u.name !== currentUser?.name && u.is_approved !== false && !u.is_blocked).length === 0 ? (
-                    <p className="text-xs text-slate-500 p-2">No hay otros usuarios disponibles.</p>
-                  ) : registeredUsers.filter(u => u.name && u.id !== currentUser?.id && u.name !== currentUser?.name && u.is_approved !== false && !u.is_blocked).map(u => (
-                    <label key={u.id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-white text-xs text-slate-800 cursor-pointer">
-                      <input type="checkbox" checked={newInvitees.includes(u.name)} onChange={e => setNewInvitees(prev => e.target.checked ? [...new Set([...prev, u.name])] : prev.filter(n => n !== u.name))} className="w-4 h-4 accent-sky-600" />
-                      <span className="font-semibold">{u.name}</span>
-                    </label>
-                  ))}
+                <legend className="text-xs font-bold text-slate-700">Invitar personas (opcional)</legend>
+                <p className="text-[11px] text-slate-500">Busca por nombre o correo y pulsa «Añadir». Recibirán la invitación en Aprobaciones.</p>
+                <label htmlFor="invite-person-search" className="sr-only">Buscar persona para invitar</label>
+                <div className="relative">
+                  <Search size={16} className="absolute left-3 top-3 text-sky-500" aria-hidden="true" />
+                  <input id="invite-person-search" type="search" autoComplete="off" value={inviteSearch}
+                    onChange={e => setInviteSearch(e.target.value)}
+                    placeholder="Escribe un nombre o correo..."
+                    className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl pl-10 pr-4 py-2.5 text-sm" />
                 </div>
-                <p className="text-[11px] text-sky-700 font-semibold">{newInvitees.length} invitación(es) seleccionada(s)</p>
+                {inviteSearch.trim() && (
+                  <div className="max-h-40 overflow-y-auto rounded-2xl border border-sky-200 bg-sky-50/50 p-2 space-y-1">
+                    {(() => {
+                      const query = inviteSearch.trim().toLocaleLowerCase('es');
+                      const matches = registeredUsers.filter(u => u.name && u.id !== currentUser?.id && u.name !== currentUser?.name && u.is_approved !== false && !u.is_blocked && !newInvitees.includes(u.name) && (u.name.toLocaleLowerCase('es').includes(query) || (u.email || '').toLocaleLowerCase('es').includes(query)));
+                      return matches.length ? matches.slice(0, 15).map(u => (
+                        <button key={u.id} type="button" onClick={() => { setNewInvitees(prev => [...new Set([...prev, u.name])]); setInviteSearch(''); }}
+                          className="w-full flex items-center justify-between gap-2 p-2 rounded-xl hover:bg-white focus:bg-white text-left text-xs text-slate-800">
+                          <span className="min-w-0"><span className="font-semibold block truncate">{u.name}</span>{u.email && <span className="block text-slate-500 truncate">{u.email}</span>}</span>
+                          <span className="shrink-0 text-sky-700 font-bold flex items-center gap-1"><Plus size={14} /> Añadir</span>
+                        </button>
+                      )) : <p className="text-xs text-slate-500 p-2">No hay usuarios disponibles que coincidan con la búsqueda.</p>;
+                    })()}
+                  </div>
+                )}
+                {newInvitees.length > 0 && (
+                  <div className="flex flex-wrap gap-2" aria-label="Personas seleccionadas para invitar">
+                    {newInvitees.map(person => (
+                      <span key={person} className="inline-flex items-center gap-1 rounded-full bg-sky-100 border border-sky-200 text-sky-900 text-xs font-semibold pl-3 pr-1 py-1">
+                        {person}
+                        <button type="button" aria-label={`Quitar a ${person} de las invitaciones`} onClick={() => setNewInvitees(prev => prev.filter(n => n !== person))}
+                          className="p-1 rounded-full hover:bg-sky-200"><X size={14} /></button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[11px] text-sky-700 font-semibold">{newInvitees.length} persona(s) seleccionada(s)</p>
               </fieldset>
               <div className="flex gap-2 pt-2">
-                <button type="button" disabled={isCreatingEvent} onClick={() => { setShowCreateModal(false); setNewInvitees([]); }} className="w-1/2 bg-sky-50 text-slate-700 font-bold py-2.5 rounded-2xl text-xs border border-sky-200">Cancelar</button>
+                <button type="button" disabled={isCreatingEvent} onClick={() => { setShowCreateModal(false); setNewInvitees([]); setInviteSearch(''); }} className="w-1/2 bg-sky-50 text-slate-700 font-bold py-2.5 rounded-2xl text-xs border border-sky-200">Cancelar</button>
                 <button type="submit" disabled={isCreatingEvent} className="w-1/2 bg-sky-600 text-white font-bold py-2.5 rounded-2xl text-xs shadow disabled:opacity-50">{isCreatingEvent ? 'Creando...' : 'Crear Plan'}</button>
               </div>
             </form>
