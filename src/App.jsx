@@ -133,6 +133,9 @@ export default function App() {
 
   // Perfil
   const [editNameInput, setEditNameInput] = useState('');
+  const [editSurnameInput, setEditSurnameInput] = useState('');
+  const [editAvatarUrl, setEditAvatarUrl] = useState('');
+  const [isProcessingAvatar, setIsProcessingAvatar] = useState(false);
   const [editEmailInput, setEditEmailInput] = useState('');
   const [oldPasswordInput, setOldPasswordInput] = useState('');
   const [newPasswordInput, setNewPasswordInput] = useState('');
@@ -196,7 +199,7 @@ export default function App() {
           }
           const userDisplayName = profile?.name || session.user.email?.split('@')[0] || 'Usuario';
           const userRole = profile?.role || 'user';
-          setCurrentUser({ id: session.user.id, name: userDisplayName, email: session.user.email, role: userRole });
+          setCurrentUser({ id: session.user.id, name: userDisplayName, surname: profile?.surname || '', avatar_url: profile?.avatar_url || '', email: session.user.email, role: userRole });
         }
       } catch (err) {
         console.error('Error comprobando sesión:', err);
@@ -211,6 +214,8 @@ export default function App() {
     if (currentUser) {
       refreshAllData();
       setEditNameInput(currentUser.name || '');
+      setEditSurnameInput(currentUser.surname || '');
+      setEditAvatarUrl(currentUser.avatar_url || '');
       setEditEmailInput(currentUser.email || '');
     }
   }, [currentUser]);
@@ -479,7 +484,7 @@ export default function App() {
 
   const fetchRegisteredUsers = async () => {
     try {
-      const { data, error } = await supabase.from('profiles').select('id, name, email, role, is_blocked, is_approved');
+      const { data, error } = await supabase.from('profiles').select('id, name, surname, avatar_url, email, role, is_blocked, is_approved');
       if (error) throw error;
       setRegisteredUsers(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -690,7 +695,7 @@ export default function App() {
           }
         }
 
-        setCurrentUser({ id: data.user.id, name: profile ? profile.name : loginEmail.split('@')[0], email: loginEmail, role: profile ? profile.role : 'user' });
+        setCurrentUser({ id: data.user.id, name: profile ? profile.name : loginEmail.split('@')[0], surname: profile?.surname || '', avatar_url: profile?.avatar_url || '', email: loginEmail, role: profile ? profile.role : 'user' });
       }
     }
   };
@@ -996,27 +1001,73 @@ export default function App() {
     }
   };
 
+  const handleProfilePhotoChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setProfileMessage('❌ Selecciona un archivo de imagen válido.');
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      setProfileMessage('❌ La imagen no puede superar los 12 MB.');
+      return;
+    }
+    setIsProcessingAvatar(true);
+    try {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+        reader.onload = () => {
+          const img = new Image();
+          img.onerror = () => reject(new Error('El archivo de imagen no es válido.'));
+          img.onload = () => {
+            const maxSide = 512;
+            const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(img.width * scale));
+            canvas.height = Math.max(1, Math.round(img.height * scale));
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return reject(new Error('No se pudo procesar la imagen.'));
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/jpeg', 0.82));
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+      setEditAvatarUrl(dataUrl);
+      setProfileMessage('Imagen preparada. Pulsa «Guardar cambios» para aplicarla.');
+    } catch (err) {
+      setProfileMessage('❌ ' + err.message);
+    } finally {
+      setIsProcessingAvatar(false);
+    }
+  };
+
   const handleSaveProfile = async (e) => {
     e.preventDefault();
     setProfileMessage('');
 
     try {
-      let emailChanged = false;
+      const cleanName = editNameInput.trim();
+      const cleanSurname = editSurnameInput.trim();
       const newEmailVal = editEmailInput.trim().toLowerCase();
-
-      const updates = { name: editNameInput.trim() };
-      if (newEmailVal && newEmailVal !== currentUser?.email?.toLowerCase()) {
-        updates.email = newEmailVal;
-        emailChanged = true;
+      if (!cleanName) {
+        setProfileMessage('❌ El nombre no puede estar vacío.');
+        return;
       }
 
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update(updates)
-        .eq('id', currentUser.id);
-
+      // La función SECURITY DEFINER actualiza únicamente el perfil del usuario autenticado.
+      const { error: profileError } = await supabase.rpc('update_own_profile', {
+        p_name: cleanName,
+        p_surname: cleanSurname,
+        p_avatar_url: editAvatarUrl || null,
+        p_email: newEmailVal || currentUser.email
+      });
       if (profileError) throw profileError;
 
+      const emailChanged = !!newEmailVal && newEmailVal !== currentUser?.email?.toLowerCase();
       if (emailChanged) {
         const { error: authError } = await supabase.auth.updateUser({ email: newEmailVal });
         if (authError) throw authError;
@@ -1032,9 +1083,9 @@ export default function App() {
           setProfileMessage('❌ Contraseña no válida: ' + errorMsg);
           return;
         }
-        const { error: loginError } = await supabase.auth.signInWithPassword({ 
-          email: currentUser.email, 
-          password: oldPasswordInput 
+        const { error: loginError } = await supabase.auth.signInWithPassword({
+          email: currentUser.email,
+          password: oldPasswordInput
         });
         if (loginError) {
           setProfileMessage('❌ Contraseña actual incorrecta.');
@@ -1044,13 +1095,16 @@ export default function App() {
         if (passError) throw passError;
       }
 
-      setCurrentUser({ 
-        ...currentUser, 
-        name: editNameInput.trim(), 
-        email: emailChanged ? newEmailVal : currentUser.email 
+      setCurrentUser({
+        ...currentUser,
+        name: cleanName,
+        surname: cleanSurname,
+        avatar_url: editAvatarUrl || '',
+        email: emailChanged ? newEmailVal : currentUser.email
       });
-
-      setProfileMessage('✅ ¡Perfil y contraseña actualizados con éxito!');
+      setProfileMessage(emailChanged
+        ? '✅ Perfil actualizado. Si Supabase lo requiere, confirma el cambio de correo desde el mensaje recibido.'
+        : '✅ ¡Perfil y contraseña actualizados con éxito!');
       setOldPasswordInput('');
       setNewPasswordInput('');
       setConfirmNewPasswordInput('');
@@ -2035,8 +2089,8 @@ export default function App() {
                   <input type="search" aria-label="Buscar usuarios para invitar" value={additionalInviteSearch} onChange={e => setAdditionalInviteSearch(e.target.value)} placeholder="Buscar por nombre o correo..." className="w-full rounded-xl border border-sky-200 p-3 text-sm" />
                   {additionalInviteSearch.trim() && (
                     <div className="space-y-1 max-h-44 overflow-y-auto">
-                      {registeredUsers.filter(u => u.name && u.id !== currentUser.id && u.is_approved !== false && !u.is_blocked && !(activeEvent.rawEventMembers || []).some(m => m.user_id === u.id) && (u.name.toLocaleLowerCase('es').includes(additionalInviteSearch.trim().toLocaleLowerCase('es')) || (u.email || '').toLocaleLowerCase('es').includes(additionalInviteSearch.trim().toLocaleLowerCase('es')))).slice(0, 15).map(u => (
-                        <button type="button" disabled={invitingToPlan} key={u.id} onClick={() => handleInviteToExistingPlan(u)} className="w-full flex justify-between items-center text-left rounded-xl bg-sky-50 p-2 text-xs font-bold text-sky-800 disabled:opacity-50"><span>{u.name}</span><span>+ Invitar</span></button>
+                      {registeredUsers.filter(u => u.name && u.id !== currentUser.id && u.is_approved !== false && !u.is_blocked && !(activeEvent.rawEventMembers || []).some(m => m.user_id === u.id) && (u.name.toLocaleLowerCase('es').includes(additionalInviteSearch.trim().toLocaleLowerCase('es')) || (u.surname || '').toLocaleLowerCase('es').includes(additionalInviteSearch.trim().toLocaleLowerCase('es')) || (u.email || '').toLocaleLowerCase('es').includes(additionalInviteSearch.trim().toLocaleLowerCase('es')))).slice(0, 15).map(u => (
+                        <button type="button" disabled={invitingToPlan} key={u.id} onClick={() => handleInviteToExistingPlan(u)} className="w-full flex justify-between items-center text-left rounded-xl bg-sky-50 p-2 text-xs font-bold text-sky-800 disabled:opacity-50"><span>{[u.name, u.surname].filter(Boolean).join(' ')}</span><span>+ Invitar</span></button>
                       ))}
                     </div>
                   )}
@@ -2348,7 +2402,7 @@ export default function App() {
           <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
             <div className="bg-white max-w-sm w-full p-4 rounded-[2rem] shadow-2xl space-y-4 border border-sky-100 text-center">
               <div className="flex justify-between items-center px-1">
-                <h3 className="font-black text-slate-800 text-sm">Foto del Plan</h3>
+                <h3 className="font-black text-slate-800 text-sm">{viewingPhotoUrl === currentUser?.avatar_url ? 'Foto de perfil' : 'Foto del Plan'}</h3>
                 <button onClick={() => setViewingPhotoUrl(null)} className="p-1 bg-sky-50 rounded-full text-slate-600"><X size={18} /></button>
               </div>
               <div className="w-full max-h-96 rounded-2xl overflow-hidden border border-sky-200 bg-sky-50 flex items-center justify-center">
@@ -2447,7 +2501,11 @@ export default function App() {
             <Bell size={18} />
             {unreadNotificationsCount > 0 && <span className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-red-600 ring-2 ring-white" />}
           </button>
-          <span className="text-xs font-bold text-slate-700">Hola, {currentUser?.name || 'Usuario'}</span>
+          <span className="text-xs font-bold text-slate-700 hidden sm:inline">Hola, {currentUser?.name || 'Usuario'}</span>
+          <button type="button" onClick={() => currentUser?.avatar_url && setViewingPhotoUrl(currentUser.avatar_url)}
+            aria-label="Ver foto de perfil" className="w-9 h-9 rounded-full overflow-hidden border-2 border-sky-200 bg-sky-100 flex items-center justify-center text-sky-700 font-black text-sm shrink-0">
+            {currentUser?.avatar_url ? <img src={currentUser.avatar_url} alt="Foto de perfil" className="w-full h-full object-cover" /> : (currentUser?.name?.charAt(0)?.toUpperCase() || 'U')}
+          </button>
           <button onClick={handleLogout} className="text-xs bg-sky-50 hover:bg-red-50 text-slate-600 px-3 py-1.5 rounded-full font-bold border border-sky-200">Salir</button>
         </div>
       </header>
@@ -2589,13 +2647,19 @@ export default function App() {
         {activeTab === 'profile' && (
           <div className="space-y-4">
             <div className="bg-white/90 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-4">
-              <div className="flex items-center space-x-3">
-                <div className="w-12 h-12 bg-sky-100 rounded-2xl flex items-center justify-center text-sky-700 font-black text-lg">
-                  {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
-                </div>
-                <div>
-                  <h2 className="font-black text-slate-800 text-base">{currentUser?.name || 'Usuario'}</h2>
-                  <p className="text-xs text-slate-500">{currentUser?.email || ''}</p>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => editAvatarUrl && setViewingPhotoUrl(editAvatarUrl)} aria-label="Ampliar foto de perfil"
+                  className="w-16 h-16 rounded-full overflow-hidden border-2 border-sky-200 bg-sky-100 flex items-center justify-center text-sky-700 font-black text-xl shrink-0">
+                  {editAvatarUrl ? <img src={editAvatarUrl} alt="Foto de perfil" className="w-full h-full object-cover" /> : (currentUser?.name?.charAt(0)?.toUpperCase() || 'U')}
+                </button>
+                <div className="min-w-0">
+                  <h2 className="font-black text-slate-800 text-base">{currentUser?.name || 'Usuario'} {currentUser?.surname || ''}</h2>
+                  <p className="text-xs text-slate-500 break-all">{currentUser?.email || ''}</p>
+                  <label className="inline-flex mt-2 items-center gap-1.5 text-[11px] font-bold text-sky-700 cursor-pointer">
+                    <Camera size={13} /> {isProcessingAvatar ? 'Procesando imagen…' : 'Cambiar fotografía'}
+                    <input type="file" accept="image/*" onChange={handleProfilePhotoChange} disabled={isProcessingAvatar} className="hidden" />
+                  </label>
+                  {editAvatarUrl && <button type="button" onClick={() => setEditAvatarUrl('')} className="ml-3 text-[11px] font-bold text-red-600">Quitar foto</button>}
                 </div>
               </div>
 
@@ -2607,6 +2671,11 @@ export default function App() {
                 <div className="space-y-1">
                   <label className="block text-[11px] font-bold text-slate-700">Nombre de Usuario</label>
                   <input type="text" value={editNameInput} onChange={(e) => setEditNameInput(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" required />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-[11px] font-bold text-slate-700">Apellidos</label>
+                  <input type="text" value={editSurnameInput} onChange={(e) => setEditSurnameInput(e.target.value)} placeholder="Tus apellidos" className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" />
                 </div>
 
                 <div className="space-y-1">
@@ -2796,7 +2865,7 @@ export default function App() {
                       {pendingRegistrations.map(reg => (
                         <div key={reg.id} className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/50 flex justify-between items-center text-xs">
                           <div>
-                            <p className="font-bold text-slate-800">{reg.name}</p>
+                            <p className="font-bold text-slate-800">{[reg.name, reg.surname].filter(Boolean).join(' ')}</p>
                             <p className="text-[10px] text-slate-500">{reg.email}</p>
                           </div>
                           <div className="flex gap-1.5">
@@ -2820,7 +2889,7 @@ export default function App() {
                         <div className="flex justify-between items-center">
                           <div>
                             <p className="font-bold text-slate-800 flex items-center">
-                              {usr.name} {usr.role === 'admin' && <span className="ml-1.5 text-[9px] bg-sky-100 text-sky-800 font-bold px-1.5 py-0.5 rounded-full">ADMIN</span>}
+                              {[usr.name, usr.surname].filter(Boolean).join(' ')} {usr.role === 'admin' && <span className="ml-1.5 text-[9px] bg-sky-100 text-sky-800 font-bold px-1.5 py-0.5 rounded-full">ADMIN</span>}
                             </p>
                             <p className="text-[10px] text-slate-500">{usr.email}</p>
                           </div>
@@ -2929,11 +2998,11 @@ export default function App() {
                   <div className="max-h-40 overflow-y-auto rounded-2xl border border-sky-200 bg-sky-50/50 p-2 space-y-1">
                     {(() => {
                       const query = inviteSearch.trim().toLocaleLowerCase('es');
-                      const matches = registeredUsers.filter(u => u.name && u.id !== currentUser?.id && u.is_approved !== false && !u.is_blocked && !newInvitees.includes(u.id) && (u.name.toLocaleLowerCase('es').includes(query) || (u.email || '').toLocaleLowerCase('es').includes(query)));
+                      const matches = registeredUsers.filter(u => u.name && u.id !== currentUser?.id && u.is_approved !== false && !u.is_blocked && !newInvitees.includes(u.id) && (u.name.toLocaleLowerCase('es').includes(query) || (u.surname || '').toLocaleLowerCase('es').includes(query) || (u.email || '').toLocaleLowerCase('es').includes(query)));
                       return matches.length ? matches.slice(0, 15).map(u => (
                         <button key={u.id} type="button" onClick={() => { setNewInvitees(prev => [...new Set([...prev, u.id])]); setInviteSearch(''); }}
                           className="w-full flex items-center justify-between gap-2 p-2 rounded-xl hover:bg-white focus:bg-white text-left text-xs text-slate-800">
-                          <span className="min-w-0"><span className="font-semibold block truncate">{u.name}</span>{u.email && <span className="block text-slate-500 truncate">{u.email}</span>}</span>
+                          <span className="min-w-0"><span className="font-semibold block truncate">{[u.name, u.surname].filter(Boolean).join(' ')}</span>{u.email && <span className="block text-slate-500 truncate">{u.email}</span>}</span>
                           <span className="shrink-0 text-sky-700 font-bold flex items-center gap-1"><Plus size={14} /> Añadir</span>
                         </button>
                       )) : <p className="text-xs text-slate-500 p-2">No hay usuarios disponibles que coincidan con la búsqueda.</p>;
@@ -2944,7 +3013,7 @@ export default function App() {
                   <div className="flex flex-wrap gap-2" aria-label="Personas seleccionadas para invitar">
                     {newInvitees.map(person => (
                       <span key={person} className="inline-flex items-center gap-1 rounded-full bg-sky-100 border border-sky-200 text-sky-900 text-xs font-semibold pl-3 pr-1 py-1">
-                        {registeredUsers.find(u => u.id === person)?.name || 'Usuario'}
+                        {[registeredUsers.find(u => u.id === person)?.name, registeredUsers.find(u => u.id === person)?.surname].filter(Boolean).join(' ') || 'Usuario'}
                         <button type="button" aria-label="Quitar persona de las invitaciones" onClick={() => setNewInvitees(prev => prev.filter(n => n !== person))}
                           className="p-1 rounded-full hover:bg-sky-200"><X size={14} /></button>
                       </span>
