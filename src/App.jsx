@@ -148,6 +148,8 @@ export default function App() {
 
   // Perfiles, solicitudes y administración
   const [registeredUsers, setRegisteredUsers] = useState([]);
+  const [registeredUserQuery, setRegisteredUserQuery] = useState('');
+  const [registeredUserPage, setRegisteredUserPage] = useState(1);
   const [passwordRequests, setPasswordRequests] = useState([]);
   const [pendingRegistrations, setPendingRegistrations] = useState([]);
   const [processingRegistrationId, setProcessingRegistrationId] = useState(null);
@@ -3186,7 +3188,18 @@ export default function App() {
                 <div className="space-y-2">
                   {visibleNotifications.map(item => {
                     const notice = item.notifications;
-                    return (
+                    // Filtrado y paginación de la gestión de usuarios registrados.
+  const registeredUserSearch = registeredUserQuery.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
+  const filteredRegisteredUsers = registeredUsers.filter(user => {
+    if (!registeredUserSearch) return true;
+    const text = [user.name, user.surname, user.email].filter(Boolean).join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
+    return text.includes(registeredUserSearch);
+  });
+  const registeredUserTotalPages = Math.max(1, Math.ceil(filteredRegisteredUsers.length / 5));
+  const currentRegisteredUserPage = Math.min(registeredUserPage, registeredUserTotalPages);
+  const visibleRegisteredUsers = filteredRegisteredUsers.slice((currentRegisteredUserPage - 1) * 5, currentRegisteredUserPage * 5);
+
+  return (
                       <button key={item.id} type="button" onClick={() => handleOpenNotification(item)}
                         className={`w-full text-left p-3 rounded-2xl border transition ${item.read_at ? 'bg-white border-slate-200' : 'bg-sky-50 border-sky-300'}`}>
                         <div className="flex items-start justify-between gap-2">
@@ -3406,8 +3419,20 @@ export default function App() {
                   <h2 className="text-sm font-black text-slate-800 flex items-center">
                     <Users size={16} className="mr-1.5 text-sky-600" /> Todos los Usuarios Registrados ({registeredUsers.length})
                   </h2>
-                  <div className="grid grid-cols-1 2xl:grid-cols-2 gap-3 xl:max-h-[720px] xl:overflow-y-auto xl:pr-1">
-                    {registeredUsers.map(usr => (
+                  <div className="space-y-2">
+                    <label htmlFor="registered-user-search" className="block text-xs font-bold text-slate-700">Buscar usuario por nombre, apellidos o correo</label>
+                    <input
+                      id="registered-user-search"
+                      type="search"
+                      value={registeredUserQuery}
+                      onChange={e => { setRegisteredUserQuery(e.target.value); setRegisteredUserPage(1); }}
+                      placeholder="Escribe un nombre o correo..."
+                      className="w-full rounded-xl border border-sky-200 bg-white px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-sky-200"
+                    />
+                    <p className="text-xs text-slate-500">{filteredRegisteredUsers.length} usuario(s) encontrados · 5 por página</p>
+                  </div>
+                  <div className="grid grid-cols-1 2xl:grid-cols-2 gap-3">
+                    {visibleRegisteredUsers.map(usr => (
                       <div key={usr.id} className={`p-3.5 rounded-2xl border flex flex-col space-y-2 text-xs ${usr.is_blocked ? 'bg-red-50/80 border-red-200' : 'bg-white border-sky-100'}`}>
                         <div className="flex flex-wrap justify-between items-center gap-2">
                           <div className="min-w-0">
@@ -3438,7 +3463,17 @@ export default function App() {
                         </div>
                       </div>
                     ))}
+                    {filteredRegisteredUsers.length === 0 && (
+                      <p className="col-span-full text-center text-sm text-slate-500 py-6">No hay usuarios que coincidan con la búsqueda.</p>
+                    )}
                   </div>
+                  {registeredUserTotalPages > 1 && (
+                    <div className="flex flex-wrap items-center justify-center gap-3 border-t border-sky-100 pt-3 text-xs">
+                      <button type="button" disabled={currentRegisteredUserPage === 1} onClick={() => setRegisteredUserPage(p => Math.max(1, p - 1))} className="rounded-xl border border-sky-200 px-3 py-2 font-bold text-sky-700 disabled:opacity-40">← Anterior</button>
+                      <span className="font-semibold text-slate-600">Página {currentRegisteredUserPage} de {registeredUserTotalPages}</span>
+                      <button type="button" disabled={currentRegisteredUserPage === registeredUserTotalPages} onClick={() => setRegisteredUserPage(p => Math.min(registeredUserTotalPages, p + 1))} className="rounded-xl border border-sky-200 px-3 py-2 font-bold text-sky-700 disabled:opacity-40">Siguiente →</button>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
