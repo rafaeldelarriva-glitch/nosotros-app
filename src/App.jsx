@@ -1733,6 +1733,27 @@ export default function App() {
     return transactions;
   };
 
+  // Reparto individual exacto, aplicando las mismas reglas y céntimos que calculateDebts.
+  const calculateIndividualBreakdown = (members = [], expenses = []) => {
+    const rows = members.map(name => ({ name, paidCents: 0, shareCents: 0, details: [] }));
+    const byName = Object.fromEntries(rows.map(row => [row.name, row]));
+    for (const exp of expenses) {
+      const amount = Number(exp.amount);
+      const cents = Math.round(amount * 100);
+      const participants = getExpenseParticipants(exp, members).filter(name => Object.prototype.hasOwnProperty.call(byName, name));
+      if (!Number.isFinite(amount) || cents <= 0 || !byName[exp.paid_by] || !participants.length) continue;
+      byName[exp.paid_by].paidCents += cents;
+      const base = Math.floor(cents / participants.length);
+      const remainder = cents % participants.length;
+      participants.forEach((name, index) => {
+        const shareCents = base + (index < remainder ? 1 : 0);
+        byName[name].shareCents += shareCents;
+        byName[name].details.push({ id: exp.id, description: exp.description || 'Gasto', shareCents, paidBy: exp.paid_by, amountCents: cents });
+      });
+    }
+    return rows.map(row => ({ ...row, balanceCents: row.paidCents - row.shareCents }));
+  };
+
   const isAdmin = currentUser?.role === 'admin'; // La autorización efectiva debe comprobarse mediante RLS.
 
   const myPendingInvitations = events
@@ -2016,7 +2037,6 @@ export default function App() {
     const validMembers = Array.isArray(activeEvent.members) ? activeEvent.members : [];
     const validSpots = Array.isArray(activeEvent.spots) ? activeEvent.spots : [];
     const totalExpenses = validExpenses.reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0);
-    const averagePerMember = validMembers.length ? totalExpenses / validMembers.length : 0;
     const validPhotos = Array.isArray(activeEvent.photos) ? activeEvent.photos : [];
 
     const totalSpent = validExpenses.reduce((acc, c) => acc + Number(c.amount), 0);
@@ -2025,6 +2045,7 @@ export default function App() {
     const pendingSpots = validSpots.filter(s => !s.active_now);
 
     const calculatedDebts = calculateDebts(validMembers, validExpenses);
+    const individualBreakdown = calculateIndividualBreakdown(validMembers, validExpenses);
     const isCreator = activeEvent.creator_id === currentUser.id || (!activeEvent.creator_id && activeEvent.creator_name === currentUser.name);
     const isClosed = activeEvent.status === 'closed';
     const maxVotes = Math.max(0, ...validSpots.map(s => spotVotes.filter(v => v.spot_id === s.id).length));
@@ -2120,9 +2141,9 @@ export default function App() {
               <p className="text-[10px] text-slate-500">{validExpenses.length} gastos registrados</p>
             </div>
             <div className="rounded-2xl border border-indigo-100 bg-white/95 p-3 shadow-sm">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Media por persona</p>
-              <p className="mt-1 text-xl font-black text-indigo-700">{averagePerMember.toFixed(2)} €</p>
-              <p className="text-[10px] text-slate-500">Orientativa sobre todos los miembros</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Reparto individual</p>
+              <p className="mt-1 text-sm font-black text-indigo-700">{validMembers.length} cuentas individuales</p>
+              <p className="text-[10px] text-slate-500">Importes reales según los gastos compartidos</p>
             </div>
             <div className="rounded-2xl border border-amber-100 bg-white/95 p-3 shadow-sm">
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Sitios propuestos</p>
@@ -2150,6 +2171,42 @@ export default function App() {
                     <Users size={13} className="mr-1 text-sky-600" /> Asistentes Totales del Plan ({validMembers.length})
                   </span>
                   <p className="text-xs font-medium text-slate-800">{validMembers.join(', ')}</p>
+                </div>
+
+                <div className="rounded-2xl border border-indigo-200 bg-indigo-50/70 p-4 space-y-3">
+                  <h3 className="text-sm font-black text-indigo-900">Reparto detallado por participante</h3>
+                  <p className="text-[11px] text-slate-600">Cada importe corresponde únicamente a los gastos en los que participa esa persona; no es una media del grupo.</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {individualBreakdown.map(row => (
+                      <div key={row.name} className="rounded-xl border border-indigo-100 bg-white p-3 space-y-2">
+                        <h4 className="text-sm font-black text-slate-800">{row.name}</h4>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          <p>Pagado: <strong>{(row.paidCents / 100).toFixed(2)} €</strong></p>
+                          <p>Le corresponde: <strong>{(row.shareCents / 100).toFixed(2)} €</strong></p>
+                        </div>
+                        <p className={`text-xs font-bold ${row.balanceCents > 0 ? 'text-emerald-700' : row.balanceCents < 0 ? 'text-rose-700' : 'text-slate-600'}`}>
+                          {row.balanceCents > 0 ? `Debe recibir ${(row.balanceCents / 100).toFixed(2)} €` : row.balanceCents < 0 ? `Debe aportar ${(-row.balanceCents / 100).toFixed(2)} €` : 'Saldo equilibrado'}
+                        </p>
+                        <details className="text-xs text-slate-700">
+                          <summary className="cursor-pointer font-bold text-indigo-700">Ver detalle de gastos ({row.details.length})</summary>
+                          <div className="mt-2 space-y-1">
+                            {row.details.length === 0 ? <p>Sin gastos asignados.</p> : row.details.map((item, index) => (
+                              <div key={`${item.id}-${index}`} className="flex justify-between gap-2 border-t border-slate-100 py-1">
+                                <span>{item.description} · pagó {item.paidBy}</span>
+                                <strong className="shrink-0">{(item.shareCents / 100).toFixed(2)} €</strong>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rounded-xl bg-white border border-indigo-100 p-3 space-y-2">
+                    <h4 className="text-xs font-black text-indigo-900">Liquidación: quién paga a quién</h4>
+                    {calculatedDebts.length ? calculatedDebts.map((debt, index) => (
+                      <p key={index} className="text-xs text-slate-800"><strong>{debt.from}</strong> paga <strong>{debt.amount.toFixed(2)} €</strong> a <strong>{debt.to}</strong></p>
+                    )) : <p className="text-xs text-slate-600">No hay transferencias pendientes.</p>}
+                  </div>
                 </div>
 
                 <div className="relative pl-6 space-y-6 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-gradient-to-b before:from-sky-500 before:via-indigo-500 before:to-sky-300">
@@ -2217,6 +2274,7 @@ export default function App() {
                                       <div>
                                         <p className="font-bold text-slate-800">{exp.description}</p>
                                         <p className="text-[10px] text-slate-500">Pagado por {exp.paid_by}</p>
+                                        <p className="text-[10px] text-indigo-700">Repartido entre: {getExpenseParticipants(exp, validMembers).join(', ')}</p>
                                       </div>
                                       <div className="flex items-center space-x-2">
                                         <span className="font-bold text-emerald-700">{Number(exp.amount).toFixed(2)}€</span>
