@@ -3023,8 +3023,8 @@ export default function App() {
 .nosotros-desktop .nosotros-compact-plan-accent { align-self:stretch; width:5px; flex:none; }
 .nosotros-desktop .nosotros-compact-plan-content { display:flex; flex-direction:column; justify-content:center; gap:5px; padding:13px 0; }
 .nosotros-desktop .nosotros-compact-plan-meta { font-size:11px; line-height:1.25; font-weight:700; color:#0369a1; }
-.nosotros-desktop .nosotros-compact-plan-title { font-size:20px; line-height:1.28; font-weight:800; color:#14243b; }
-.nosotros-desktop .nosotros-compact-plan-organizer { display:block; font-size:13px; line-height:1.4; font-weight:800; color:#334155; }
+.nosotros-desktop .nosotros-compact-plan-title { font-size:20px; line-height:1.28; font-weight:800; color:#14243b; text-transform:uppercase; }
+.nosotros-desktop .nosotros-compact-plan-organizer { display:block; font-size:13px; line-height:1.4; font-weight:800; color:#0369a1; }
 .nosotros-desktop .nosotros-compact-plan-description { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; font-size:12px; line-height:1.45; font-weight:400; color:#64748b; }
 .nosotros-desktop .nosotros-compact-plan-action { width:38px; height:38px; }
 @media (max-width:639px) {
@@ -3154,7 +3154,7 @@ export default function App() {
                 <button key={event.id} type="button" onClick={() => setActiveEvent(event)} aria-label={`${event.status === 'closed' ? 'Ver historial de' : 'Abrir plan'} ${event.title}`} className={`desktop-plan-card nosotros-compact-plan group w-full text-left rounded-2xl border shadow-sm ${event.status === 'closed' ? 'bg-amber-50/60 border-amber-200' : 'bg-white border-sky-100'}`}>
                   <span className={`nosotros-compact-plan-accent ${event.status === 'closed' ? 'bg-amber-400' : isPlanPendingClosure(event) ? 'bg-orange-400' : 'bg-sky-500'}`} aria-hidden="true" />
                   <span className="nosotros-compact-plan-content min-w-0 flex-1">
-                    <span className="nosotros-compact-plan-meta">{event.status === 'closed' ? 'Cerrado' : isPlanPendingClosure(event) ? 'Pendiente de cierre' : 'Activo'} <span className="mx-1 text-slate-300">·</span> {formatPlanDateES(event.date)}</span>
+                    <span className="nosotros-compact-plan-meta"><span className={event.status === 'closed' ? 'text-red-600' : isPlanPendingClosure(event) ? 'text-orange-600' : 'text-green-600'}>{event.status === 'closed' ? 'Inactivo' : isPlanPendingClosure(event) ? 'Pendiente de cierre' : 'Activo'}</span> <span className="mx-1 text-slate-300">·</span> {formatPlanDateES(event.date)}</span>
                     <span className="nosotros-compact-plan-title block truncate">{event.title}</span>
                     <span className="nosotros-compact-plan-organizer">Organiza: {event.creator_name || 'Sin indicar'}</span>
                     {event.description?.trim() && <span className="nosotros-compact-plan-description">{event.description}</span>}
@@ -3199,9 +3199,9 @@ export default function App() {
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2 mb-2">
                         <span className="inline-flex items-center text-xs font-semibold text-sky-700 bg-sky-50 px-2.5 py-1 rounded-lg">📅 {formatPlanDateES(event.date)}</span>
-                        <span className="inline-flex items-center text-sm md:text-base font-extrabold text-slate-800 bg-slate-100 px-3 py-1 rounded-lg">Organiza: {event.creator_name}</span>
+                        <span className="inline-flex items-center text-sm md:text-base font-extrabold text-sky-700 bg-sky-50 px-3 py-1 rounded-lg">Organiza: {event.creator_name}</span>
                       </div>
-                      <h3 className="font-bold text-sm text-slate-800 mt-1">{event.title}</h3>
+                      <h3 className="font-extrabold text-lg md:text-xl uppercase text-slate-900 mt-1">{event.title}</h3>
                       {event.description && <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap break-words">{event.description}</p>}
                     </div>
                     {isMember ? (
