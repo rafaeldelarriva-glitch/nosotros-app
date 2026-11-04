@@ -2115,8 +2115,9 @@ export default function App() {
  .nosotros-detail .max-w-md.md\:max-w-6xl { max-width:1260px; }
  .nosotros-detail .rounded-\[2\.5rem\] { border-radius:22px; }
 }
-@media (min-width: 1440px) { .nosotros-desktop .desktop-search .desktop-plan-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media (min-width: 1440px) { .nosotros-desktop .desktop-search .desktop-plan-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (min-width:768px) and (max-width:1050px) { .nosotros-desktop .desktop-search-filters { grid-template-columns:1fr 1fr; } .nosotros-desktop .desktop-search-filters > input { grid-column:1 / -1; } }
+@media (min-width:768px) { .nosotros-desktop .desktop-my-events, .nosotros-desktop .desktop-search { max-width:1080px; margin-left:auto; margin-right:auto; } .nosotros-desktop .desktop-my-events .desktop-plan-grid, .nosotros-desktop .desktop-search .desktop-plan-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 `}</style>
         <aside className="hidden md:flex fixed inset-y-0 left-0 z-40 w-64 flex-col bg-white/95 backdrop-blur-xl border-r border-sky-100 shadow-lg p-5">
           <div className="flex items-center gap-3 pb-7 border-b border-sky-100"><div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 text-white grid place-items-center font-black">N</div><div><p className="font-black text-slate-800">Nosotros</p><p className="text-xs text-slate-500">Organiza tus planes</p></div></div>
@@ -2864,8 +2865,9 @@ export default function App() {
  .nosotros-detail .max-w-md.md\:max-w-6xl { max-width:1260px; }
  .nosotros-detail .rounded-\[2\.5rem\] { border-radius:22px; }
 }
-@media (min-width: 1440px) { .nosotros-desktop .desktop-search .desktop-plan-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media (min-width: 1440px) { .nosotros-desktop .desktop-search .desktop-plan-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (min-width:768px) and (max-width:1050px) { .nosotros-desktop .desktop-search-filters { grid-template-columns:1fr 1fr; } .nosotros-desktop .desktop-search-filters > input { grid-column:1 / -1; } }
+@media (min-width:768px) { .nosotros-desktop .desktop-my-events, .nosotros-desktop .desktop-search { max-width:1080px; margin-left:auto; margin-right:auto; } .nosotros-desktop .desktop-my-events .desktop-plan-grid, .nosotros-desktop .desktop-search .desktop-plan-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 `}</style>
       <aside className="hidden md:flex fixed inset-y-0 left-0 z-50 w-64 flex-col bg-white/95 backdrop-blur-xl border-r border-sky-100 shadow-lg p-5">
         <div className="flex items-center gap-3 pb-7 border-b border-sky-100"><div className="w-10 h-10 bg-gradient-to-tr from-sky-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white font-black shadow-md">N</div><div><p className="font-extrabold text-slate-800">Nosotros</p><p className="text-xs text-slate-500">Planes y experiencias</p></div></div>
@@ -2899,7 +2901,7 @@ export default function App() {
 
       <main className="w-full max-w-md md:max-w-[1480px] mx-auto p-4 md:p-7 space-y-6">
         {activeTab === 'my-events' && (
-          <div className="space-y-6 desktop-my-events">
+          <div className="space-y-6 desktop-my-events w-full max-w-[1080px] mx-auto">
             <div className="desktop-page-heading"><div><p className="desktop-eyebrow">TU AGENDA</p><h1>Mis salidas</h1><p>Organiza, consulta y disfruta tus próximos encuentros.</p></div><span className="desktop-count">{filteredMyEvents.length} planes</span></div>
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,320px)_minmax(0,680px)] gap-4 items-start">
             <button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-bold py-3 px-4 rounded-2xl text-sm shadow-lg flex items-center justify-center space-x-2">
@@ -2981,7 +2983,7 @@ export default function App() {
                 <button type="button" onClick={() => { setMyPlanQuery(''); setMyPlanStatus('active'); setMyPlanFrom(''); setMyPlanTo(''); setMyPlanPage(1); }} className="text-xs font-bold text-sky-700">Limpiar filtros</button>
               </div>
               {visibleMyEvents.length === 0 && <p className="rounded-xl bg-slate-50 p-4 text-xs text-slate-600">No hay planes que coincidan con los filtros.</p>}
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 desktop-plan-grid">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-4 desktop-plan-grid">
               {visibleMyEvents.map(event => (
                 <button key={event.id} type="button" onClick={() => setActiveEvent(event)} className={`desktop-plan-card w-full text-left rounded-2xl border p-5 flex flex-col justify-between items-start gap-5 shadow-sm ${event.status === 'closed' ? 'bg-amber-50/60 border-amber-200' : 'bg-white/90 border-sky-100'}`}>
                   <span className="min-w-0"><span className="block text-[10px] font-bold text-sky-700">{event.status === 'closed' ? '🔒 Cerrado' : isPlanPendingClosure(event) ? '🟠 Pendiente de cierre' : '📅 Activo'} · {formatPlanDateES(event.date)}</span><span className="block font-black text-slate-800 text-sm mt-1 break-words">{event.title}</span></span>
@@ -2995,7 +2997,7 @@ export default function App() {
         )}
 
         {activeTab === 'search' && (
-          <div className="space-y-5 desktop-search">
+          <div className="space-y-5 desktop-search w-full max-w-[1080px] mx-auto">
             <div className="desktop-page-heading"><div><p className="desktop-eyebrow">EXPLORAR</p><h1>Buscar planes</h1><p>Encuentra tus encuentros, invitaciones y próximos planes.</p></div><span className="desktop-count">{filteredSearchEvents.length} planes</span></div>
             <div className="desktop-search-filters">
             <input 
@@ -3014,7 +3016,7 @@ export default function App() {
             <div className="space-y-3">
               <h2 className="text-sm font-black text-slate-800 px-1">Planes en los que participas o estás invitado ({filteredSearchEvents.length})</h2>
               {filteredSearchEvents.length === 0 && <p className="text-xs text-slate-600">No tienes planes ni invitaciones que coincidan con los filtros.</p>}
-              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4 desktop-plan-grid">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 desktop-plan-grid">
               {visibleSearchEvents.map((event) => {
                 const membersList = Array.isArray(event.members) ? event.members : [];
                 const isMember = isEventMember(event) || event.creator_id === currentUser?.id;
