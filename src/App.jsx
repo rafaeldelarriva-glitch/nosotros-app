@@ -2076,7 +2076,7 @@ export default function App() {
  .nosotros-desktop .desktop-plan-card { min-height:0; }
 }
 @media (min-width: 768px) {
- .nosotros-desktop .desktop-notifications { max-width:1050px; margin-inline:auto; }
+ .nosotros-desktop .desktop-notifications { max-width:900px; margin-inline:auto; }
  .nosotros-desktop .desktop-notifications > section { border-radius:18px; padding:22px 25px; }
  .nosotros-desktop .desktop-notifications > section button { border-radius:12px; }
  .nosotros-desktop .desktop-notifications > section input,
@@ -2825,7 +2825,7 @@ export default function App() {
  .nosotros-desktop .desktop-plan-card { min-height:0; }
 }
 @media (min-width: 768px) {
- .nosotros-desktop .desktop-notifications { max-width:1050px; margin-inline:auto; }
+ .nosotros-desktop .desktop-notifications { max-width:900px; margin-inline:auto; }
  .nosotros-desktop .desktop-notifications > section { border-radius:18px; padding:22px 25px; }
  .nosotros-desktop .desktop-notifications > section button { border-radius:12px; }
  .nosotros-desktop .desktop-notifications > section input,
@@ -3046,8 +3046,8 @@ export default function App() {
 
         {/* PESTAÑA PERFIL Y CAMBIO DE CONTRASEÑA PROPIA */}
         {activeTab === 'profile' && (
-          <div className="space-y-4">
-            <div className="bg-white/90 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-4">
+          <div className="space-y-4 w-full max-w-[760px] mx-auto">
+            <div className="bg-white/90 backdrop-blur-2xl p-4 sm:p-6 rounded-[2rem] border border-sky-100 shadow-sm space-y-4">
               <div className="flex items-center gap-3">
                 <button type="button" onClick={() => editAvatarUrl && setViewingPhotoUrl(editAvatarUrl)} aria-label="Ampliar foto de perfil"
                   className="w-16 h-16 rounded-full overflow-hidden border-2 border-sky-200 bg-sky-100 flex items-center justify-center text-sky-700 font-black text-xl shrink-0">
@@ -3114,7 +3114,7 @@ export default function App() {
 
         {/* PESTAÑA APROBACIONES / PANEL DE ADMINISTRADOR Y SOLICITUDES DE PLANES */}
         {activeTab === 'notifications' && (
-          <div className="space-y-4 desktop-notifications">
+          <div className="space-y-4 desktop-notifications w-full max-w-[900px] mx-auto">
             <section className="bg-white/95 p-5 rounded-[2.5rem] border border-sky-200 shadow-sm space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-black text-slate-800 flex items-center gap-2"><Bell size={17} className="text-sky-600" /> Comunicados y avisos</h2>
