@@ -2568,7 +2568,7 @@ export default function App() {
       <main className="w-full max-w-md md:max-w-7xl mx-auto p-4 md:p-7 space-y-6">
         {activeTab === 'my-events' && (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)] gap-6 items-start">
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,320px)_minmax(0,680px)] gap-4 items-start">
             <button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-bold py-3 px-4 rounded-2xl text-sm shadow-lg flex items-center justify-center space-x-2">
               <Plus size={18} /> <span>Crear Nueva Salida / Plan</span>
             </button>
@@ -2628,18 +2628,20 @@ export default function App() {
 
             <section className="space-y-3">
               <h2 className="text-sm font-black text-slate-800 px-1">Mis planes ({filteredMyEvents.length})</h2>
-              <div className="bg-white rounded-2xl border border-sky-100 p-3 space-y-3">
-                <label className="block text-xs font-bold text-slate-700">Buscar por nombre u organizador
+              <div className="bg-white rounded-2xl border border-sky-100 p-3 md:p-4 space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-[minmax(210px,2fr)_minmax(130px,1fr)_minmax(145px,1fr)_minmax(145px,1fr)] gap-3 items-end">
+                <label className="block min-w-0 text-xs font-bold text-slate-700">Buscar por nombre u organizador
                   <input type="search" value={myPlanQuery} onChange={e => { setMyPlanQuery(e.target.value); setMyPlanPage(1); }} placeholder="Buscar mis planes..." className="mt-1 w-full rounded-xl border border-sky-200 p-2.5 text-sm" />
                 </label>
-                <label className="block text-xs font-bold text-slate-700">Estado
+                <label className="block min-w-0 text-xs font-bold text-slate-700">Estado
                   <select value={myPlanStatus} onChange={e => { setMyPlanStatus(e.target.value); setMyPlanPage(1); }} className="mt-1 w-full rounded-xl border border-sky-200 p-2.5 text-sm">
                     <option value="active">Activos</option><option value="closed">Cerrados</option><option value="all">Todos</option>
                   </select>
                 </label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 gap-3 md:col-span-2 xl:col-span-2">
                   <label className="text-xs font-bold text-slate-700">Desde<input type="date" value={myPlanFrom} onChange={e => { setMyPlanFrom(e.target.value); setMyPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
                   <label className="text-xs font-bold text-slate-700">Hasta<input type="date" value={myPlanTo} onChange={e => { setMyPlanTo(e.target.value); setMyPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
+                </div>
                 </div>
                 <button type="button" onClick={() => { setMyPlanQuery(''); setMyPlanStatus('active'); setMyPlanFrom(''); setMyPlanTo(''); setMyPlanPage(1); }} className="text-xs font-bold text-sky-700">Limpiar filtros</button>
               </div>
