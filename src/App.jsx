@@ -160,6 +160,13 @@ export default function App() {
   const [expandedTimelineSpotId, setExpandedTimelineSpotId] = useState(null);
 
   const [events, setEvents] = useState([]);
+  // Identidad de acceso: siempre UUID, nunca nombre visible.
+  const isEventMember = (ev, status = 'member') => Boolean(currentUser?.id &&
+    (ev?.rawEventMembers || ev?.event_members || []).some(m => m.user_id === currentUser.id && m.status === status));
+  const isEventInvited = ev => isEventMember(ev, 'pending_invite');
+  const canViewEvent = ev => Boolean(currentUser?.id &&
+    (ev?.isInvitationPreview === true || ev?.creator_id === currentUser.id || isEventMember(ev)));
+
 
   // Cargar sesión activa al iniciar
   useEffect(() => {
@@ -339,7 +346,11 @@ export default function App() {
 
       if (error) throw error;
 
-      const formattedEvents = (Array.isArray(eventsData) ? eventsData : []).map(ev => {
+      // No incluir planes pendientes de aceptar en la carga completa.
+      const formattedEvents = (Array.isArray(eventsData) ? eventsData : []).filter(ev =>
+        ev.creator_id === currentUser?.id ||
+        (Array.isArray(ev.event_members) && ev.event_members.some(m => m.user_id === currentUser?.id && m.status === 'member'))
+      ).map(ev => {
         const rawMembers = Array.isArray(ev.event_members) ? ev.event_members : [];
         const rawSpots = Array.isArray(ev.spots) ? ev.spots : [];
         rawSpots.sort((a, b) => (a.stop_order || 0) - (b.stop_order || 0));
@@ -358,12 +369,27 @@ export default function App() {
         };
       });
 
-      formattedEvents.sort((a, b) => new Date(b.date) - new Date(a.date));
-      setEvents(formattedEvents);
+      // La RPC solo devuelve metadatos de invitaciones del usuario conectado.
+      const { data: invitationsData, error: invitationsError } = await supabase.rpc('get_my_pending_invitations');
+      if (invitationsError) throw invitationsError;
+      const previews = (Array.isArray(invitationsData) ? invitationsData : []).map(inv => ({
+        id: inv.event_id, title: inv.title, date: inv.event_date,
+        creator_name: inv.creator_name, description: inv.description,
+        status: 'active', isInvitationPreview: true,
+        rawEventMembers: [{ user_id: currentUser.id, status: 'pending_invite' }],
+        members: [], pendingInvitations: [], pendingRequests: [],
+        spots: [], expenses: [], photos: [], comments: []
+      }));
+      // Un plan confirmado prevalece sobre una previsualización obsoleta.
+      const confirmedIds = new Set(formattedEvents.map(ev => ev.id));
+      const allVisibleEvents = [...formattedEvents, ...previews.filter(ev => !confirmedIds.has(ev.id))];
+      allVisibleEvents.sort((a, b) => new Date(b.date) - new Date(a.date));
+      setEvents(allVisibleEvents);
 
       if (activeEvent) {
         const updatedActive = formattedEvents.find(e => e.id === activeEvent.id);
         if (updatedActive) setActiveEvent(updatedActive);
+        else setActiveEvent(null);
       }
     } catch (err) {
       console.error('Error cargando datos:', err.message);
@@ -601,12 +627,14 @@ export default function App() {
   };
 
   const handleApproveEventJoin = async (eventId, userName) => {
+    const candidates = (events.find(e => e.id === eventId)?.rawEventMembers || []).filter(m => m.user_name === userName && m.status === 'pending_request');
+    if (candidates.length !== 1) { alert('Solicitud ambigua: revisa los participantes antes de aprobar.'); return; }
     try {
       const { error } = await supabase
         .from('event_members')
         .update({ status: 'member' })
         .eq('event_id', eventId)
-        .eq('user_name', userName);
+        .eq('user_id', candidates[0].user_id);
 
       if (error) throw error;
 
@@ -647,13 +675,13 @@ export default function App() {
 
   // Gestionar una invitación dirigida al usuario conectado.
   const handleCalendarInvitation = async (eventId, accept) => {
-    if (!currentUser?.name || processingInvitationId) return;
+    if (!currentUser?.id || processingInvitationId) return;
     try {
       setProcessingInvitationId(eventId);
       const query = supabase.from('event_members');
       const { error } = accept
-        ? await query.update({ status: 'member' }).eq('event_id', eventId).eq('user_name', currentUser.name).eq('status', 'pending_invite')
-        : await query.delete().eq('event_id', eventId).eq('user_name', currentUser.name).eq('status', 'pending_invite');
+        ? await query.update({ status: 'member' }).eq('event_id', eventId).eq('user_id', currentUser.id).eq('status', 'pending_invite')
+        : await query.delete().eq('event_id', eventId).eq('user_id', currentUser.id).eq('status', 'pending_invite');
       if (error) throw error;
       await refreshAllData();
     } catch (err) {
@@ -664,9 +692,11 @@ export default function App() {
   };
 
   const handleRejectEventJoin = async (eventId, userName) => {
+    const candidates = (events.find(e => e.id === eventId)?.rawEventMembers || []).filter(m => m.user_name === userName && m.status === 'pending_request');
+    if (candidates.length !== 1) { alert('Solicitud ambigua: revisa los participantes antes de rechazar.'); return; }
     if (!(await confirm(`¿Rechazar la solicitud de ${userName}?`))) return;
     try {
-      await supabase.from('event_members').delete().eq('event_id', eventId).eq('user_name', userName);
+      await supabase.from('event_members').delete().eq('event_id', eventId).eq('user_id', candidates[0].user_id);
       await refreshAllData();
     } catch (err) {
       alert('Error al rechazar usuario: ' + err.message);
@@ -675,8 +705,7 @@ export default function App() {
 
   const handleDeleteEvent = async (eventId, eventTitle) => {
     if (!currentUser || !activeEvent || activeEvent.id !== eventId) return;
-    const authorized = currentUser.role === 'admin' || activeEvent.creator_id === currentUser.id ||
-      (!activeEvent.creator_id && activeEvent.creator_name === currentUser.name);
+    const authorized = currentUser.role === 'admin' || activeEvent.creator_id === currentUser.id;
     if (!authorized) {
       alert('Solo el creador del plan o un administrador puede eliminarlo.');
       return;
@@ -860,15 +889,19 @@ export default function App() {
     try {
       const { data: newEv, error: eventError } = await supabase
         .from('events')
-        .insert([{ title: newTitle.trim(), description: newDescription.trim(), date: newDate, creator_id: currentUser.id, creator_name: currentUser.name, status: 'active' }])
+        .insert([{ title: newTitle.trim(), description: newDescription.trim(), date: newDate, creator_id: currentUser.id, creator_name: currentUser.name, status: 'active', is_private: true }])
         .select()
         .single();
       if (eventError) throw eventError;
       createdEventId = newEv.id;
-      const invitees = [...new Set(newInvitees)].filter(n => n !== currentUser.name);
+      const invitees = [...new Set(newInvitees)].filter(id => id !== currentUser.id);
       const rows = [
-        { event_id: newEv.id, user_name: currentUser.name, status: 'member' },
-        ...invitees.map(user_name => ({ event_id: newEv.id, user_name, status: 'pending_invite' }))
+        { event_id: newEv.id, user_id: currentUser.id, user_name: currentUser.name, status: 'member' },
+        ...invitees.map(user_id => {
+          const person = registeredUsers.find(u => u.id === user_id);
+          if (!person) throw new Error('No se encuentra uno de los invitados seleccionados.');
+          return { event_id: newEv.id, user_id, user_name: person.name, status: 'pending_invite' };
+        })
       ];
       const { error: memberError } = await supabase.from('event_members').insert(rows);
       if (memberError) throw memberError;
@@ -890,12 +923,12 @@ export default function App() {
   // Solo quien organiza puede invitar nuevos participantes, también después de crear el plan.
   const handleInviteToExistingPlan = async (person) => {
     if (!activeEvent || !currentUser || invitingToPlan || activeEvent.status === 'closed') return;
-    if (activeEvent.creator_id !== currentUser.id && !( !activeEvent.creator_id && activeEvent.creator_name === currentUser.name)) return;
-    const already = (activeEvent.rawEventMembers || []).some(m => m.user_name === person.name);
+    if (activeEvent.creator_id !== currentUser.id) return;
+    const already = (activeEvent.rawEventMembers || []).some(m => m.user_id === person.id);
     if (already) { alert('Esta persona ya figura en el plan o tiene una invitación pendiente.'); return; }
     setInvitingToPlan(true);
     try {
-      const { error } = await supabase.from('event_members').insert([{ event_id: activeEvent.id, user_name: person.name, status: 'pending_invite' }]);
+      const { error } = await supabase.from('event_members').insert([{ event_id: activeEvent.id, user_id: person.id, user_name: person.name, status: 'pending_invite' }]);
       if (error) throw error;
       setAdditionalInviteSearch('');
       await refreshAllData();
@@ -906,8 +939,11 @@ export default function App() {
 
   const handleRemoveMember = async (memberName) => {
     if (!(await confirm(`¿Estás seguro de quitar a ${memberName}?`))) return;
-    await supabase.from('event_members').delete().eq('event_id', activeEvent.id).eq('user_name', memberName);
-    if (memberName === currentUser.name) setActiveEvent(null);
+    const matches = (activeEvent.rawEventMembers || []).filter(m => m.status === 'member' && m.user_name === memberName);
+    if (matches.length !== 1) { alert('Hay nombres duplicados: no se puede retirar a esta persona de forma segura desde esta lista.'); return; }
+    const { error } = await supabase.from('event_members').delete().eq('event_id', activeEvent.id).eq('user_id', matches[0].user_id);
+    if (error) { alert('No se pudo quitar al participante: ' + error.message); return; }
+    if (matches[0].user_id === currentUser.id) setActiveEvent(null);
     await refreshAllData();
   };
 
@@ -923,6 +959,7 @@ export default function App() {
       category: 'bar',
       votes: 1,
       suggested_by: currentUser.name,
+      suggested_by_id: currentUser.id,
       active_now: false,
       stop_order: currentSelectedCount + 1
     }]);
@@ -1044,6 +1081,13 @@ export default function App() {
     }
   };
 
+  // Resolver el pagador por su pertenencia al plan, sin confundir homónimos.
+  const resolveExpensePayerId = (payerName) => {
+    const matches = (activeEvent?.rawEventMembers || []).filter(m =>
+      m.status === 'member' && m.user_name === payerName && m.user_id);
+    return matches.length === 1 ? matches[0].user_id : null;
+  };
+
   // Permite corregir quién pagó un gasto ya registrado sin eliminarlo.
   const handleUpdateExpensePayer = async (expense) => {
     if (isUpdatingExpense || !activeEvent?.id) return;
@@ -1051,10 +1095,12 @@ export default function App() {
       alert('Selecciona un pagador que pertenezca al plan.');
       return;
     }
+    const payerId = resolveExpensePayerId(editingExpensePayer);
+    if (!payerId) { alert('El pagador tiene un nombre ambiguo o no está identificado. No se ha cambiado el gasto.'); return; }
     try {
       setIsUpdatingExpense(true);
       const { data, error } = await supabase.from('expenses')
-        .update({ paid_by: editingExpensePayer })
+        .update({ paid_by: editingExpensePayer, paid_by_id: payerId })
         .eq('id', expense.id).eq('event_id', activeEvent.id)
         .select('id, paid_by');
       if (error) throw error;
@@ -1093,6 +1139,9 @@ export default function App() {
       return;
     }
 
+    const payerId = resolveExpensePayerId(expensePaidBy);
+    if (!payerId) { alert('No se puede identificar al pagador de forma única. Revisa los participantes del plan.'); return; }
+
     console.log("💰 ENVIANDO GASTO A SUPABASE:", {
       description: expenseDesc.trim(),
       amount: parseFloat(expenseAmount),
@@ -1105,6 +1154,8 @@ export default function App() {
       description: expenseDesc.trim(),
       amount,
       paid_by: expensePaidBy,
+      paid_by_id: payerId,
+      created_by_id: currentUser.id,
       spot_id: expenseSpotId || null,
       receipt_url: expenseReceiptUrl || null,
       participants: finalParticipants // Array exacto seleccionado por el usuario
@@ -1133,7 +1184,7 @@ export default function App() {
     setIsUploadingPhoto(true);
     const reader = new FileReader();
     reader.onloadend = async () => {
-      await supabase.from('photos').insert([{ event_id: activeEvent.id, url: reader.result, user_name: currentUser.name, spot_id: photoSpotId }]);
+      await supabase.from('photos').insert([{ event_id: activeEvent.id, url: reader.result, user_name: currentUser.name, user_id: currentUser.id, spot_id: photoSpotId }]);
       setIsUploadingPhoto(false);
       setPhotoSpotId('');
       await refreshAllData();
@@ -1144,7 +1195,7 @@ export default function App() {
   const handleAddSpotComment = async (spotId) => {
     const text = spotCommentInputs[spotId];
     if (!text || !text.trim() || !activeEvent) return;
-    await supabase.from('comments').insert([{ event_id: activeEvent.id, spot_id: spotId, user_name: currentUser.name, content: text.trim() }]);
+    await supabase.from('comments').insert([{ event_id: activeEvent.id, spot_id: spotId, user_name: currentUser.name, user_id: currentUser.id, content: text.trim() }]);
     setSpotCommentInputs({ ...spotCommentInputs, [spotId]: '' });
     await refreshAllData();
   };
@@ -1156,13 +1207,13 @@ export default function App() {
   };
 
   const handleRequestJoin = async (eventId) => {
-    await supabase.from('event_members').insert([{ event_id: eventId, user_name: currentUser.name, status: 'pending_request' }]);
+    await supabase.from('event_members').insert([{ event_id: eventId, user_id: currentUser.id, user_name: currentUser.name, status: 'pending_request' }]);
     await refreshAllData();
   };
 
   const handleCancelRequestJoin = async (eventId) => {
     if (!(await confirm('¿Cancelar solicitud?'))) return;
-    await supabase.from('event_members').delete().eq('event_id', eventId).eq('user_name', currentUser.name).eq('status', 'pending_request');
+    await supabase.from('event_members').delete().eq('event_id', eventId).eq('user_id', currentUser.id).eq('status', 'pending_request');
     await refreshAllData();
   };
 
@@ -1244,20 +1295,20 @@ export default function App() {
     return transactions;
   };
 
-  const isAdmin = currentUser?.role === 'admin' || currentUser?.email === 'rafa@ejemplo.com';
+  const isAdmin = currentUser?.role === 'admin'; // La autorización efectiva debe comprobarse mediante RLS.
 
   const myPendingInvitations = events
-    .filter(ev => ev.status !== 'closed' && ev.pendingInvitations?.includes(currentUser?.name))
+    .filter(ev => ev.status !== 'closed' && isEventInvited(ev))
     .map(ev => ({ eventId: ev.id, eventTitle: ev.title, date: ev.date, creatorName: ev.creator_name }));
 
   const allPendingPlanRequests = events.flatMap(ev => {
     const rawMembers = Array.isArray(ev.rawEventMembers) ? ev.rawEventMembers : [];
-    const isUserCreator = ev.creator_name === currentUser?.name;
+    const isUserCreator = ev.creator_id === currentUser?.id;
     
     if (!isUserCreator && !isAdmin) return [];
 
     return rawMembers
-      .filter(m => m.status === 'pending_request' && m.user_name !== ev.creator_name)
+      .filter(m => m.status === 'pending_request' && m.user_id !== ev.creator_id)
       .map(m => ({ eventId: ev.id, eventTitle: ev.title, userName: m.user_name, creatorName: ev.creator_name }));
   });
 
@@ -1742,7 +1793,7 @@ export default function App() {
                   <input type="search" aria-label="Buscar usuarios para invitar" value={additionalInviteSearch} onChange={e => setAdditionalInviteSearch(e.target.value)} placeholder="Buscar por nombre o correo..." className="w-full rounded-xl border border-sky-200 p-3 text-sm" />
                   {additionalInviteSearch.trim() && (
                     <div className="space-y-1 max-h-44 overflow-y-auto">
-                      {registeredUsers.filter(u => u.name && u.id !== currentUser.id && u.is_approved !== false && !u.is_blocked && !(activeEvent.rawEventMembers || []).some(m => m.user_name === u.name) && (u.name.toLocaleLowerCase('es').includes(additionalInviteSearch.trim().toLocaleLowerCase('es')) || (u.email || '').toLocaleLowerCase('es').includes(additionalInviteSearch.trim().toLocaleLowerCase('es')))).slice(0, 15).map(u => (
+                      {registeredUsers.filter(u => u.name && u.id !== currentUser.id && u.is_approved !== false && !u.is_blocked && !(activeEvent.rawEventMembers || []).some(m => m.user_id === u.id) && (u.name.toLocaleLowerCase('es').includes(additionalInviteSearch.trim().toLocaleLowerCase('es')) || (u.email || '').toLocaleLowerCase('es').includes(additionalInviteSearch.trim().toLocaleLowerCase('es')))).slice(0, 15).map(u => (
                         <button type="button" disabled={invitingToPlan} key={u.id} onClick={() => handleInviteToExistingPlan(u)} className="w-full flex justify-between items-center text-left rounded-xl bg-sky-50 p-2 text-xs font-bold text-sky-800 disabled:opacity-50"><span>{u.name}</span><span>+ Invitar</span></button>
                       ))}
                     </div>
@@ -2071,8 +2122,8 @@ export default function App() {
     );
   }
 
-  const validEvents = Array.isArray(events) ? events : [];
-  const myEventsAll = validEvents.filter(e => Array.isArray(e.members) && e.members.includes(currentUser?.name));
+  const validEvents = Array.isArray(events) ? events.filter(canViewEvent) : [];
+  const myEventsAll = validEvents.filter(e => e.creator_id === currentUser?.id || isEventMember(e));
   const activeMyEvents = myEventsAll.filter(e => e.status !== 'closed');
   const closedMyEvents = myEventsAll.filter(e => e.status === 'closed');
   const matchesPlanFilters = (e, query, from, to) => {
@@ -2084,7 +2135,7 @@ export default function App() {
   // Privacidad de la búsqueda: mostrar solo planes a los que pertenece el usuario o a los que ha sido invitado.
   const filteredSearchEvents = validEvents.filter(e =>
     e.status !== 'closed' &&
-    (e.creator_id === currentUser?.id || e.members?.includes(currentUser?.name) || e.pendingInvitations?.includes(currentUser?.name)) &&
+    canViewEvent(e) &&
     matchesPlanFilters(e, searchQuery, searchPlanFrom, searchPlanTo)
   );
   const filteredMyEvents = myEventsAll.filter(e => (myPlanStatus === 'all' || (myPlanStatus === 'closed' ? e.status === 'closed' : e.status !== 'closed')) && matchesPlanFilters(e, myPlanQuery, myPlanFrom, myPlanTo));
@@ -2106,7 +2157,7 @@ export default function App() {
 
   // Calendario personal: únicamente planes activos confirmados o invitaciones recibidas.
   const calendarEvents = validEvents.filter(e => e.status !== 'closed' &&
-    (e.members?.includes(currentUser?.name) || e.pendingInvitations?.includes(currentUser?.name)) &&
+    canViewEvent(e) &&
     /^\d{4}-\d{2}-\d{2}$/.test(String(e.date || '').slice(0, 10)));
   const eventDateKey = e => String(e.date).slice(0, 10);
   const dateKey = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
@@ -2171,7 +2222,7 @@ export default function App() {
                   const key = dateKey(calendarYear, calendarMonth, day);
                   const dayEvents = calendarEvents.filter(e => eventDateKey(e) === key);
                   const confirmed = dayEvents.some(e => e.members?.includes(currentUser?.name));
-                  const invited = dayEvents.some(e => e.pendingInvitations?.includes(currentUser?.name));
+                  const invited = dayEvents.some(e => isEventInvited(e));
                   return <button key={key} type="button" onClick={() => setSelectedCalendarDate(key)} aria-label={`${day} de ${calendarMonth + 1}: ${dayEvents.length} planes`} aria-pressed={selectedCalendarDate === key}
                     className={`h-11 rounded-xl flex flex-col items-center justify-center gap-1 text-xs font-bold border ${selectedCalendarDate === key ? 'ring-2 ring-sky-500 border-sky-400 bg-sky-50' : key === todayKey ? 'border-sky-300 bg-sky-50' : 'border-transparent hover:bg-slate-50'} text-slate-800`}>
                     <span>{day}</span><span className="flex gap-0.5 min-h-[5px]">{confirmed && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}{invited && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}</span>
@@ -2247,8 +2298,8 @@ export default function App() {
               {filteredSearchEvents.length === 0 && <p className="text-xs text-slate-600">No tienes planes ni invitaciones que coincidan con los filtros.</p>}
               {visibleSearchEvents.map((event) => {
                 const membersList = Array.isArray(event.members) ? event.members : [];
-                const isMember = membersList.includes(currentUser?.name) || event.creator_id === currentUser?.id;
-                const isInvited = (event.pendingInvitations || []).includes(currentUser?.name);
+                const isMember = isEventMember(event) || event.creator_id === currentUser?.id;
+                const isInvited = isEventInvited(event);
 
                 return (
                   <article key={event.id} className="bg-white/90 rounded-2xl border border-sky-100 p-4 shadow-sm flex justify-between items-center">
@@ -2518,9 +2569,9 @@ export default function App() {
                   <div className="max-h-40 overflow-y-auto rounded-2xl border border-sky-200 bg-sky-50/50 p-2 space-y-1">
                     {(() => {
                       const query = inviteSearch.trim().toLocaleLowerCase('es');
-                      const matches = registeredUsers.filter(u => u.name && u.id !== currentUser?.id && u.name !== currentUser?.name && u.is_approved !== false && !u.is_blocked && !newInvitees.includes(u.name) && (u.name.toLocaleLowerCase('es').includes(query) || (u.email || '').toLocaleLowerCase('es').includes(query)));
+                      const matches = registeredUsers.filter(u => u.name && u.id !== currentUser?.id && u.is_approved !== false && !u.is_blocked && !newInvitees.includes(u.id) && (u.name.toLocaleLowerCase('es').includes(query) || (u.email || '').toLocaleLowerCase('es').includes(query)));
                       return matches.length ? matches.slice(0, 15).map(u => (
-                        <button key={u.id} type="button" onClick={() => { setNewInvitees(prev => [...new Set([...prev, u.name])]); setInviteSearch(''); }}
+                        <button key={u.id} type="button" onClick={() => { setNewInvitees(prev => [...new Set([...prev, u.id])]); setInviteSearch(''); }}
                           className="w-full flex items-center justify-between gap-2 p-2 rounded-xl hover:bg-white focus:bg-white text-left text-xs text-slate-800">
                           <span className="min-w-0"><span className="font-semibold block truncate">{u.name}</span>{u.email && <span className="block text-slate-500 truncate">{u.email}</span>}</span>
                           <span className="shrink-0 text-sky-700 font-bold flex items-center gap-1"><Plus size={14} /> Añadir</span>
@@ -2533,8 +2584,8 @@ export default function App() {
                   <div className="flex flex-wrap gap-2" aria-label="Personas seleccionadas para invitar">
                     {newInvitees.map(person => (
                       <span key={person} className="inline-flex items-center gap-1 rounded-full bg-sky-100 border border-sky-200 text-sky-900 text-xs font-semibold pl-3 pr-1 py-1">
-                        {person}
-                        <button type="button" aria-label={`Quitar a ${person} de las invitaciones`} onClick={() => setNewInvitees(prev => prev.filter(n => n !== person))}
+                        {registeredUsers.find(u => u.id === person)?.name || 'Usuario'}
+                        <button type="button" aria-label="Quitar persona de las invitaciones" onClick={() => setNewInvitees(prev => prev.filter(n => n !== person))}
                           className="p-1 rounded-full hover:bg-sky-200"><X size={14} /></button>
                       </span>
                     ))}
