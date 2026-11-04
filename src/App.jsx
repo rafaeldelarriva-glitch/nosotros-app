@@ -190,6 +190,13 @@ export default function App() {
 
   // Perfiles, solicitudes y administración
   const [registeredUsers, setRegisteredUsers] = useState([]);
+  const [visibilityDirectory, setVisibilityDirectory] = useState([]);
+  const [visibilityMode, setVisibilityMode] = useState('all');
+  const [visibilityAllowed, setVisibilityAllowed] = useState([]);
+  const [visibilitySearch, setVisibilitySearch] = useState('');
+  const [visibilityPage, setVisibilityPage] = useState(1);
+  const [visibilitySaving, setVisibilitySaving] = useState(false);
+  const [visibilityNotice, setVisibilityNotice] = useState('');
   const [registeredUserQuery, setRegisteredUserQuery] = useState('');
   const [registeredUserPage, setRegisteredUserPage] = useState(1);
   const [passwordRequests, setPasswordRequests] = useState([]);
@@ -661,13 +668,42 @@ export default function App() {
 
   const fetchRegisteredUsers = async () => {
     try {
-      const { data, error } = await supabase.from('profiles').select('id, name, surname, avatar_url, email, role, is_blocked, is_approved');
+      const { data, error } = await supabase.rpc('list_visible_profiles');
       if (error) throw error;
       setRegisteredUsers(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Error cargando perfiles:', err.message);
     }
   };
+
+  const fetchVisibilityCandidates = async () => {
+    const { data, error } = await supabase.rpc('list_visibility_candidates');
+    if (error) { setVisibilityNotice('No se pudo cargar la lista de usuarios: ' + error.message); return; }
+    setVisibilityDirectory(Array.isArray(data) ? data : []);
+  };
+
+  const fetchMyVisibility = async () => {
+    const { data, error } = await supabase.rpc('get_my_visibility');
+    if (error) { setVisibilityNotice('No se pudo cargar la privacidad: ' + error.message); return; }
+    setVisibilityMode(data?.mode === 'selected' ? 'selected' : 'all');
+    setVisibilityAllowed(Array.isArray(data?.allowed) ? data.allowed : []);
+  };
+
+  const saveMyVisibility = async () => {
+    setVisibilitySaving(true);
+    setVisibilityNotice('');
+    try {
+      const { error } = await supabase.rpc('save_my_visibility', {
+        p_mode: visibilityMode, p_allowed: visibilityAllowed
+      });
+      if (error) throw error;
+      setVisibilityNotice('Configuración guardada correctamente.');
+      await fetchRegisteredUsers();
+    } catch (err) { setVisibilityNotice('No se pudo guardar: ' + (err.message || 'Error desconocido')); }
+    finally { setVisibilitySaving(false); }
+  };
+
+  useEffect(() => { if (currentUser?.id) { fetchMyVisibility(); fetchVisibilityCandidates(); } }, [currentUser?.id]);
 
   const fetchPendingRegistrations = async () => {
     try {
@@ -3245,6 +3281,32 @@ export default function App() {
                 </button>
               </form>
             </div>
+            <section className="bg-white rounded-[2rem] border border-sky-100 shadow-sm p-4 sm:p-6 space-y-4">
+              <h3 className="font-extrabold text-slate-800 text-base">👁️ Quién puede verme</h3>
+              <p className="text-sm text-slate-600">Decide quién puede encontrarte e invitarte a nuevos planes. Los administradores siempre pueden verte.</p>
+              <label className="flex items-center gap-3 text-sm font-semibold"><input type="radio" name="visibility-mode" checked={visibilityMode === 'all'} onChange={() => setVisibilityMode('all')} /> Todos los usuarios</label>
+              <label className="flex items-center gap-3 text-sm font-semibold"><input type="radio" name="visibility-mode" checked={visibilityMode === 'selected'} onChange={() => setVisibilityMode('selected')} /> Solo los usuarios que seleccione</label>
+              {visibilityMode === 'selected' && <div className="space-y-3">
+                <input type="search" value={visibilitySearch} onChange={e => {setVisibilitySearch(e.target.value);setVisibilityPage(1);}} placeholder="Buscar por nombre, apellidos o correo" aria-label="Buscar personas autorizadas" className="w-full border border-sky-200 rounded-xl px-3 py-2.5 text-sm" />
+                <p className="text-xs text-sky-700 font-semibold">{visibilityAllowed.length} usuarios autorizados</p>
+                {(() => {
+                  const q = visibilitySearch.trim().toLocaleLowerCase('es');
+                  const matches = visibilityDirectory.filter(u => u.id !== currentUser?.id && u.is_approved && !u.is_blocked && [u.name,u.surname,u.email].join(' ').toLocaleLowerCase('es').includes(q));
+                  const pages = Math.max(1, Math.ceil(matches.length / 5));
+                  const page = Math.min(visibilityPage,pages);
+                  return <>
+                    <div className="space-y-2">{matches.slice((page-1)*5,page*5).map(u => <label key={u.id} className="flex items-center gap-3 rounded-xl bg-sky-50 p-3 text-sm cursor-pointer">
+                      <input type="checkbox" checked={visibilityAllowed.includes(u.id)} onChange={e => setVisibilityAllowed(prev => e.target.checked ? [...new Set([...prev,u.id])] : prev.filter(id => id !== u.id))} />
+                      <span className="min-w-0"><strong className="block truncate">{[u.name,u.surname].filter(Boolean).join(' ')}</strong><span className="text-xs text-slate-500 break-all">{u.email}</span></span>
+                    </label>)}</div>
+                    {!matches.length && <p className="text-sm text-slate-500">No se encontraron usuarios.</p>}
+                    {pages > 1 && <div className="flex items-center justify-between text-sm"><button type="button" disabled={page===1} onClick={()=>setVisibilityPage(p=>Math.max(1,p-1))} className="disabled:opacity-30 text-sky-700">← Anterior</button><span>Página {page} de {pages}</span><button type="button" disabled={page===pages} onClick={()=>setVisibilityPage(p=>Math.min(pages,p+1))} className="disabled:opacity-30 text-sky-700">Siguiente →</button></div>}
+                  </>;
+                })()}
+              </div>}
+              {visibilityNotice && <p role="status" className="text-sm text-sky-800">{visibilityNotice}</p>}
+              <button type="button" disabled={visibilitySaving} onClick={saveMyVisibility} className="w-full rounded-xl bg-sky-600 text-white font-bold p-3 disabled:opacity-50">{visibilitySaving ? 'Guardando…' : 'Guardar visibilidad'}</button>
+            </section>
           </div>
         )}
 
