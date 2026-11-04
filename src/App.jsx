@@ -887,24 +887,50 @@ export default function App() {
     setIsCreatingEvent(true);
     let createdEventId = null;
     try {
-      const { data: newEv, error: eventError } = await supabase
+      // Verificar la identidad real de Supabase antes de insertar.
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError || !authData?.user?.id) {
+        throw new Error('Tu sesión ha caducado. Cierra sesión y vuelve a entrar.');
+      }
+      const authenticatedId = authData.user.id;
+      if (authenticatedId !== currentUser.id) {
+        throw new Error('La sesión y el perfil no coinciden. Cierra sesión y vuelve a entrar.');
+      }
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles').select('name, is_approved, is_blocked')
+        .eq('id', authenticatedId).single();
+      if (profileError || !profile?.is_approved || profile?.is_blocked) {
+        throw new Error('Tu perfil no está autorizado para crear planes.');
+      }
+
+      // Evitar INSERT ... RETURNING: la política SELECT puede exigir una
+      // participación que todavía no se ha insertado en event_members.
+      const eventId = crypto.randomUUID();
+      const { error: eventError } = await supabase
         .from('events')
-        .insert([{ title: newTitle.trim(), description: newDescription.trim(), date: newDate, creator_id: currentUser.id, creator_name: currentUser.name, status: 'active', is_private: true }])
-        .select()
-        .single();
-      if (eventError) throw eventError;
-      createdEventId = newEv.id;
-      const invitees = [...new Set(newInvitees)].filter(id => id !== currentUser.id);
+        .insert([{ id: eventId, title: newTitle.trim(), description: newDescription.trim(),
+          date: newDate, creator_id: authenticatedId, creator_name: profile.name || currentUser.name,
+          status: 'active', is_private: true }]);
+      if (eventError) {
+        console.error('Error INSERT events:', eventError);
+        throw new Error(`Creación del plan: ${eventError.message}${eventError.code ? ` (código ${eventError.code})` : ''}`);
+      }
+      createdEventId = eventId;
+
+      const invitees = [...new Set(newInvitees)].filter(id => id !== authenticatedId);
       const rows = [
-        { event_id: newEv.id, user_id: currentUser.id, user_name: currentUser.name, status: 'member' },
+        { event_id: eventId, user_id: authenticatedId, user_name: profile.name || currentUser.name, status: 'member' },
         ...invitees.map(user_id => {
           const person = registeredUsers.find(u => u.id === user_id);
           if (!person) throw new Error('No se encuentra uno de los invitados seleccionados.');
-          return { event_id: newEv.id, user_id, user_name: person.name, status: 'pending_invite' };
+          return { event_id: eventId, user_id, user_name: person.name, status: 'pending_invite' };
         })
       ];
       const { error: memberError } = await supabase.from('event_members').insert(rows);
-      if (memberError) throw memberError;
+      if (memberError) {
+        console.error('Error INSERT event_members:', memberError);
+        throw new Error(`Participantes/invitaciones: ${memberError.message}${memberError.code ? ` (código ${memberError.code})` : ''}`);
+      }
       setNewTitle('');
       setNewDescription('');
       setNewDate('');
