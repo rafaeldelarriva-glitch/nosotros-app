@@ -1493,7 +1493,7 @@ export default function App() {
         votes: 0,
         suggested_by: currentUser.name,
         suggested_by_id: currentUser.id,
-        active_now: false,
+        active_now: true,
         stop_order: currentSelectedCount + 1
       }]).select('id, event_id, name').single();
       if (error) throw error;
@@ -1541,7 +1541,14 @@ export default function App() {
   };
 
   const handleToggleSelectSpot = async (spotId, currentSelectedState) => {
-    await supabase.from('spots').update({ active_now: !currentSelectedState }).eq('id', spotId);
+    if (!activeEvent || activeEvent.status === 'closed') return;
+    const { data, error } = await supabase.from('spots')
+      .update({ active_now: !currentSelectedState })
+      .eq('id', spotId).eq('event_id', activeEvent.id).select('id');
+    if (error || !data?.length) {
+      alert('No se pudo actualizar la ruta. Comprueba los permisos del participante en Supabase. ' + (error?.message || 'La actualización no afectó a ninguna fila.'));
+      return;
+    }
     await refreshAllData();
   };
 
@@ -1551,8 +1558,18 @@ export default function App() {
     const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
     if (targetIndex < 0 || targetIndex >= selectedSpotsList.length) return;
 
-    await supabase.from('spots').update({ stop_order: targetIndex + 1 }).eq('id', selectedSpotsList[currentIndex].id);
-    await supabase.from('spots').update({ stop_order: currentIndex + 1 }).eq('id', selectedSpotsList[targetIndex].id);
+    if (!activeEvent || activeEvent.status === 'closed') return;
+    const first = await supabase.from('spots').update({ stop_order: targetIndex + 1 })
+      .eq('id', selectedSpotsList[currentIndex].id).eq('event_id', activeEvent.id).select('id');
+    if (first.error || !first.data?.length) {
+      alert('No se pudo reordenar la ruta: ' + (first.error?.message || 'Sin permiso de edición.'));
+      return;
+    }
+    const second = await supabase.from('spots').update({ stop_order: currentIndex + 1 })
+      .eq('id', selectedSpotsList[targetIndex].id).eq('event_id', activeEvent.id).select('id');
+    if (second.error || !second.data?.length) {
+      alert('No se pudo completar el cambio de orden: ' + (second.error?.message || 'Sin permiso de edición.'));
+    }
     await refreshAllData();
   };
 
