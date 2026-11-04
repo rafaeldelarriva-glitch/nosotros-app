@@ -230,7 +230,7 @@ export default function App() {
 
   // Buscador de establecimientos con Photon. Una sola petición por consulta,
   // caché local y debounce para evitar saturar el servicio público.
-  const spotSearchCache = useRef(new Map());
+  const spotSearchCache = useRef(new globalThis.Map());
   useEffect(() => {
     const query = newSpotName.trim();
     if (query.length < 2) {
@@ -281,7 +281,7 @@ export default function App() {
         const normalize = value => String(value || '').normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').trim();
         const queryWords = normalizedQuery.split(/\s+/).filter(Boolean);
-        const unique = new Map();
+        const unique = new globalThis.Map();
 
         features.forEach(feature => {
           const props = feature?.properties || {};
