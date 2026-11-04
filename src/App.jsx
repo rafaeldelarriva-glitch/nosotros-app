@@ -3153,6 +3153,8 @@ export default function App() {
                   <span className="nosotros-compact-plan-content min-w-0 flex-1">
                     <span className="nosotros-compact-plan-meta">{event.status === 'closed' ? 'Cerrado' : isPlanPendingClosure(event) ? 'Pendiente de cierre' : 'Activo'} <span className="mx-1 text-slate-300">·</span> {formatPlanDateES(event.date)}</span>
                     <span className="nosotros-compact-plan-title block truncate">{event.title}</span>
+                    <span className="nosotros-compact-plan-organizer">Organiza: {event.creator_name || 'Sin indicar'}</span>
+                    {event.description?.trim() && <span className="nosotros-compact-plan-description">{event.description}</span>}
                   </span>
                   <span className="nosotros-compact-plan-action shrink-0 inline-flex items-center justify-center rounded-full bg-sky-50 text-sky-700 border border-sky-100 group-hover:bg-sky-100" aria-hidden="true">{event.status === 'closed' ? <Archive size={18} strokeWidth={2.2} /> : <ChevronRight size={22} strokeWidth={2.4} />}</span>
                 </button>
