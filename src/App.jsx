@@ -171,6 +171,7 @@ export default function App() {
   const [searchPlanPage, setSearchPlanPage] = useState(1);
   const [processingInvitationId, setProcessingInvitationId] = useState(null);
   const [activeEvent, setActiveEvent] = useState(null);
+  const [addingSpot, setAddingSpot] = useState(false);
   const [eventSubTab, setEventSubTab] = useState('spots');
 
   // Modales y formularios
@@ -1431,24 +1432,31 @@ export default function App() {
 
   const handleAddSpot = async (e) => {
     if (e) e.preventDefault();
-    if (!newSpotName.trim() || !activeEvent || !currentUser) return;
-
-    const currentSelectedCount = (activeEvent.spots || []).filter(s => s.active_now).length;
-
-    await supabase.from('spots').insert([{
-      event_id: activeEvent.id,
-      name: newSpotName.trim(),
-      category: 'bar',
-      votes: 1,
-      suggested_by: currentUser.name,
-      suggested_by_id: currentUser.id,
-      active_now: false,
-      stop_order: currentSelectedCount + 1
-    }]);
-
-    setNewSpotName('');
-    setOsmSuggestions([]);
-    await refreshAllData();
+    if (!newSpotName.trim() || !activeEvent || !currentUser || addingSpot) return;
+    setAddingSpot(true);
+    try {
+      const currentSelectedCount = (activeEvent.spots || []).filter(s => s.active_now).length;
+      const { data: savedSpot, error } = await supabase.from('spots').insert([{
+        event_id: activeEvent.id,
+        name: newSpotName.trim(),
+        category: 'bar',
+        votes: 0,
+        suggested_by: currentUser.name,
+        suggested_by_id: currentUser.id,
+        active_now: false,
+        stop_order: currentSelectedCount + 1
+      }]).select('id, event_id, name').single();
+      if (error) throw error;
+      if (!savedSpot?.id) throw new Error('No se ha recibido confirmación de la propuesta guardada.');
+      setNewSpotName('');
+      setOsmSuggestions([]);
+      await refreshAllData();
+    } catch (err) {
+      console.error('Error guardando lugar o evento:', err);
+      alert('No se pudo guardar la propuesta: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setAddingSpot(false);
+    }
   };
 
   const handleVoteSpot = async (spotId) => {
@@ -1458,12 +1466,23 @@ export default function App() {
     const alreadyVoted = spotVotes.some(v => v.spot_id === spotId && v.user_id === currentUser.id);
     setVotingSpotId(spotId);
     try {
+      // Confirmar que el lugar existe en la base de datos y pertenece al plan.
+      // Evita registrar votos sobre referencias obsoletas en pantalla.
+      const { data: persistedSpot, error: lookupError } = await supabase.from('spots')
+        .select('id, event_id').eq('id', spotId).eq('event_id', activeEvent.id).maybeSingle();
+      if (lookupError) throw lookupError;
+      if (!persistedSpot) {
+        await refreshAllData();
+        alert('Esta propuesta ya no está disponible en el plan. Se ha actualizado la lista; vuelve a añadirla si es necesario.');
+        return;
+      }
       const result = alreadyVoted
         ? await supabase.from('spot_votes').delete().eq('spot_id', spotId).eq('user_id', currentUser.id)
         : await supabase.from('spot_votes').insert({ spot_id: spotId, user_id: currentUser.id });
       if (result.error) throw result.error;
       await refreshAllData();
     } catch (err) {
+      console.error('Error al votar:', err);
       alert('No se pudo ' + (alreadyVoted ? 'retirar' : 'registrar') + ' el voto: ' + (err.message || 'Error desconocido'));
     } finally {
       setVotingSpotId(null);
@@ -2564,7 +2583,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <form onSubmit={handleAddSpot} className="space-y-2.5 relative">
+                    <form onSubmit={handleAddSpot} className="space-y-2.5 relative" aria-busy={addingSpot}>
                       <div className="relative">
                         <input 
                           type="text" 
