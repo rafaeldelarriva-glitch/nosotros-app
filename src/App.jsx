@@ -154,6 +154,7 @@ export default function App() {
 
   // Módulo de notificaciones: cada destinatario tiene su propio estado de lectura.
   const [notifications, setNotifications] = useState([]);
+  const [notificationPage, setNotificationPage] = useState(1);
   const [notificationTemplates, setNotificationTemplates] = useState([]);
   const [adminNotificationHistory, setAdminNotificationHistory] = useState([]);
   const [notificationTitle, setNotificationTitle] = useState('');
@@ -270,7 +271,7 @@ export default function App() {
     }
   }, [activeEvent?.id]);
 
-  // Buscador de establecimientos con Photon. Una sola petición por consulta,
+  // Buscador de lugares y eventos con Photon. Una sola petición por consulta,
   // caché local y debounce para evitar saturar el servicio público.
   const spotSearchCache = useRef(new globalThis.Map());
   useEffect(() => {
@@ -364,7 +365,7 @@ export default function App() {
         }
       } catch (error) {
         if (error.name !== 'AbortError' && !cancelled) {
-          console.error('Error buscando establecimientos en Photon:', error);
+          console.error('Error buscando lugares y eventos en Photon:', error);
           setOsmSuggestions([]);
           setSpotSearchError(error.message || 'No se ha podido consultar el buscador. Inténtalo de nuevo.');
         }
@@ -2207,7 +2208,7 @@ export default function App() {
               <p className="text-[10px] text-slate-500">Importes reales según los gastos compartidos</p>
             </div>
             <div className="rounded-2xl border border-amber-100 bg-white/95 p-3 shadow-sm">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Sitios propuestos</p>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Lugares y eventos propuestos</p>
               <p className="mt-1 text-xl font-black text-amber-700">{validSpots.length}</p>
               <p className="text-[10px] text-slate-500">En la ruta del plan</p>
             </div>
@@ -2484,8 +2485,8 @@ export default function App() {
                   </div>
 
                   {rankingSpots.length > 0 && (
-                    <section className="rounded-2xl border border-amber-200 bg-amber-50 p-3 space-y-2" aria-label="Ranking de establecimientos">
-                      <h4 className="font-black text-sm text-amber-900 flex items-center gap-2"><Trophy size={16} /> Ranking de establecimientos</h4>
+                    <section className="rounded-2xl border border-amber-200 bg-amber-50 p-3 space-y-2" aria-label="Ranking de lugares y eventos">
+                      <h4 className="font-black text-sm text-amber-900 flex items-center gap-2"><Trophy size={16} /> Ranking de lugares y eventos</h4>
                       {rankingSpots.slice(0, 3).map((spot, index) => (
                         <div key={spot.id} className="flex items-center justify-between gap-3 text-xs text-slate-800">
                           <span className="font-semibold truncate">{index + 1}. {spot.name}</span>
@@ -2768,7 +2769,7 @@ export default function App() {
     matchesPlanFilters(e, searchQuery, searchPlanFrom, searchPlanTo)
   );
   const filteredMyEvents = myEventsAll.filter(e => (myPlanStatus === 'all' || (myPlanStatus === 'closed' ? e.status === 'closed' : e.status !== 'closed')) && matchesPlanFilters(e, myPlanQuery, myPlanFrom, myPlanTo));
-  const PLAN_PAGE_SIZE = 6;
+  const PLAN_PAGE_SIZE = 5;
   const paginatePlans = (items, page) => items.slice((page - 1) * PLAN_PAGE_SIZE, page * PLAN_PAGE_SIZE);
   const myPlanPages = Math.max(1, Math.ceil(filteredMyEvents.length / PLAN_PAGE_SIZE));
   const searchPlanPages = Math.max(1, Math.ceil(filteredSearchEvents.length / PLAN_PAGE_SIZE));
@@ -2776,8 +2777,11 @@ export default function App() {
   const currentSearchPage = Math.min(searchPlanPage, searchPlanPages);
   const visibleMyEvents = paginatePlans(filteredMyEvents, currentMyPage);
   const visibleSearchEvents = paginatePlans(filteredSearchEvents, currentSearchPage);
-  const renderPlanPagination = (page, pages, onPageChange) => pages <= 1 ? null : (
-    <nav aria-label="Paginación de planes" className="flex items-center justify-between gap-2 pt-2">
+  const notificationPages = Math.max(1, Math.ceil(notifications.length / PLAN_PAGE_SIZE));
+  const currentNotificationPage = Math.min(notificationPage, notificationPages);
+  const visibleNotifications = paginatePlans(notifications, currentNotificationPage);
+  const renderPlanPagination = (page, pages, onPageChange, label = "elementos") => pages <= 1 ? null : (
+    <nav aria-label={`Paginación de ${label}`} className="flex items-center justify-between gap-2 pt-2">
       <button type="button" disabled={page <= 1} onClick={() => onPageChange(page - 1)} className="rounded-xl border border-sky-200 px-3 py-2 text-xs font-bold text-sky-700 disabled:opacity-40">← Anterior</button>
       <span className="text-xs font-bold text-slate-600">Página {page} de {pages}</span>
       <button type="button" disabled={page >= pages} onClick={() => onPageChange(page + 1)} className="rounded-xl border border-sky-200 px-3 py-2 text-xs font-bold text-sky-700 disabled:opacity-40">Siguiente →</button>
@@ -3124,7 +3128,7 @@ export default function App() {
               </div>
               {notifications.length === 0 ? <p className="text-xs text-slate-500">No tienes comunicados nuevos.</p> : (
                 <div className="space-y-2">
-                  {notifications.map(item => {
+                  {visibleNotifications.map(item => {
                     const notice = item.notifications;
                     return (
                       <button key={item.id} type="button" onClick={() => handleOpenNotification(item)}
@@ -3142,6 +3146,7 @@ export default function App() {
                       </button>
                     );
                   })}
+                  {renderPlanPagination(currentNotificationPage, notificationPages, setNotificationPage, 'comunicados')}
                 </div>
               )}
             </section>
