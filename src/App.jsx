@@ -248,6 +248,8 @@ export default function App() {
   const [mapsShareUrl, setMapsShareUrl] = useState('');
   const [mapsAddress, setMapsAddress] = useState('');
   const [mapsLookupMessage, setMapsLookupMessage] = useState('');
+  const [googlePlacesResults, setGooglePlacesResults] = useState([]);
+  const [isSearchingGooglePlaces, setIsSearchingGooglePlaces] = useState(false);
   const [osmSuggestions, setOsmSuggestions] = useState([]);
   const [spotSearchError, setSpotSearchError] = useState('');
   const [isSearchingOsm, setIsSearchingOsm] = useState(false);
@@ -1459,7 +1461,7 @@ export default function App() {
       if (error) throw error;
       if (!savedSpot?.id) throw new Error('No se ha recibido confirmación de la propuesta guardada.');
       setNewSpotName('');
-      setMapsShareUrl(''); setMapsAddress(''); setMapsLookupMessage('');
+      setMapsShareUrl(''); setMapsAddress(''); setMapsLookupMessage(''); setGooglePlacesResults([]);
       setOsmSuggestions([]);
       await refreshAllData();
     } catch (err) {
@@ -1557,18 +1559,65 @@ export default function App() {
     const url = URL.createObjectURL(new Blob([ics], {type:'text/calendar;charset=utf-8'}));
     const a = document.createElement('a'); a.href = url; a.download = `NOSOTROS-${date}.ics`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 3000);
   };
-  // Un enlace corto de Google Maps NO contiene necesariamente los datos del lugar.
-  // Sin API de Places en servidor, evitamos inventar nombre o dirección.
+  // La función desplegada acepta búsquedas por texto, no enlaces cortos de Maps.
+  // Evitamos enviar enlaces acortados como búsquedas y mostrar resultados falsos.
   const handleMapsShareInput = (value) => {
-    setMapsShareUrl(value); setMapsLookupMessage('');
+    setMapsShareUrl(value);
+    setGooglePlacesResults([]);
+    setMapsLookupMessage('');
     if (!value.trim()) return;
     try {
       const url = new URL(value.trim());
-      if (url.protocol !== 'https:' || !/(^|\.)(google\.[a-z.]+|googleusercontent\.com|goo\.gl)$/.test(url.hostname) && url.hostname !== 'maps.app.goo.gl') throw new Error('Enlace no reconocido');
+      if (url.protocol !== 'https:' || !(/(^|\.)(google\.[a-z.]+|googleusercontent\.com|goo\.gl)$/.test(url.hostname) || url.hostname === 'maps.app.goo.gl')) {
+        throw new Error('Enlace no reconocido');
+      }
       const q = url.searchParams.get('q') || url.searchParams.get('query');
-      if (q && !/^[-+]?\d+(\.\d+)?,[-+]?\d+(\.\d+)?$/.test(q)) setNewSpotName(decodeURIComponent(q));
-      setMapsLookupMessage('Enlace válido. Comprueba el nombre y escribe la dirección; la extracción automática requiere un servicio Google Places configurado.');
+      if (q && !/^[-+]?\d+(\.\d+)?,[-+]?\d+(\.\d+)?$/.test(q)) {
+        setNewSpotName(q);
+        setMapsLookupMessage('Nombre detectado en el enlace. Pulsa «Buscar con Google Places» para verificarlo.');
+      } else {
+        setMapsLookupMessage('Enlace guardado. Si es corto, escribe el nombre del establecimiento arriba y pulsa «Buscar con Google Places».');
+      }
     } catch { setMapsLookupMessage('Introduce un enlace HTTPS de Google Maps válido.'); }
+  };
+
+  const handleSearchGooglePlaces = async () => {
+    const query = newSpotName.trim();
+    if (query.length < 3) {
+      setMapsLookupMessage('Escribe al menos 3 caracteres del nombre del establecimiento.');
+      return;
+    }
+    setIsSearchingGooglePlaces(true);
+    setGooglePlacesResults([]);
+    setMapsLookupMessage('Buscando en Google Places…');
+    try {
+      const { data, error } = await supabase.functions.invoke('buscar-establecimiento', {
+        body: { query }
+      });
+      if (error) {
+        let detail = error.message;
+        try { const payload = await error.context?.json(); detail = payload?.error || detail; } catch {}
+        throw new Error(detail || 'No se pudo consultar Google Places');
+      }
+      if (data?.error) throw new Error(data.error);
+      const results = Array.isArray(data?.places) ? data.places : [];
+      setGooglePlacesResults(results);
+      setMapsLookupMessage(results.length
+        ? 'Selecciona el establecimiento correcto para completar nombre y dirección.'
+        : 'Google no ha encontrado coincidencias. Puedes introducir los datos manualmente.');
+    } catch (err) {
+      setMapsLookupMessage('No se pudo consultar Google Places: ' + (err?.message || 'Error desconocido'));
+    } finally {
+      setIsSearchingGooglePlaces(false);
+    }
+  };
+
+  const handleSelectGooglePlace = (place) => {
+    setNewSpotName(place.name || '');
+    setMapsAddress(place.address || '');
+    if (place.mapsUrl) setMapsShareUrl(place.mapsUrl);
+    setGooglePlacesResults([]);
+    setMapsLookupMessage('✓ Establecimiento seleccionado. Revisa los datos y pulsa «Añadir a la ruta».');
   };
   const handleShareLiveLocation = () => {
     if (!activeEvent.live_lat || !activeEvent.live_lon) return;
@@ -2683,8 +2732,10 @@ export default function App() {
                       <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 space-y-2">
                         <label className="text-xs font-bold text-slate-800 flex gap-1 items-center"><Info size={14}/> Pegar enlace de Google Maps</label>
                         <input type="url" value={mapsShareUrl} onChange={e => handleMapsShareInput(e.target.value)} placeholder="https://share.google/..." className="w-full rounded-lg border border-sky-200 p-2 text-xs" />
-                        <p className="text-[11px] text-slate-600">Abre el establecimiento en Google Maps → Compartir → Copiar enlace. Pégalo aquí. Si no se detecta el nombre, escríbelo arriba. Añade su dirección para identificarlo bien.</p>
+                        <p className="text-[11px] text-slate-600">Google Maps → Compartir → Copiar enlace → Pegar aquí. Para enlaces cortos, escribe también el nombre del establecimiento en el campo superior.</p>
+                        <button type="button" disabled={isSearchingGooglePlaces || newSpotName.trim().length < 3} onClick={handleSearchGooglePlaces} className="w-full rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{isSearchingGooglePlaces ? 'Buscando en Google…' : '🔎 Buscar con Google Places'}</button>
                         {mapsLookupMessage && <p className="text-[11px] text-amber-800" role="status">{mapsLookupMessage}</p>}
+                        {googlePlacesResults.length > 0 && <div className="space-y-1" aria-label="Resultados de Google Places">{googlePlacesResults.map(place => <button key={place.id} type="button" onClick={() => handleSelectGooglePlace(place)} className="w-full rounded-lg border border-sky-200 bg-white p-2 text-left text-xs hover:bg-sky-100"><strong className="block">{place.name}</strong><span className="text-slate-600">{place.address}</span></button>)}</div>}
                         <input type="text" value={mapsAddress} onChange={e => setMapsAddress(e.target.value)} placeholder="Dirección del establecimiento (opcional)" className="w-full rounded-lg border border-sky-200 p-2 text-xs" />
                       </div>
                       <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow">
