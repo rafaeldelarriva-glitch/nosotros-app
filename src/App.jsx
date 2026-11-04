@@ -5,6 +5,43 @@ import {
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
+// Fechas de calendario en España sin desplazamientos de huso horario.
+const formatPlanDateES = (value) => {
+  const raw = String(value ?? '').trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (match) return `${match[3]}-${match[2]}-${match[1]}`;
+  return raw || 'Sin fecha';
+};
+const formatDateTimeES = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat('es-ES', {
+    timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23'
+  }).format(date).replace(',', ' · ');
+};
+const formatDateES = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat('es-ES', {
+    timeZone: 'Europe/Madrid', day: '2-digit', month: '2-digit', year: 'numeric'
+  }).format(date).replaceAll('/', '-');
+};
+const isPlanPendingClosure = (event) => {
+  if (!event || event.status === 'closed' || event.isInvitationPreview) return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(event.date ?? '').slice(0, 10));
+  if (!match) return false;
+  const todayParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date());
+  const part = type => todayParts.find(x => x.type === type)?.value;
+  const todayUTC = Date.UTC(Number(part('year')), Number(part('month')) - 1, Number(part('day')));
+  const planUTC = Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return (todayUTC - planUTC) / 86400000 > 2;
+};
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -392,6 +429,14 @@ export default function App() {
   }, [currentUser?.id]);
 
   const refreshAllData = async () => {
+    // El servidor crea como máximo un recordatorio por plan vencido y creador.
+    // Requiere instalar la función SQL entregada con esta versión.
+    if (currentUser?.id) {
+      const { error: reminderError } = await supabase.rpc('generate_my_plan_closure_reminders');
+      if (reminderError && reminderError.code !== 'PGRST202' && reminderError.code !== '42883') {
+        console.warn('Avisos de cierre pendientes:', reminderError.message);
+      }
+    }
     await Promise.all([
       fetchAppData(),
       fetchRegisteredUsers(),
@@ -1942,7 +1987,7 @@ export default function App() {
               {isClosed ? (
                 <span className="text-[9px] font-bold bg-amber-500 text-white px-2.5 py-0.5 rounded-full shadow">🔒 Salida Cerrada</span>
               ) : (
-                <span className="text-[9px] font-bold bg-emerald-600 text-white px-2.5 py-0.5 rounded-full shadow">🟢 Plan Activo</span>
+                <span className={`text-[9px] font-bold text-white px-2.5 py-0.5 rounded-full shadow ${isPlanPendingClosure(activeEvent) ? 'bg-amber-600' : 'bg-emerald-600'}`}>{isPlanPendingClosure(activeEvent) ? '🟠 Pendiente de cierre' : '🟢 Plan Activo'}</span>
               )}
             </div>
 
@@ -1951,7 +1996,7 @@ export default function App() {
                 <h1 className="text-xl font-black text-slate-900 tracking-tight">{activeEvent.title}</h1>
                 {activeEvent.description && <p className="text-xs text-slate-700 mt-2 whitespace-pre-wrap break-words">{activeEvent.description}</p>}
                 <p className="text-xs text-slate-600 font-medium flex items-center mt-0.5">
-                  <Calendar size={13} className="mr-1 text-sky-600" /> Fecha del plan: {activeEvent.date}
+                  <Calendar size={13} className="mr-1 text-sky-600" /> Fecha del plan: {formatPlanDateES(activeEvent.date)}
                 </p>
               </div>
 
@@ -1990,7 +2035,7 @@ export default function App() {
           </section>
           {isCreator && !isClosed && (
             <button onClick={handleCloseEvent} className="w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white font-bold py-3 px-4 rounded-2xl text-xs shadow-lg flex items-center justify-center space-x-2 border border-amber-500/30">
-              <Flag size={16} /> <span>Cerrar Salida y Generar Línea Temporal</span>
+              <Flag size={16} /> <span>{isPlanPendingClosure(activeEvent) ? 'Cerrar plan pendiente y generar historial' : 'Cerrar Salida y Generar Línea Temporal'}</span>
             </button>
           )}
 
@@ -2238,13 +2283,13 @@ export default function App() {
               )}
 
               {eventSubTab === 'expenses' && (
-                <div className="space-y-5">
-                  <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm text-center">
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 xl:gap-5 items-start">
+                  <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm text-center xl:self-stretch xl:flex xl:flex-col xl:justify-center">
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">TOTAL GASTADO POR EL GRUPO</p>
                     <p className="text-2xl font-black text-emerald-600 mt-0.5">{totalSpent.toFixed(2)}€</p>
                   </div>
 
-                  <div className="bg-gradient-to-br from-slate-900 to-sky-950 text-white p-5 rounded-3xl shadow-lg space-y-3 border border-sky-400/20">
+                  <div className="bg-gradient-to-br from-slate-900 to-sky-950 text-white p-5 rounded-3xl shadow-lg space-y-3 border border-sky-400/20 xl:self-stretch">
                     <h3 className="text-xs font-black uppercase tracking-wider text-sky-300 flex items-center">
                       <DollarSign size={16} className="mr-1 text-emerald-400" /> Reparto y Liquidación Inteligente de Deudas
                     </h3>
@@ -2269,10 +2314,10 @@ export default function App() {
                   </div>
 
                   {validExpenses.length > 0 && (
-                    <div className="space-y-2">
+                    <div className="space-y-2 min-w-0">
                       <h4 className="text-xs font-black uppercase text-slate-700">Gastos Registrados ({validExpenses.length})</h4>
                       {validExpenses.map(exp => (
-                        <div key={exp.id} className="bg-white/90 p-3.5 rounded-2xl border border-sky-100 flex flex-wrap justify-between items-center text-xs">
+                        <div key={exp.id} className="bg-white/90 p-3.5 rounded-2xl border border-sky-100 flex flex-wrap justify-between items-center gap-2 text-xs">
                           <div>
                             <p className="font-bold text-slate-800">{exp.description}</p>
                             <p className="text-[10px] text-sky-700 font-semibold flex items-center gap-1 mt-1">
@@ -2303,7 +2348,7 @@ export default function App() {
                             </button>
                           </div>
                           {editingExpenseId === exp.id && (
-                            <div className="w-full mt-2 pt-2 border-t border-sky-100 grid grid-cols-1 gap-2">
+                            <div className="w-full mt-2 pt-2 border-t border-sky-100 grid grid-cols-1 sm:grid-cols-2 gap-2">
                               <label className="text-xs font-bold text-slate-700" htmlFor={`amount-${exp.id}`}>Importe (€)
                                 <input id={`amount-${exp.id}`} type="number" min="0.01" step="0.01" inputMode="decimal"
                                   value={editingExpenseAmount} onChange={e => setEditingExpenseAmount(e.target.value)}
@@ -2315,7 +2360,7 @@ export default function App() {
                                 {!validMembers.includes(editingExpensePayer) && <option value={editingExpensePayer}>{editingExpensePayer || 'Selecciona'}</option>}
                                 {validMembers.map(member => <option key={member} value={member}>{member}</option>)}
                               </select>
-                              <div className="flex gap-2">
+                              <div className="flex gap-2 sm:col-span-2">
                                 <button type="button" disabled={isUpdatingExpense || !validMembers.includes(editingExpensePayer)}
                                   onClick={() => handleUpdateExpensePayer(exp)} className="flex-1 rounded-xl bg-emerald-600 px-3 py-2 text-white text-xs font-bold disabled:opacity-50">{isUpdatingExpense ? 'Guardando...' : 'Guardar cambios'}</button>
                                 <button type="button" onClick={() => { setEditingExpenseId(null); setEditingExpenseAmount(''); }} className="text-xs text-slate-600 px-2">Cancelar</button>
@@ -2327,7 +2372,7 @@ export default function App() {
                     </div>
                   )}
 
-                  <form onSubmit={handleAddExpense} className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
+                  <form onSubmit={handleAddExpense} className="bg-white/90 backdrop-blur-2xl p-4 xl:p-5 rounded-3xl border border-sky-100 shadow-sm space-y-3 min-w-0">
                     <h4 className="text-xs font-bold text-slate-800">Añadir nuevo gasto con selección de participantes</h4>
                     <label className="sr-only" htmlFor="expense-description">Concepto del gasto</label>
                     <input id="expense-description" type="text" placeholder="Concepto (ej. Cervezas)..." value={expenseDesc} onChange={(e) => setExpenseDesc(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required />
@@ -2388,7 +2433,7 @@ export default function App() {
 
               {eventSubTab === 'gallery' && (
                 <div className="space-y-5">
-                  <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3">
+                  <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3 lg:max-w-2xl">
                     <h3 className="text-xs font-bold text-slate-800">Subir nueva foto al plan</h3>
                     <select value={photoSpotId} onChange={(e) => setPhotoSpotId(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-3.5 py-2.5 text-xs text-slate-800 focus:outline-none" required>
                       <option value="">Selecciona el sitio de la foto...</option>
@@ -2407,10 +2452,10 @@ export default function App() {
                   {validPhotos.length > 0 && (
                     <div className="space-y-2">
                       <h4 className="text-xs font-black uppercase text-slate-700">Fotos del Plan ({validPhotos.length})</h4>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-3 xl:gap-4">
                         {validPhotos.map(p => (
                           <div key={p.id} className="bg-white/90 p-2 rounded-2xl border border-sky-100 shadow-sm space-y-1">
-                            <div className="relative w-full h-32 rounded-xl overflow-hidden bg-sky-50">
+                            <div className="relative w-full h-32 sm:h-40 xl:h-44 rounded-xl overflow-hidden bg-sky-50">
                               <button type="button" onClick={() => setViewingPhotoUrl(p.url)} className="w-full h-full" aria-label="Ampliar fotografía">
                                 <img src={p.url} alt="Foto" className="w-full h-full object-cover" />
                               </button>
@@ -2581,7 +2626,7 @@ export default function App() {
               {calendarExpanded && <div id="personal-calendar-content" className="space-y-3">
               <div className="flex justify-end"><button type="button" onClick={() => { const d = new Date(); setCalendarYear(d.getFullYear()); setCalendarMonth(d.getMonth()); setSelectedCalendarDate(todayKey); }} className="text-xs font-bold text-sky-700 px-2 py-1 rounded-lg bg-sky-50">Hoy</button></div>
               {upcomingEvent && <button type="button" onClick={() => setActiveEvent(upcomingEvent)} className="w-full text-left rounded-xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs text-emerald-900">
-                <span className="font-black">Próximo encuentro:</span> {upcomingEvent.title} · {eventDateKey(upcomingEvent)} →
+                <span className="font-black">Próximo encuentro:</span> {upcomingEvent.title} · {formatPlanDateES(eventDateKey(upcomingEvent))} →
               </button>}
               <div className="flex justify-between items-center">
                 <button type="button" onClick={() => changeCalendarMonth(-1)} aria-label="Mes anterior" className="p-2 rounded-xl bg-sky-50 text-sky-700"><ArrowLeft size={18} /></button>
@@ -2598,24 +2643,26 @@ export default function App() {
                   const dayEvents = calendarEvents.filter(e => eventDateKey(e) === key);
                   const confirmed = dayEvents.some(e => e.members?.includes(currentUser?.name));
                   const invited = dayEvents.some(e => isEventInvited(e));
+                  const pendingClosure = dayEvents.some(e => isPlanPendingClosure(e));
                   return <button key={key} type="button" onClick={() => setSelectedCalendarDate(key)} aria-label={`${day} de ${calendarMonth + 1}: ${dayEvents.length} planes`} aria-pressed={selectedCalendarDate === key}
-                    className={`h-11 rounded-xl flex flex-col items-center justify-center gap-1 text-xs font-bold border ${selectedCalendarDate === key ? 'ring-2 ring-sky-500 border-sky-400 bg-sky-50' : key === todayKey ? 'border-sky-300 bg-sky-50' : 'border-transparent hover:bg-slate-50'} text-slate-800`}>
-                    <span>{day}</span><span className="flex gap-0.5 min-h-[5px]">{confirmed && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}{invited && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}</span>
+                    className={`h-11 rounded-xl flex flex-col items-center justify-center gap-1 text-xs font-bold border ${selectedCalendarDate === key ? 'ring-2 ring-sky-500 border-sky-400 bg-sky-50' : key === todayKey ? 'border-sky-300 bg-sky-50' : pendingClosure ? 'border-orange-300 bg-orange-50 hover:bg-orange-100' : 'border-transparent hover:bg-slate-50'} text-slate-800`}>
+                    <span>{day}</span><span className="flex gap-0.5 min-h-[5px]">{pendingClosure && <span className="w-1.5 h-1.5 rounded-full bg-orange-600" />}{confirmed && !pendingClosure && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />}{invited && <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />}</span>
                   </button>;
                 })}
               </div>
               <div className="flex flex-wrap gap-3 text-[11px] text-slate-600 font-semibold">
                 <span className="flex items-center gap-1"><span className="w-2 h-2 bg-emerald-500 rounded-full" /> Confirmado</span>
                 <span className="flex items-center gap-1"><span className="w-2 h-2 bg-amber-500 rounded-full" /> Invitación pendiente</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 bg-orange-600 rounded-full" /> Pendiente de cierre</span>
               </div>
               {selectedCalendarDate && <div className="border-t border-sky-100 pt-3 space-y-2">
-                <h3 className="text-xs font-black text-slate-700">{selectedCalendarDate}</h3>
+                <h3 className="text-xs font-black text-slate-700">{formatPlanDateES(selectedCalendarDate)}</h3>
                 {selectedDayEvents.length === 0 ? <div className="space-y-2"><p className="text-xs text-slate-500">No tienes planes para este día.</p>
                   <button type="button" onClick={() => { setNewDate(selectedCalendarDate); setShowCreateModal(true); }} className="text-xs font-bold bg-sky-600 text-white px-3 py-2 rounded-xl">+ Crear plan este día</button></div> :
                   selectedDayEvents.map(event => {
                     const isConfirmed = event.members?.includes(currentUser?.name);
                     return <div key={event.id} className="rounded-xl border border-slate-200 p-3 flex flex-wrap items-center justify-between gap-2">
-                      <div className="min-w-0"><p className="font-bold text-sm text-slate-800 break-words">{event.title}</p><p className={`text-[11px] font-bold ${isConfirmed ? 'text-emerald-700' : 'text-amber-700'}`}>{isConfirmed ? '● Confirmado' : '● Invitación pendiente'}</p></div>
+                      <div className="min-w-0"><p className="font-bold text-sm text-slate-800 break-words">{event.title}</p><p className={`text-[11px] font-bold ${isPlanPendingClosure(event) ? 'text-orange-700' : isConfirmed ? 'text-emerald-700' : 'text-amber-700'}`}>{isPlanPendingClosure(event) ? '● Pendiente de cierre' : isConfirmed ? '● Confirmado' : '● Invitación pendiente'}</p></div>
                       {isConfirmed ? <button type="button" onClick={() => setActiveEvent(event)} className="text-xs font-bold bg-sky-600 text-white px-3 py-2 rounded-xl">Entrar</button> :
                         <div className="flex gap-1"><button type="button" disabled={!!processingInvitationId} onClick={() => handleCalendarInvitation(event.id, true)} className="text-xs font-bold bg-emerald-600 text-white px-2 py-2 rounded-lg disabled:opacity-50">Aceptar</button>
                           <button type="button" disabled={!!processingInvitationId} onClick={() => handleCalendarInvitation(event.id, false)} className="text-xs font-bold bg-red-50 text-red-700 px-2 py-2 rounded-lg disabled:opacity-50">Rechazar</button></div>}
@@ -2639,8 +2686,8 @@ export default function App() {
                   </select>
                 </label>
                 <div className="grid grid-cols-2 gap-3 md:col-span-2 xl:col-span-2">
-                  <label className="text-xs font-bold text-slate-700">Desde<input type="date" value={myPlanFrom} onChange={e => { setMyPlanFrom(e.target.value); setMyPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
-                  <label className="text-xs font-bold text-slate-700">Hasta<input type="date" value={myPlanTo} onChange={e => { setMyPlanTo(e.target.value); setMyPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
+                  <label className="text-xs font-bold text-slate-700">Desde<input lang="es-ES" type="date" value={myPlanFrom} onChange={e => { setMyPlanFrom(e.target.value); setMyPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
+                  <label className="text-xs font-bold text-slate-700">Hasta<input lang="es-ES" type="date" value={myPlanTo} onChange={e => { setMyPlanTo(e.target.value); setMyPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
                 </div>
                 </div>
                 <button type="button" onClick={() => { setMyPlanQuery(''); setMyPlanStatus('active'); setMyPlanFrom(''); setMyPlanTo(''); setMyPlanPage(1); }} className="text-xs font-bold text-sky-700">Limpiar filtros</button>
@@ -2649,7 +2696,7 @@ export default function App() {
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
               {visibleMyEvents.map(event => (
                 <button key={event.id} type="button" onClick={() => setActiveEvent(event)} className={`w-full text-left rounded-2xl border p-3.5 flex justify-between items-center gap-2 shadow-sm ${event.status === 'closed' ? 'bg-amber-50/60 border-amber-200' : 'bg-white/90 border-sky-100'}`}>
-                  <span className="min-w-0"><span className="block text-[10px] font-bold text-sky-700">{event.status === 'closed' ? '🔒 Cerrado' : '📅 Activo'} · {event.date}</span><span className="block font-black text-slate-800 text-sm mt-1 break-words">{event.title}</span></span>
+                  <span className="min-w-0"><span className="block text-[10px] font-bold text-sky-700">{event.status === 'closed' ? '🔒 Cerrado' : isPlanPendingClosure(event) ? '🟠 Pendiente de cierre' : '📅 Activo'} · {formatPlanDateES(event.date)}</span><span className="block font-black text-slate-800 text-sm mt-1 break-words">{event.title}</span></span>
                   <span className="shrink-0 text-xs font-bold text-sky-700">{event.status === 'closed' ? 'Historial →' : 'Entrar →'}</span>
                 </button>
               ))}
@@ -2669,8 +2716,8 @@ export default function App() {
               className="w-full bg-white/90 border border-sky-200 rounded-2xl px-4 py-3 text-sm text-slate-800" 
             />
             <div className="grid grid-cols-2 gap-2">
-              <label className="text-xs font-bold text-slate-700">Desde<input type="date" value={searchPlanFrom} onChange={e => { setSearchPlanFrom(e.target.value); setSearchPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
-              <label className="text-xs font-bold text-slate-700">Hasta<input type="date" value={searchPlanTo} onChange={e => { setSearchPlanTo(e.target.value); setSearchPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
+              <label className="text-xs font-bold text-slate-700">Desde<input lang="es-ES" type="date" value={searchPlanFrom} onChange={e => { setSearchPlanFrom(e.target.value); setSearchPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
+              <label className="text-xs font-bold text-slate-700">Hasta<input lang="es-ES" type="date" value={searchPlanTo} onChange={e => { setSearchPlanTo(e.target.value); setSearchPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
             </div>
             <button type="button" onClick={() => { setSearchQuery(''); setSearchPlanFrom(''); setSearchPlanTo(''); setSearchPlanPage(1); }} className="text-xs font-bold text-sky-700">Limpiar filtros</button>
             <div className="space-y-3">
@@ -2685,7 +2732,7 @@ export default function App() {
                 return (
                   <article key={event.id} className="bg-white/90 rounded-2xl border border-sky-100 p-4 shadow-sm flex justify-between items-center">
                     <div>
-                      <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">📅 {event.date} • Organiza: {event.creator_name}</span>
+                      <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">📅 {formatPlanDateES(event.date)} • Organiza: {event.creator_name}</span>
                       <h3 className="font-bold text-sm text-slate-800 mt-1">{event.title}</h3>
                       {event.description && <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap break-words">{event.description}</p>}
                     </div>
@@ -2796,7 +2843,7 @@ export default function App() {
                         <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap">{notice.message}</p>
                         <div className="flex justify-between gap-2 mt-2 text-[10px] text-slate-500">
                           <span className="capitalize">{notice.category || 'general'}</span>
-                          <span>{new Date(notice.created_at || item.created_at).toLocaleString('es-ES')}</span>
+                          <span>{formatDateTimeES(notice.created_at || item.created_at)}</span>
                         </div>
                         {notice.event_id && <span className="inline-flex items-center gap-1 mt-2 text-[10px] font-bold text-sky-700"><ArrowRight size={12} /> Abrir plan relacionado</span>}
                       </button>
@@ -2864,7 +2911,7 @@ export default function App() {
                         <article key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                           <div className="flex justify-between gap-2">
                             <p className="text-xs font-bold text-slate-800">{item.title}</p>
-                            <span className="text-[9px] text-slate-500 shrink-0">{new Date(item.created_at).toLocaleDateString('es-ES')}</span>
+                            <span className="text-[9px] text-slate-500 shrink-0">{formatDateES(item.created_at)}</span>
                           </div>
                           <p className="text-[11px] text-slate-600 mt-1 whitespace-pre-wrap">{item.message}</p>
                           <p className="text-[10px] text-sky-700 mt-1 capitalize">{item.category || 'general'}</p>
@@ -2916,8 +2963,8 @@ export default function App() {
             </div>
 
             {isAdmin ? (
-              <div className="space-y-4">
-                <div className="bg-white/90 p-5 rounded-[2.5rem] border border-emerald-100 shadow-sm space-y-3">
+              <div className="grid grid-cols-1 xl:grid-cols-[minmax(300px,0.85fr)_minmax(0,1.6fr)] gap-4 items-start">
+                <div className="bg-white/90 p-4 xl:p-5 rounded-[2rem] border border-emerald-100 shadow-sm space-y-3 min-w-0">
                   <h2 className="text-sm font-black text-slate-800 flex items-center">
                     <ShieldCheck size={16} className="mr-1.5 text-emerald-600" /> Cuentas de Usuario Pendientes ({pendingRegistrations.length})
                   </h2>
@@ -2926,7 +2973,7 @@ export default function App() {
                   ) : (
                     <div className="space-y-2">
                       {pendingRegistrations.map(reg => (
-                        <div key={reg.id} className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/50 flex justify-between items-center text-xs">
+                        <div key={reg.id} className="p-3.5 rounded-2xl border border-emerald-200 bg-emerald-50/50 flex flex-wrap justify-between items-center gap-2 text-xs">
                           <div>
                             <p className="font-bold text-slate-800">{[reg.name, reg.surname].filter(Boolean).join(' ')}</p>
                             <p className="text-[10px] text-slate-500">{reg.email}</p>
@@ -2941,20 +2988,20 @@ export default function App() {
                   )}
                 </div>
 
-                <div className="bg-white/90 p-5 rounded-[2.5rem] border border-sky-100 shadow-sm space-y-3">
+                <div className="bg-white/90 p-4 xl:p-5 rounded-[2rem] border border-sky-100 shadow-sm space-y-3 min-w-0">
                   <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 p-3 rounded-xl">Protección del histórico: bloquear o rechazar una cuenta no elimina usuarios ni modifica planes, gastos o participaciones. La eliminación definitiva de cuentas está deshabilitada.</p>
                   <h2 className="text-sm font-black text-slate-800 flex items-center">
                     <Users size={16} className="mr-1.5 text-sky-600" /> Todos los Usuarios Registrados ({registeredUsers.length})
                   </h2>
-                  <div className="space-y-2">
+                  <div className="grid grid-cols-1 2xl:grid-cols-2 gap-3 xl:max-h-[720px] xl:overflow-y-auto xl:pr-1">
                     {registeredUsers.map(usr => (
                       <div key={usr.id} className={`p-3.5 rounded-2xl border flex flex-col space-y-2 text-xs ${usr.is_blocked ? 'bg-red-50/80 border-red-200' : 'bg-white border-sky-100'}`}>
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <p className="font-bold text-slate-800 flex items-center">
+                        <div className="flex flex-wrap justify-between items-center gap-2">
+                          <div className="min-w-0">
+                            <p className="font-bold text-slate-800 flex flex-wrap items-center">
                               {[usr.name, usr.surname].filter(Boolean).join(' ')} {usr.role === 'admin' && <span className="ml-1.5 text-[9px] bg-sky-100 text-sky-800 font-bold px-1.5 py-0.5 rounded-full">ADMIN</span>}
                             </p>
-                            <p className="text-[10px] text-slate-500">{usr.email}</p>
+                            <p className="text-[10px] text-slate-500 break-all">{usr.email}</p>
                           </div>
                           {usr.role !== 'admin' && (
                             <button 
@@ -3044,7 +3091,7 @@ export default function App() {
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Fecha</label>
-                <input type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-sm" required />
+                <input lang="es-ES" type="date" value={newDate} onChange={(e) => setNewDate(e.target.value)} className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-sm" required />
               </div>
               <fieldset className="space-y-2">
                 <legend className="text-xs font-bold text-slate-700">Invitar personas (opcional)</legend>
