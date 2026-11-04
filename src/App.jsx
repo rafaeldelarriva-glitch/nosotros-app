@@ -271,6 +271,8 @@ export default function App() {
   const [mapsAddress, setMapsAddress] = useState('');
   const [mapsLookupMessage, setMapsLookupMessage] = useState('');
   const [osmSuggestions, setOsmSuggestions] = useState([]);
+  const [hideSpotSuggestions, setHideSpotSuggestions] = useState(false);
+  const [spotSaveError, setSpotSaveError] = useState('');
   const [spotSearchError, setSpotSearchError] = useState('');
   const [isSearchingOsm, setIsSearchingOsm] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
@@ -1480,6 +1482,7 @@ export default function App() {
   const handleAddSpot = async (e) => {
     if (e) e.preventDefault();
     if (!newSpotName.trim() || !activeEvent || !currentUser || addingSpot) return;
+    setSpotSaveError('');
     setAddingSpot(true);
     try {
       const currentSelectedCount = (activeEvent.spots || []).filter(s => s.active_now).length;
@@ -1491,19 +1494,17 @@ export default function App() {
         suggested_by: currentUser.name,
         suggested_by_id: currentUser.id,
         active_now: false,
-        stop_order: currentSelectedCount + 1,
-        maps_url: mapsShareUrl.trim() || null,
-        address: mapsAddress.trim() || null
+        stop_order: currentSelectedCount + 1
       }]).select('id, event_id, name').single();
       if (error) throw error;
       if (!savedSpot?.id) throw new Error('No se ha recibido confirmación de la propuesta guardada.');
       setNewSpotName('');
-      setMapsShareUrl(''); setMapsAddress(''); setMapsLookupMessage('');
+      setHideSpotSuggestions(false);
       setOsmSuggestions([]);
       await refreshAllData();
     } catch (err) {
       console.error('Error guardando lugar o evento:', err);
-      alert('No se pudo guardar la propuesta: ' + (err.message || 'Error desconocido'));
+      setSpotSaveError('No se pudo guardar la propuesta: ' + (err.message || 'Error desconocido'));
     } finally {
       setAddingSpot(false);
     }
@@ -2730,7 +2731,7 @@ export default function App() {
                           type="text" 
                           placeholder="Escribe un bar o sitio (ej. Bar Shiko)..." 
                           value={newSpotName} 
-                          onChange={(e) => setNewSpotName(e.target.value)} 
+                          onChange={(e) => { setNewSpotName(e.target.value); setHideSpotSuggestions(false); setSpotSaveError(''); }} 
                           className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" 
                         />
                         {isSearchingOsm && (
@@ -2738,14 +2739,15 @@ export default function App() {
                         )}
                       </div>
 
-                      {osmSuggestions.length > 0 && (
-                        <div className="absolute left-0 right-0 top-11 bg-white border border-sky-200 rounded-2xl shadow-xl z-50 max-h-48 overflow-y-auto divide-y divide-sky-100">
+                      {osmSuggestions.length > 0 && !hideSpotSuggestions && (
+                        <div className="bg-white border border-sky-200 rounded-2xl shadow-sm max-h-40 overflow-y-auto divide-y divide-sky-100">
                           {osmSuggestions.map((item, idx) => (
                             <div 
                               key={idx} 
                               onClick={() => {
                                 setNewSpotName(item.name || item.display_name);
                                 setOsmSuggestions([]);
+                                setHideSpotSuggestions(true);
                                 setSpotSearchError('');
                               }}
                               className="p-2.5 text-xs text-slate-700 hover:bg-sky-50 cursor-pointer transition flex items-start space-x-2"
@@ -2771,16 +2773,16 @@ export default function App() {
                         Búsqueda con Photon · Datos de OpenStreetMap. {searchLocation ? 'Resultados priorizados cerca de tu ubicación.' : 'Pulsa «Buscar cerca de mí» para priorizar los resultados según tu ubicación.'}
                       </p>
 
-                      <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 space-y-2">
-                        <label className="text-xs font-bold text-slate-800 flex gap-1 items-center"><Info size={14}/> Pegar enlace de Google Maps</label>
-                        <input type="url" value={mapsShareUrl} onChange={e => handleMapsShareInput(e.target.value)} placeholder="https://share.google/..." className="w-full rounded-lg border border-sky-200 p-2 text-xs" />
-                        <p className="text-[11px] text-slate-600">Abre el establecimiento en Google Maps → Compartir → Copiar enlace. Pégalo aquí. Si no se detecta el nombre, escríbelo arriba. Añade su dirección para identificarlo bien.</p>
-                        {mapsLookupMessage && <p className="text-[11px] text-amber-800" role="status">{mapsLookupMessage}</p>}
-                        <input type="text" value={mapsAddress} onChange={e => setMapsAddress(e.target.value)} placeholder="Dirección del establecimiento (opcional)" className="w-full rounded-lg border border-sky-200 p-2 text-xs" />
-                      </div>
-                      <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow">
-                        🔍 Añadir a la ruta
+                      {osmSuggestions.length > 0 && !hideSpotSuggestions && (
+                        <button type="button" onClick={() => { setHideSpotSuggestions(true); setOsmSuggestions([]); }} className="w-full text-left text-xs font-semibold text-sky-800 bg-sky-50 border border-sky-200 rounded-xl p-2.5">
+                          No aparece mi sitio · Usar el nombre escrito
+                        </button>
+                      )}
+                      {spotSaveError && <p role="alert" className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl p-3">{spotSaveError}</p>}
+                      <button type="submit" disabled={addingSpot || !newSpotName.trim()} className="w-full bg-sky-600 hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-2xl py-3 shadow relative z-0 touch-manipulation">
+                        {addingSpot ? 'Guardando propuesta…' : '➕ Guardar propuesta con este nombre'}
                       </button>
+                      <p className="text-[10px] text-slate-500">No es obligatorio elegir un resultado del buscador: puedes guardar el nombre que has escrito.</p>
                     </form>
                   </div>
 
