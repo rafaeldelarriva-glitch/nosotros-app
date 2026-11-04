@@ -1916,15 +1916,25 @@ export default function App() {
     const canDeleteEvent = isAdmin || isCreator;
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
-        <div className="fixed top-3 left-4 z-50">
+      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-24 md:pb-8 md:ml-64 relative overflow-hidden">
+        <aside className="hidden md:flex fixed inset-y-0 left-0 z-40 w-64 flex-col bg-white/95 backdrop-blur-xl border-r border-sky-100 shadow-lg p-5">
+          <div className="flex items-center gap-3 pb-7 border-b border-sky-100"><div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 text-white grid place-items-center font-black">N</div><div><p className="font-black text-slate-800">Nosotros</p><p className="text-xs text-slate-500">Organiza tus planes</p></div></div>
+          <nav className="mt-6 space-y-2" aria-label="Navegación principal">
+            <button onClick={() => { setActiveEvent(null); setActiveTab('my-events'); }} className="w-full flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-bold bg-sky-50 text-sky-700"><Calendar size={18}/> Mis Salidas</button>
+            <button onClick={() => { setActiveEvent(null); setActiveTab('search'); }} className="w-full flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50"><Search size={18}/> Buscar planes</button>
+            <button onClick={() => { setActiveEvent(null); setActiveTab('profile'); }} className="w-full flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50"><Settings size={18}/> Perfil</button>
+            <button onClick={() => { setActiveEvent(null); setActiveTab('notifications'); }} className="w-full flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50"><Inbox size={18}/> Aprobaciones</button>
+          </nav>
+          <div className="mt-auto text-xs text-slate-400">Sesión de {currentUser?.name || 'usuario'}</div>
+        </aside>
+        <div className="fixed top-3 left-4 md:left-[17rem] z-50">
           <button onClick={() => setActiveEvent(null)} className="flex items-center text-xs font-bold text-slate-800 bg-white/95 backdrop-blur-md px-3.5 py-2 rounded-full hover:bg-white shadow-lg border border-sky-200">
             <ArrowLeft size={16} className="mr-1 text-sky-600" /> Volver
           </button>
         </div>
 
         <div className="relative bg-gradient-to-r from-sky-100 via-blue-100 to-indigo-50 border-b border-sky-200 pt-12 pb-4 px-4 shadow-xs">
-          <div className="max-w-md mx-auto space-y-2">
+          <div className="max-w-md md:max-w-6xl mx-auto space-y-2">
             <div className="flex justify-between items-center">
               <span className="text-[10px] font-black uppercase tracking-wider text-sky-700 bg-white/80 px-2.5 py-0.5 rounded-full border border-sky-200">
                 Organiza: {activeEvent.creator_name}
@@ -1955,7 +1965,7 @@ export default function App() {
           </div>
         </div>
 
-        <main className="max-w-md mx-auto p-4 space-y-4 relative z-10">
+        <main className="max-w-md md:max-w-6xl mx-auto p-4 md:p-6 space-y-4 relative z-10">
           <section aria-label="Resumen de la salida" className="grid grid-cols-2 gap-2">
             <div className="rounded-2xl border border-sky-100 bg-white/95 p-3 shadow-sm">
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Participantes</p>
@@ -2524,11 +2534,21 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-28 relative overflow-hidden">
-      <header className="bg-white/90 backdrop-blur-2xl border-b border-sky-100 p-4 sticky top-0 z-40 flex justify-between items-center shadow-sm">
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-24 md:pb-8 md:pl-64 relative overflow-hidden">
+      <aside className="hidden md:flex fixed inset-y-0 left-0 z-50 w-64 flex-col bg-white/95 backdrop-blur-xl border-r border-sky-100 shadow-lg p-5">
+        <div className="flex items-center gap-3 pb-7 border-b border-sky-100"><div className="w-10 h-10 bg-gradient-to-tr from-sky-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white font-black shadow-md">N</div><div><p className="font-extrabold text-slate-800">Nosotros</p><p className="text-xs text-slate-500">Planes y experiencias</p></div></div>
+        <nav className="mt-6 space-y-2" aria-label="Navegación principal">
+          <button onClick={() => setActiveTab('my-events')} className={`w-full flex items-center gap-3 rounded-xl px-3 py-3 text-sm ${activeTab === 'my-events' ? 'bg-sky-50 text-sky-700 font-black' : 'text-slate-600 hover:bg-slate-50 font-semibold'}`}><Calendar size={18}/> Mis Salidas</button>
+          <button onClick={() => setActiveTab('search')} className={`w-full flex items-center gap-3 rounded-xl px-3 py-3 text-sm ${activeTab === 'search' ? 'bg-sky-50 text-sky-700 font-black' : 'text-slate-600 hover:bg-slate-50 font-semibold'}`}><Search size={18}/> Buscar planes</button>
+          <button onClick={() => setActiveTab('profile')} className={`w-full flex items-center gap-3 rounded-xl px-3 py-3 text-sm ${activeTab === 'profile' ? 'bg-sky-50 text-sky-700 font-black' : 'text-slate-600 hover:bg-slate-50 font-semibold'}`}><Settings size={18}/> Perfil</button>
+          <button onClick={() => setActiveTab('notifications')} className={`w-full flex items-center gap-3 rounded-xl px-3 py-3 text-sm relative ${activeTab === 'notifications' ? 'bg-sky-50 text-sky-700 font-black' : 'text-slate-600 hover:bg-slate-50 font-semibold'}`}><Inbox size={18}/> Aprobaciones{(myPendingInvitations.length + allPendingPlanRequests.length + (isAdmin ? pendingRegistrations.length : 0)) > 0 && <span className="ml-auto rounded-full bg-red-600 text-white text-[10px] px-2 py-0.5">{myPendingInvitations.length + allPendingPlanRequests.length + (isAdmin ? pendingRegistrations.length : 0)}</span>}</button>
+        </nav>
+        <div className="mt-auto border-t border-sky-100 pt-4 flex items-center gap-3"><div className="w-9 h-9 rounded-full overflow-hidden bg-sky-100 border border-sky-200 flex items-center justify-center text-sky-700 font-bold">{currentUser?.avatar_url ? <img src={currentUser.avatar_url} alt="" className="w-full h-full object-cover"/> : (currentUser?.name?.[0] || 'U')}</div><div className="min-w-0"><p className="text-sm font-bold truncate">{currentUser?.name || 'Usuario'}</p><p className="text-xs text-slate-500">{isAdmin ? 'Administrador' : 'Usuario'}</p></div></div>
+      </aside>
+      <header className="bg-white/90 backdrop-blur-2xl border-b border-sky-100 p-4 md:px-7 md:py-4 sticky top-0 z-40 flex justify-between items-center shadow-sm">
         <div className="flex items-center space-x-2">
           <div className="w-9 h-9 bg-gradient-to-tr from-sky-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white font-black text-sm shadow-md">N</div>
-          <span className="font-extrabold text-slate-800 text-base">Nosotros</span>
+          <span className="font-extrabold text-slate-800 text-base md:text-lg">Nosotros <span className="hidden md:inline text-xs font-medium text-slate-400 ml-2">Tu espacio para organizar planes</span></span>
         </div>
         <div className="flex items-center space-x-3">
           <button type="button" onClick={() => setActiveTab('notifications')} aria-label={`Abrir notificaciones${unreadNotificationsCount ? `, ${unreadNotificationsCount} sin leer` : ''}`}
@@ -2545,9 +2565,10 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-md mx-auto p-4 space-y-4">
+      <main className="w-full max-w-md md:max-w-7xl mx-auto p-4 md:p-7 space-y-6">
         {activeTab === 'my-events' && (
           <div className="space-y-6">
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)] gap-6 items-start">
             <button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-bold py-3 px-4 rounded-2xl text-sm shadow-lg flex items-center justify-center space-x-2">
               <Plus size={18} /> <span>Crear Nueva Salida / Plan</span>
             </button>
@@ -2603,6 +2624,7 @@ export default function App() {
               </div>}
               </div>}
             </section>
+            </div>
 
             <section className="space-y-3">
               <h2 className="text-sm font-black text-slate-800 px-1">Mis planes ({filteredMyEvents.length})</h2>
@@ -2622,12 +2644,14 @@ export default function App() {
                 <button type="button" onClick={() => { setMyPlanQuery(''); setMyPlanStatus('active'); setMyPlanFrom(''); setMyPlanTo(''); setMyPlanPage(1); }} className="text-xs font-bold text-sky-700">Limpiar filtros</button>
               </div>
               {visibleMyEvents.length === 0 && <p className="rounded-xl bg-slate-50 p-4 text-xs text-slate-600">No hay planes que coincidan con los filtros.</p>}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
               {visibleMyEvents.map(event => (
                 <button key={event.id} type="button" onClick={() => setActiveEvent(event)} className={`w-full text-left rounded-2xl border p-3.5 flex justify-between items-center gap-2 shadow-sm ${event.status === 'closed' ? 'bg-amber-50/60 border-amber-200' : 'bg-white/90 border-sky-100'}`}>
                   <span className="min-w-0"><span className="block text-[10px] font-bold text-sky-700">{event.status === 'closed' ? '🔒 Cerrado' : '📅 Activo'} · {event.date}</span><span className="block font-black text-slate-800 text-sm mt-1 break-words">{event.title}</span></span>
                   <span className="shrink-0 text-xs font-bold text-sky-700">{event.status === 'closed' ? 'Historial →' : 'Entrar →'}</span>
                 </button>
               ))}
+              </div>
               {renderPlanPagination(currentMyPage, myPlanPages, setMyPlanPage)}
             </section>
           </div>
@@ -2650,6 +2674,7 @@ export default function App() {
             <div className="space-y-3">
               <h2 className="text-sm font-black text-slate-800 px-1">Planes en los que participas o estás invitado ({filteredSearchEvents.length})</h2>
               {filteredSearchEvents.length === 0 && <p className="text-xs text-slate-600">No tienes planes ni invitaciones que coincidan con los filtros.</p>}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {visibleSearchEvents.map((event) => {
                 const membersList = Array.isArray(event.members) ? event.members : [];
                 const isMember = isEventMember(event) || event.creator_id === currentUser?.id;
@@ -2673,6 +2698,7 @@ export default function App() {
                   </article>
                 );
               })}
+              </div>
               {renderPlanPagination(currentSearchPage, searchPlanPages, setSearchPlanPage)}
             </div>
           </div>
@@ -2967,7 +2993,7 @@ export default function App() {
       {/* MODAL CAMBIO DE CONTRASEÑA POR ADMINISTRADOR */}
       {adminTargetUser && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white max-w-md w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-sky-100">
+          <div className="bg-white max-w-md md:max-w-xl w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-sky-100">
             <div className="flex justify-between items-center">
               <h3 className="font-black text-slate-800 text-sm">Cambiar Clave: {adminTargetUser.name}</h3>
               <button onClick={() => setAdminTargetUser(null)} className="p-1 bg-sky-50 rounded-full text-slate-600"><X size={18} /></button>
@@ -3003,7 +3029,7 @@ export default function App() {
 
       {showCreateModal && (
         <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white max-w-md w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-sky-100">
+          <div className="bg-white max-w-md md:max-w-xl w-full p-6 rounded-[2.5rem] shadow-2xl space-y-4 border border-sky-100">
             <h2 className="font-black text-slate-800 text-lg">Organizar Nueva Salida</h2>
             <form onSubmit={handleCreateEvent} className="space-y-4">
               <div>
@@ -3068,7 +3094,7 @@ export default function App() {
 
       {renderAppMessages()}
       {/* BARRA DE NAVEGACIÓN INFERIOR */}
-      <nav aria-label="Navegación principal" className="fixed bottom-3 left-4 right-4 bg-white/95 backdrop-blur-xl border border-sky-200 py-3 px-6 flex justify-around items-center z-40 rounded-[2rem] shadow-lg max-w-md mx-auto">
+      <nav aria-label="Navegación principal" className="fixed bottom-3 left-4 right-4 md:hidden bg-white/95 backdrop-blur-xl border border-sky-200 py-3 px-6 flex justify-around items-center z-40 rounded-[2rem] shadow-lg max-w-md mx-auto">
         <button onClick={() => setActiveTab('my-events')} className={`flex flex-col items-center ${activeTab === 'my-events' ? 'text-sky-600 font-bold' : 'text-slate-500'}`}>
           <Calendar size={20} />
           <span className="text-[10px] mt-0.5">Mis Salidas</span>
