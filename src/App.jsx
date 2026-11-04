@@ -2866,6 +2866,18 @@ export default function App() {
     setSelectedCalendarDate(null);
   };
 
+  // Filtrado y paginación de la gestión de usuarios registrados.
+  const registeredUserSearch = registeredUserQuery.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
+  const filteredRegisteredUsers = registeredUsers.filter(user => {
+    if (!registeredUserSearch) return true;
+    const text = [user.name, user.surname, user.email].filter(Boolean).join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
+    return text.includes(registeredUserSearch);
+  });
+  const registeredUserTotalPages = Math.max(1, Math.ceil(filteredRegisteredUsers.length / 5));
+  const currentRegisteredUserPage = Math.min(registeredUserPage, registeredUserTotalPages);
+  const visibleRegisteredUsers = filteredRegisteredUsers.slice((currentRegisteredUserPage - 1) * 5, currentRegisteredUserPage * 5);
+
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-24 md:pb-8 md:pl-64 relative overflow-hidden nosotros-desktop">
       <style>{`
@@ -3188,18 +3200,6 @@ export default function App() {
                 <div className="space-y-2">
                   {visibleNotifications.map(item => {
                     const notice = item.notifications;
-                    // Filtrado y paginación de la gestión de usuarios registrados.
-  const registeredUserSearch = registeredUserQuery.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
-  const filteredRegisteredUsers = registeredUsers.filter(user => {
-    if (!registeredUserSearch) return true;
-    const text = [user.name, user.surname, user.email].filter(Boolean).join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
-    return text.includes(registeredUserSearch);
-  });
-  const registeredUserTotalPages = Math.max(1, Math.ceil(filteredRegisteredUsers.length / 5));
-  const currentRegisteredUserPage = Math.min(registeredUserPage, registeredUserTotalPages);
-  const visibleRegisteredUsers = filteredRegisteredUsers.slice((currentRegisteredUserPage - 1) * 5, currentRegisteredUserPage * 5);
-
-  return (
                       <button key={item.id} type="button" onClick={() => handleOpenNotification(item)}
                         className={`w-full text-left p-3 rounded-2xl border transition ${item.read_at ? 'bg-white border-slate-200' : 'bg-sky-50 border-sky-300'}`}>
                         <div className="flex items-start justify-between gap-2">
