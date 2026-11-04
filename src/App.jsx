@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   Users, MapPin, DollarSign, Plus, CheckCircle, 
-  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus, UserMinus, ShieldAlert, KeyRound, Archive, Share2, ArrowUp, ArrowDown, Radio, Settings, ShieldCheck, Edit3, QrCode, ExternalLink, Ban, UserCheck, Crosshair, Key
+  Clock, Camera, Navigation, ArrowRight, Trash2, Shield, Calendar, Sparkles, User, Lock, Mail, Bell, Search, Check, X, UserPlus, Inbox, ArrowLeft, Image as ImageIcon, Utensils, Beer, PartyPopper, Compass, Flag, ThumbsUp, Trophy, Receipt, AlertCircle, ChevronRight, MessageSquare, Send, Map, CheckSquare, ListPlus, UserMinus, ShieldAlert, KeyRound, Archive, Share2, ArrowUp, ArrowDown, Radio, Settings, ShieldCheck, Edit3, QrCode, ExternalLink, Ban, UserCheck, Crosshair, Key, Info
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -42,6 +42,23 @@ const isPlanPendingClosure = (event) => {
   return (todayUTC - planUTC) / 86400000 > 2;
 };
 
+const NOSOTROS_HELP = {
+  crear: ['Crear un plan', 'Indica el título, la fecha y si el plan será público o privado. Después podrás invitar a otras personas y añadir propuestas.'],
+  calendario: ['Mi calendario', 'Consulta tus planes por fecha. Selecciona un día para ver los encuentros previstos.'],
+  misplanes: ['Mis salidas', 'Aquí aparecen los planes en los que participas. Puedes buscarlos, filtrarlos y abrirlos para consultar sus detalles.'],
+  buscar: ['Buscar planes', 'Localiza planes públicos por título, descripción u organizador y solicita participar cuando esté disponible.'],
+  propuestas: ['Proponer lugares y eventos', 'Añade un lugar o una actividad al plan. Puedes buscar su ubicación o introducir el nombre manualmente si no aparece en los resultados.'],
+  votos: ['Ranking de lugares y eventos', 'Las propuestas se ordenan según los votos registrados. Cada usuario puede votar una vez por propuesta y retirar su voto.'],
+  pendientes: ['Propuestas pendientes', 'Consulta las propuestas que aún no forman parte de la ruta seleccionada del plan.'],
+  gastos: ['Gastos y liquidaciones', 'Registra quién ha pagado cada gasto y qué participantes lo comparten. El reparto se calcula según los participantes asignados a cada gasto, no mediante una media general.'],
+  historial: ['Historial y cierre', 'Al cerrar un plan se conserva su historial, con las paradas, fotografías, gastos y reparto individual. Revisa los datos antes de cerrarlo.'],
+  participantes: ['Participantes e invitaciones', 'Consulta quién participa en el plan y, cuando tengas permiso, invita a otros usuarios. Las invitaciones pendientes se gestionan en Aprobaciones.'],
+  fotos: ['Fotografías', 'Consulta las fotos del plan y añade nuevas imágenes cuando la opción esté disponible. Las fotografías se vinculan al plan.'],
+  avisos: ['Comunicados y avisos', 'Consulta las notificaciones recibidas y márcalas como leídas. Los administradores pueden enviar comunicados a todos o a usuarios seleccionados.'],
+  usuarios: ['Usuarios registrados', 'Busca usuarios por nombre, apellidos o correo. El administrador puede gestionar las cuentas desde este apartado.'],
+  perfil: ['Mi perfil', 'Actualiza tus datos personales y tu foto de perfil. También puedes gestionar tu contraseña desde esta sección.'],
+};
+
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -57,6 +74,7 @@ export default function App() {
   const [authFeedback, setAuthFeedback] = useState('');
 
   // Avisos y confirmaciones propios de React: sin alert/confirm/prompt del navegador.
+  const [openHelp, setOpenHelp] = useState(null);
   const [appNotice, setAppNotice] = useState('');
   const [appDialog, setAppDialog] = useState(null);
   const dialogResolve = useRef(null);
@@ -84,8 +102,32 @@ export default function App() {
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
     if (dialogResolve.current) dialogResolve.current(null);
   }, []);
+  const helpIcon = (key) => (
+    <button type="button" title={`Información: ${NOSOTROS_HELP[key][0]}`} aria-label={`Información sobre ${NOSOTROS_HELP[key][0]}`}
+      onClick={(event) => { event.preventDefault(); event.stopPropagation(); setOpenHelp(key); }}
+      className="inline-flex items-center justify-center align-middle shrink-0 ml-1.5 w-6 h-6 rounded-full border border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-600"
+    ><Info size={14} aria-hidden="true" /></button>
+  );
+  useEffect(() => {
+    if (!openHelp) return;
+    const onEscape = (event) => { if (event.key === 'Escape') setOpenHelp(null); };
+    document.addEventListener('keydown', onEscape);
+    return () => document.removeEventListener('keydown', onEscape);
+  }, [openHelp]);
   const renderAppMessages = () => (
     <>
+      {openHelp && NOSOTROS_HELP[openHelp] && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/40 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpenHelp(null); }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="nosotros-help-title" aria-describedby="nosotros-help-description" className="w-full max-w-sm rounded-2xl border border-sky-100 bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <h2 id="nosotros-help-title" className="flex items-center gap-2 text-base font-extrabold text-slate-900"><Info size={18} className="shrink-0 text-sky-600" />{NOSOTROS_HELP[openHelp][0]}</h2>
+              <button type="button" autoFocus aria-label="Cerrar ayuda" onClick={() => setOpenHelp(null)} className="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-600"><X size={19}/></button>
+            </div>
+            <p id="nosotros-help-description" className="mt-3 text-sm leading-6 text-slate-700">{NOSOTROS_HELP[openHelp][1]}</p>
+            <button type="button" onClick={() => setOpenHelp(null)} className="mt-4 w-full rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-sky-700">Entendido</button>
+          </section>
+        </div>
+      )}
       {appNotice && (
         <div role="status" aria-live="polite" className="fixed bottom-24 left-4 right-4 mx-auto max-w-md z-[100] bg-slate-900 text-white rounded-2xl shadow-2xl px-4 py-3 flex items-start gap-3 text-sm">
           <span className="flex-1 whitespace-pre-line break-words">{appNotice}</span>
@@ -2279,7 +2321,7 @@ export default function App() {
               <div className="bg-white/90 backdrop-blur-2xl p-5 rounded-[2.5rem] border border-sky-100 shadow-xl space-y-4">
                 <div className="text-center space-y-1">
                   <span className="text-2xl">⏳</span>
-                  <h2 className="text-base font-black text-slate-800">Línea Temporal e Historial: {activeEvent.title}</h2>
+                  <h2 className="text-base font-black text-slate-800">Línea Temporal e Historial: {activeEvent.title} {helpIcon('historial')}</h2>
                   <p className="text-[11px] text-slate-500">Pulsa sobre cada parada para consultar sus asistentes, gastos y tickets</p>
                 </div>
 
@@ -2463,7 +2505,7 @@ export default function App() {
                 <div className="space-y-4">
                   <div className="bg-white/90 backdrop-blur-2xl p-4 rounded-3xl border border-sky-100 shadow-sm space-y-3 relative">
                     <div className="flex justify-between items-center">
-                      <h3 className="text-xs font-black text-slate-800">Proponer nuevo sitio</h3>
+                      <h3 className="text-xs font-black text-slate-800">Proponer nuevo lugar o evento {helpIcon('propuestas')}</h3>
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
@@ -2541,7 +2583,7 @@ export default function App() {
 
                   {rankingSpots.length > 0 && (
                     <section className="rounded-2xl border border-amber-200 bg-amber-50 p-3 space-y-2" aria-label="Ranking de lugares y eventos">
-                      <h4 className="font-black text-sm text-amber-900 flex items-center gap-2"><Trophy size={16} /> Ranking de lugares y eventos</h4>
+                      <h4 className="font-black text-sm text-amber-900 flex items-center gap-2"><Trophy size={16} /> Ranking de lugares y eventos {helpIcon('votos')}</h4>
                       {rankingSpots.slice(0, 3).map((spot, index) => (
                         <div key={spot.id} className="flex items-center justify-between gap-3 text-xs text-slate-800">
                           <span className="font-semibold truncate">{index + 1}. {spot.name}</span>
@@ -2561,7 +2603,7 @@ export default function App() {
                   </div>
 
                   <div className="space-y-3 pt-2">
-                    <h4 className="text-xs font-black uppercase text-slate-700">Propuestas Pendientes ({pendingSpots.length})</h4>
+                    <h4 className="text-xs font-black uppercase text-slate-700">Propuestas Pendientes ({pendingSpots.length}) {helpIcon('pendientes')}</h4>
                     {pendingSpots.map((spot) => renderSpotCard(spot, false, maxVotes, selectedSpots))}
                   </div>
                 </div>
@@ -2576,7 +2618,7 @@ export default function App() {
 
                   <div className="bg-gradient-to-br from-slate-900 to-sky-950 text-white p-5 rounded-3xl shadow-lg space-y-3 border border-sky-400/20 xl:self-stretch">
                     <h3 className="text-xs font-black uppercase tracking-wider text-sky-300 flex items-center">
-                      <DollarSign size={16} className="mr-1 text-emerald-400" /> Reparto y Liquidación Inteligente de Deudas
+                      <DollarSign size={16} className="mr-1 text-emerald-400" /> Reparto y Liquidación Inteligente de Deudas {helpIcon('gastos')}
                     </h3>
                     {calculatedDebts.length === 0 ? (
                       <p className="text-xs text-sky-200">¡Cuentas saldadas!</p>
@@ -2973,15 +3015,15 @@ export default function App() {
       <main className="w-full max-w-md md:max-w-[1480px] mx-auto p-4 md:p-7 space-y-6">
         {activeTab === 'my-events' && (
           <div className="space-y-6 desktop-my-events w-full max-w-[1080px] mx-auto">
-            <div className="desktop-page-heading"><div><p className="desktop-eyebrow">TU AGENDA</p><h1>Mis salidas</h1><p>Organiza, consulta y disfruta tus próximos encuentros.</p></div><span className="desktop-count">{filteredMyEvents.length} planes</span></div>
+            <div className="desktop-page-heading"><div><p className="desktop-eyebrow">TU AGENDA</p><h1>Mis salidas {helpIcon('misplanes')}</h1><p>Organiza, consulta y disfruta tus próximos encuentros.</p></div><span className="desktop-count">{filteredMyEvents.length} planes</span></div>
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,320px)_minmax(0,680px)] gap-4 items-start">
-            <button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-bold py-3 px-4 rounded-2xl text-sm shadow-lg flex items-center justify-center space-x-2">
+            <div className="flex items-center gap-2 min-w-0"><button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-bold py-3 px-4 rounded-2xl text-sm shadow-lg flex items-center justify-center space-x-2">
               <Plus size={18} /> <span>Crear Nueva Salida / Plan</span>
-            </button>
+            </button>{helpIcon('crear')}</div>
 
             <section className="bg-white/95 rounded-3xl border border-sky-100 p-4 shadow-sm space-y-3" aria-label="Mi calendario de planes">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-black text-slate-800 flex items-center gap-2"><Calendar size={17} className="text-sky-600" /> Mi calendario</h2>
+                <h2 className="text-sm font-black text-slate-800 flex items-center gap-2"><Calendar size={17} className="text-sky-600" /> Mi calendario {helpIcon('calendario')}</h2>
                 <button type="button" aria-expanded={calendarExpanded} aria-controls="personal-calendar-content" onClick={() => setCalendarExpanded(v => !v)} className="text-xs font-bold text-sky-700 px-3 py-2 rounded-xl bg-sky-50 border border-sky-200">{calendarExpanded ? 'Ocultar ▲' : 'Mostrar calendario ▼'}</button>
               </div>
               {calendarExpanded && <div id="personal-calendar-content" className="space-y-3">
@@ -3069,7 +3111,7 @@ export default function App() {
 
         {activeTab === 'search' && (
           <div className="space-y-5 desktop-search w-full max-w-[1080px] mx-auto">
-            <div className="desktop-page-heading"><div><p className="desktop-eyebrow">EXPLORAR</p><h1>Buscar planes</h1><p>Encuentra tus encuentros, invitaciones y próximos planes.</p></div><span className="desktop-count">{filteredSearchEvents.length} planes</span></div>
+            <div className="desktop-page-heading"><div><p className="desktop-eyebrow">EXPLORAR</p><h1>Buscar planes {helpIcon('buscar')}</h1><p>Encuentra tus encuentros, invitaciones y próximos planes.</p></div><span className="desktop-count">{filteredSearchEvents.length} planes</span></div>
             <div className="desktop-search-filters">
             <input 
               type="text" 
@@ -3193,13 +3235,14 @@ export default function App() {
           <div className="space-y-4 desktop-notifications w-full max-w-[900px] mx-auto">
             <section className="bg-white/95 p-5 rounded-[2.5rem] border border-sky-200 shadow-sm space-y-3">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-sm font-black text-slate-800 flex items-center gap-2"><Bell size={17} className="text-sky-600" /> Comunicados y avisos</h2>
+                <h2 className="text-sm font-black text-slate-800 flex items-center gap-2"><Bell size={17} className="text-sky-600" /> Comunicados y avisos {helpIcon('avisos')}</h2>
                 {unreadNotificationsCount > 0 && <span className="text-[10px] font-black bg-red-100 text-red-700 px-2.5 py-1 rounded-full">{unreadNotificationsCount} sin leer</span>}
               </div>
               {notifications.length === 0 ? <p className="text-xs text-slate-500">No tienes comunicados nuevos.</p> : (
                 <div className="space-y-2">
                   {visibleNotifications.map(item => {
                     const notice = item.notifications;
+                    return (
                       <button key={item.id} type="button" onClick={() => handleOpenNotification(item)}
                         className={`w-full text-left p-3 rounded-2xl border transition ${item.read_at ? 'bg-white border-slate-200' : 'bg-sky-50 border-sky-300'}`}>
                         <div className="flex items-start justify-between gap-2">
@@ -3417,7 +3460,7 @@ export default function App() {
                 <div className="bg-white/90 p-4 xl:p-5 rounded-[2rem] border border-sky-100 shadow-sm space-y-3 min-w-0">
                   <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 p-3 rounded-xl">Protección del histórico: bloquear o rechazar una cuenta no elimina usuarios ni modifica planes, gastos o participaciones. La eliminación definitiva de cuentas está deshabilitada.</p>
                   <h2 className="text-sm font-black text-slate-800 flex items-center">
-                    <Users size={16} className="mr-1.5 text-sky-600" /> Todos los Usuarios Registrados ({registeredUsers.length})
+                    <Users size={16} className="mr-1.5 text-sky-600" /> Todos los Usuarios Registrados ({registeredUsers.length}) {helpIcon('usuarios')}
                   </h2>
                   <div className="space-y-2">
                     <label htmlFor="registered-user-search" className="block text-xs font-bold text-slate-700">Buscar usuario por nombre, apellidos o correo</label>
