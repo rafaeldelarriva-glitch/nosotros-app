@@ -162,6 +162,14 @@ export default function App() {
   const [notificationCategory, setNotificationCategory] = useState('general');
   const [notificationTargetMode, setNotificationTargetMode] = useState('all');
   const [selectedNotificationUsers, setSelectedNotificationUsers] = useState([]);
+  const [notificationUserSearch, setNotificationUserSearch] = useState('');
+  const [editingNotificationId, setEditingNotificationId] = useState(null);
+  const [editingNotificationTitle, setEditingNotificationTitle] = useState('');
+  const [editingNotificationMessage, setEditingNotificationMessage] = useState('');
+  const [editingNotificationCategory, setEditingNotificationCategory] = useState('general');
+  const [isUpdatingNotification, setIsUpdatingNotification] = useState(false);
+  const [deletingNotificationId, setDeletingNotificationId] = useState(null);
+  const [sentNotificationPage, setSentNotificationPage] = useState(1);
   const [selectedNotificationTemplate, setSelectedNotificationTemplate] = useState('');
   const [isSendingNotification, setIsSendingNotification] = useState(false);
   const [isSavingNotificationTemplate, setIsSavingNotificationTemplate] = useState(false);
@@ -526,6 +534,51 @@ export default function App() {
       alert('No se pudo enviar el comunicado: ' + (err.message || 'Error desconocido'));
     } finally {
       setIsSendingNotification(false);
+    }
+  };
+
+  const handleEditSentNotification = (notice) => {
+    setEditingNotificationId(notice.id);
+    setEditingNotificationTitle(notice.title || '');
+    setEditingNotificationMessage(notice.message || '');
+    setEditingNotificationCategory(notice.category || 'general');
+  };
+
+  const handleUpdateSentNotification = async (e) => {
+    e.preventDefault();
+    if (!isAdmin || !editingNotificationId || isUpdatingNotification) return;
+    if (!editingNotificationTitle.trim() || !editingNotificationMessage.trim()) return;
+    try {
+      setIsUpdatingNotification(true);
+      const { error } = await supabase.from('notifications').update({
+        title: editingNotificationTitle.trim(),
+        message: editingNotificationMessage.trim(),
+        category: editingNotificationCategory
+      }).eq('id', editingNotificationId);
+      if (error) throw error;
+      setEditingNotificationId(null);
+      await fetchNotifications();
+      alert('Comunicado actualizado. Los destinatarios verán el texto corregido.');
+    } catch (err) {
+      alert('No se pudo modificar el comunicado: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setIsUpdatingNotification(false);
+    }
+  };
+
+  const handleDeleteSentNotification = async (notice) => {
+    if (!isAdmin || deletingNotificationId) return;
+    if (!window.confirm(`¿Eliminar definitivamente el comunicado «${notice.title}» para todos los destinatarios?`)) return;
+    try {
+      setDeletingNotificationId(notice.id);
+      const { error } = await supabase.from('notifications').delete().eq('id', notice.id);
+      if (error) throw error;
+      if (editingNotificationId === notice.id) setEditingNotificationId(null);
+      await fetchNotifications();
+    } catch (err) {
+      alert('No se pudo eliminar el comunicado: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setDeletingNotificationId(null);
     }
   };
 
@@ -3029,7 +3082,10 @@ export default function App() {
                 return (
                   <article key={event.id} className="desktop-plan-card bg-white/90 rounded-2xl border border-sky-100 p-4 shadow-sm flex flex-col justify-between gap-4">
                     <div className="min-w-0">
-                      <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">📅 {formatPlanDateES(event.date)} • Organiza: {event.creator_name}</span>
+                      <div className="flex flex-wrap items-center gap-2 mb-2">
+                        <span className="inline-flex items-center text-xs font-semibold text-sky-700 bg-sky-50 px-2.5 py-1 rounded-lg">📅 {formatPlanDateES(event.date)}</span>
+                        <span className="inline-flex items-center text-sm md:text-base font-extrabold text-slate-800 bg-slate-100 px-3 py-1 rounded-lg">Organiza: {event.creator_name}</span>
+                      </div>
                       <h3 className="font-bold text-sm text-slate-800 mt-1">{event.title}</h3>
                       {event.description && <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap break-words">{event.description}</p>}
                     </div>
@@ -3179,14 +3235,42 @@ export default function App() {
                       <label className="flex items-center gap-1"><input type="radio" name="notification-target" checked={notificationTargetMode === 'selected'} onChange={() => setNotificationTargetMode('selected')} /> Seleccionar</label>
                     </div>
                     {notificationTargetMode === 'selected' && (
-                      <div className="max-h-40 overflow-y-auto rounded-xl border border-sky-100 p-2 space-y-1">
-                        {registeredUsers.filter(user => user.is_approved && !user.is_blocked).map(user => (
-                          <label key={user.id} className="flex items-center gap-2 text-xs text-slate-700 py-1">
-                            <input type="checkbox" checked={selectedNotificationUsers.includes(user.id)}
-                              onChange={e => setSelectedNotificationUsers(prev => e.target.checked ? [...new Set([...prev, user.id])] : prev.filter(id => id !== user.id))} />
-                            <span>{user.name} <span className="text-slate-400">({user.email})</span></span>
-                          </label>
-                        ))}
+                      <div className="rounded-xl border border-sky-100 p-3 space-y-2">
+                        <label className="block text-[11px] font-bold text-slate-700">Buscar usuarios por nombre, apellidos o correo
+                          <input type="search" value={notificationUserSearch} onChange={e => setNotificationUserSearch(e.target.value)}
+                            placeholder="Escribe para buscar destinatarios..." autoComplete="off"
+                            className="mt-1 w-full rounded-xl border border-sky-200 bg-white px-3 py-2.5 text-xs" />
+                        </label>
+                        {selectedNotificationUsers.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5" aria-label="Destinatarios seleccionados">
+                            {selectedNotificationUsers.map(id => {
+                              const user = registeredUsers.find(item => item.id === id);
+                              if (!user) return null;
+                              return <button key={id} type="button" title="Quitar destinatario"
+                                onClick={() => setSelectedNotificationUsers(prev => prev.filter(value => value !== id))}
+                                className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-semibold text-sky-800">
+                                {user.name} {user.surname || ''} <X size={12} />
+                              </button>;
+                            })}
+                          </div>
+                        )}
+                        <p className="text-[11px] text-slate-500">{selectedNotificationUsers.length} destinatario(s) seleccionado(s). Busca y añade tantos como necesites.</p>
+                        {notificationUserSearch.trim().length > 0 && (() => {
+                          const query = notificationUserSearch.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+                          const matches = registeredUsers.filter(user => user.is_approved && !user.is_blocked &&
+                            [user.name, user.surname, user.email].join(' ').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(query))
+                            .filter(user => !selectedNotificationUsers.includes(user.id));
+                          return <div className="max-h-52 overflow-y-auto space-y-1" role="listbox" aria-label="Resultados de usuarios">
+                            {matches.slice(0, 8).map(user => <button key={user.id} type="button"
+                              onClick={() => { setSelectedNotificationUsers(prev => [...prev, user.id]); setNotificationUserSearch(''); }}
+                              className="w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs hover:bg-sky-50 border border-slate-100">
+                              <span className="min-w-0"><strong className="block truncate">{user.name} {user.surname || ''}</strong><span className="block truncate text-slate-500">{user.email}</span></span>
+                              <Plus size={15} className="shrink-0 text-sky-600" />
+                            </button>)}
+                            {matches.length === 0 && <p className="text-xs text-slate-500 py-2">No hay usuarios coincidentes.</p>}
+                            {matches.length > 8 && <p className="text-[11px] text-slate-500">Mostrando 8 de {matches.length}. Especifica más la búsqueda.</p>}
+                          </div>;
+                        })()}
                       </div>
                     )}
                   </fieldset>
@@ -3204,17 +3288,48 @@ export default function App() {
                 <div className="pt-3 border-t border-emerald-100 space-y-2">
                   <h3 className="text-xs font-black text-slate-800">Últimos comunicados enviados</h3>
                   {adminNotificationHistory.length === 0 ? <p className="text-[11px] text-slate-500">Todavía no hay comunicados enviados.</p> : (
-                    <div className="space-y-2 max-h-64 overflow-y-auto">
-                      {adminNotificationHistory.map(item => (
-                        <article key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                          <div className="flex justify-between gap-2">
-                            <p className="text-xs font-bold text-slate-800">{item.title}</p>
-                            <span className="text-[9px] text-slate-500 shrink-0">{formatDateES(item.created_at)}</span>
-                          </div>
-                          <p className="text-[11px] text-slate-600 mt-1 whitespace-pre-wrap">{item.message}</p>
-                          <p className="text-[10px] text-sky-700 mt-1 capitalize">{item.category || 'general'}</p>
+                    <div className="space-y-2">
+                      {adminNotificationHistory.slice((Math.min(sentNotificationPage, Math.ceil(adminNotificationHistory.length / 5)) - 1) * 5, Math.min(sentNotificationPage, Math.ceil(adminNotificationHistory.length / 5)) * 5).map(item => (
+                        <article key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                          {editingNotificationId === item.id ? (
+                            <form onSubmit={handleUpdateSentNotification} className="space-y-2">
+                              <label className="block text-[11px] font-semibold">Título
+                                <input required maxLength={120} value={editingNotificationTitle} onChange={e => setEditingNotificationTitle(e.target.value)} className="mt-1 w-full rounded-lg border border-sky-200 p-2 text-xs" />
+                              </label>
+                              <label className="block text-[11px] font-semibold">Mensaje
+                                <textarea required maxLength={3000} rows={4} value={editingNotificationMessage} onChange={e => setEditingNotificationMessage(e.target.value)} className="mt-1 w-full rounded-lg border border-sky-200 p-2 text-xs" />
+                              </label>
+                              <label className="block text-[11px] font-semibold">Categoría
+                                <select value={editingNotificationCategory} onChange={e => setEditingNotificationCategory(e.target.value)} className="mt-1 w-full rounded-lg border border-sky-200 p-2 text-xs">
+                                  <option value="general">Aviso general</option><option value="version">Nueva versión</option><option value="incidencia">Fallo en el sistema</option><option value="funcionalidad">Nueva funcionalidad</option><option value="mantenimiento">Mantenimiento</option>
+                                </select>
+                              </label>
+                              <div className="flex flex-wrap gap-2">
+                                <button type="submit" disabled={isUpdatingNotification} className="rounded-lg bg-sky-600 text-white px-3 py-2 text-xs font-bold disabled:opacity-50">{isUpdatingNotification ? 'Guardando...' : 'Guardar cambios'}</button>
+                                <button type="button" onClick={() => setEditingNotificationId(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs">Cancelar</button>
+                              </div>
+                            </form>
+                          ) : (
+                            <>
+                              <div className="flex justify-between gap-2">
+                                <p className="text-xs font-bold text-slate-800">{item.title}</p>
+                                <span className="text-[9px] text-slate-500 shrink-0">{formatDateES(item.created_at)}</span>
+                              </div>
+                              <p className="text-[11px] text-slate-600 whitespace-pre-wrap">{item.message}</p>
+                              <p className="text-[10px] text-sky-700 capitalize">{item.category || 'general'}</p>
+                              <div className="flex flex-wrap gap-2 pt-1">
+                                <button type="button" onClick={() => handleEditSentNotification(item)} className="inline-flex items-center gap-1 rounded-lg border border-sky-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-sky-700"><Edit3 size={12} /> Modificar</button>
+                                <button type="button" disabled={deletingNotificationId === item.id} onClick={() => handleDeleteSentNotification(item)} className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-red-700 disabled:opacity-50"><Trash2 size={12} /> {deletingNotificationId === item.id ? 'Eliminando...' : 'Eliminar'}</button>
+                              </div>
+                            </>
+                          )}
                         </article>
                       ))}
+                      {adminNotificationHistory.length > 5 && <div className="flex items-center justify-center gap-3 pt-2 text-xs">
+                        <button type="button" disabled={sentNotificationPage <= 1} onClick={() => setSentNotificationPage(p => Math.max(1, p - 1))} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Anterior</button>
+                        <span>Página {Math.min(sentNotificationPage, Math.ceil(adminNotificationHistory.length / 5))} de {Math.ceil(adminNotificationHistory.length / 5)}</span>
+                        <button type="button" disabled={sentNotificationPage >= Math.ceil(adminNotificationHistory.length / 5)} onClick={() => setSentNotificationPage(p => p + 1)} className="rounded-lg border px-3 py-1.5 disabled:opacity-40">Siguiente</button>
+                      </div>}
                     </div>
                   )}
                 </div>
