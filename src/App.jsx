@@ -246,6 +246,7 @@ export default function App() {
   // Sitios, Autocompletado OpenStreetMap y GPS
   const [newSpotName, setNewSpotName] = useState('');
   const [osmSuggestions, setOsmSuggestions] = useState([]);
+  const [hideSpotSuggestions, setHideSpotSuggestions] = useState(false);
   const [spotSearchError, setSpotSearchError] = useState('');
   const [isSearchingOsm, setIsSearchingOsm] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
@@ -1454,6 +1455,7 @@ export default function App() {
       if (error) throw error;
       if (!savedSpot?.id) throw new Error('No se ha recibido confirmación de la propuesta guardada.');
       setNewSpotName('');
+      setHideSpotSuggestions(false);
       setOsmSuggestions([]);
       await refreshAllData();
     } catch (err) {
@@ -2620,7 +2622,7 @@ export default function App() {
                           type="text" 
                           placeholder="Escribe un bar o sitio (ej. Bar Shiko)..." 
                           value={newSpotName} 
-                          onChange={(e) => setNewSpotName(e.target.value)} 
+                          onChange={(e) => { setNewSpotName(e.target.value); setHideSpotSuggestions(false); }} 
                           className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" 
                         />
                         {isSearchingOsm && (
@@ -2628,13 +2630,14 @@ export default function App() {
                         )}
                       </div>
 
-                      {osmSuggestions.length > 0 && (
-                        <div className="absolute left-0 right-0 top-11 bg-white border border-sky-200 rounded-2xl shadow-xl z-50 max-h-48 overflow-y-auto divide-y divide-sky-100">
+                      {osmSuggestions.length > 0 && !hideSpotSuggestions && (
+                        <div className="bg-white border border-sky-200 rounded-2xl shadow-sm max-h-36 overflow-y-auto divide-y divide-sky-100">
                           {osmSuggestions.map((item, idx) => (
                             <div 
                               key={idx} 
                               onClick={() => {
                                 setNewSpotName(item.name || item.display_name);
+                                setHideSpotSuggestions(true);
                                 setOsmSuggestions([]);
                                 setSpotSearchError('');
                               }}
@@ -2661,9 +2664,17 @@ export default function App() {
                         Búsqueda con Photon · Datos de OpenStreetMap. {searchLocation ? 'Resultados priorizados cerca de tu ubicación.' : 'Pulsa «Buscar cerca de mí» para priorizar los resultados según tu ubicación.'}
                       </p>
 
-                      <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow">
-                        🔍 Añadir a la ruta
+                      {newSpotName.trim() && osmSuggestions.length > 0 && !hideSpotSuggestions && (
+                        <button type="button" onClick={() => { setHideSpotSuggestions(true); setOsmSuggestions([]); }}
+                          className="w-full rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+                          No aparece mi sitio · Usar el nombre escrito
+                        </button>
+                      )}
+                      <button type="submit" disabled={addingSpot || !newSpotName.trim()}
+                        className="w-full bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-xs font-bold rounded-2xl py-2.5 shadow">
+                        {addingSpot ? 'Guardando...' : '➕ Guardar propuesta con este nombre'}
                       </button>
+                      <p className="text-[10px] text-slate-500 px-1">No es obligatorio elegir un resultado del buscador. Puedes guardar cualquier establecimiento o evento escribiendo su nombre.</p>
                     </form>
                   </div>
 
