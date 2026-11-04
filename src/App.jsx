@@ -2060,6 +2060,30 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-24 md:pb-8 md:ml-64 relative overflow-hidden nosotros-desktop nosotros-detail">
         <style>{`
+
+/* Corrección móvil: títulos y recuentos no heredan tamaños enormes */
+@media (max-width: 767px) {
+ .nosotros-desktop .desktop-page-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin:0 0 14px; }
+ .nosotros-desktop .desktop-page-heading > div { min-width:0; }
+ .nosotros-desktop .desktop-eyebrow { font-size:10px; font-weight:800; letter-spacing:.1em; color:#3279ad; margin:0 0 3px; }
+ .nosotros-desktop .desktop-page-heading h1 { font-size:23px; line-height:1.25; font-weight:850; letter-spacing:-.03em; color:#182b43; margin:0; }
+ .nosotros-desktop .desktop-page-heading p:not(.desktop-eyebrow) { font-size:12px; line-height:1.45; color:#708098; margin:5px 0 0; }
+ .nosotros-desktop .desktop-count { flex-shrink:0; background:#e7f3ff; color:#286b9f; border-radius:999px; padding:6px 9px; font-size:11px; font-weight:800; margin-top:17px; }
+ .nosotros-desktop .desktop-my-events > .grid:first-of-type { gap:12px; }
+ .nosotros-desktop .desktop-my-events > .grid:first-of-type > button { min-height:49px; }
+ .nosotros-desktop .desktop-search-filters { display:flex; flex-direction:column; gap:10px; }
+ .nosotros-desktop .desktop-search-filters > * { width:100%; }
+ .nosotros-desktop .desktop-plan-card { min-height:0; }
+}
+@media (min-width: 768px) {
+ .nosotros-desktop .desktop-notifications { max-width:1050px; margin-inline:auto; }
+ .nosotros-desktop .desktop-notifications > section { border-radius:18px; padding:22px 25px; }
+ .nosotros-desktop .desktop-notifications > section button { border-radius:12px; }
+ .nosotros-desktop .desktop-notifications > section input,
+ .nosotros-desktop .desktop-notifications > section select,
+ .nosotros-desktop .desktop-notifications > section textarea { max-width:100%; }
+}
+
 /* NOSOTROS Desktop 2.0 — reglas visuales, sin modificar lógica de datos */
 @media (min-width: 768px) {
  .nosotros-desktop { background: #f5f7fb !important; color: #24324a; }
@@ -2785,6 +2809,30 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-24 md:pb-8 md:pl-64 relative overflow-hidden nosotros-desktop">
       <style>{`
+
+/* Corrección móvil: títulos y recuentos no heredan tamaños enormes */
+@media (max-width: 767px) {
+ .nosotros-desktop .desktop-page-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; margin:0 0 14px; }
+ .nosotros-desktop .desktop-page-heading > div { min-width:0; }
+ .nosotros-desktop .desktop-eyebrow { font-size:10px; font-weight:800; letter-spacing:.1em; color:#3279ad; margin:0 0 3px; }
+ .nosotros-desktop .desktop-page-heading h1 { font-size:23px; line-height:1.25; font-weight:850; letter-spacing:-.03em; color:#182b43; margin:0; }
+ .nosotros-desktop .desktop-page-heading p:not(.desktop-eyebrow) { font-size:12px; line-height:1.45; color:#708098; margin:5px 0 0; }
+ .nosotros-desktop .desktop-count { flex-shrink:0; background:#e7f3ff; color:#286b9f; border-radius:999px; padding:6px 9px; font-size:11px; font-weight:800; margin-top:17px; }
+ .nosotros-desktop .desktop-my-events > .grid:first-of-type { gap:12px; }
+ .nosotros-desktop .desktop-my-events > .grid:first-of-type > button { min-height:49px; }
+ .nosotros-desktop .desktop-search-filters { display:flex; flex-direction:column; gap:10px; }
+ .nosotros-desktop .desktop-search-filters > * { width:100%; }
+ .nosotros-desktop .desktop-plan-card { min-height:0; }
+}
+@media (min-width: 768px) {
+ .nosotros-desktop .desktop-notifications { max-width:1050px; margin-inline:auto; }
+ .nosotros-desktop .desktop-notifications > section { border-radius:18px; padding:22px 25px; }
+ .nosotros-desktop .desktop-notifications > section button { border-radius:12px; }
+ .nosotros-desktop .desktop-notifications > section input,
+ .nosotros-desktop .desktop-notifications > section select,
+ .nosotros-desktop .desktop-notifications > section textarea { max-width:100%; }
+}
+
 /* NOSOTROS Desktop 2.0 — reglas visuales, sin modificar lógica de datos */
 @media (min-width: 768px) {
  .nosotros-desktop { background: #f5f7fb !important; color: #24324a; }
@@ -3066,7 +3114,7 @@ export default function App() {
 
         {/* PESTAÑA APROBACIONES / PANEL DE ADMINISTRADOR Y SOLICITUDES DE PLANES */}
         {activeTab === 'notifications' && (
-          <div className="space-y-4">
+          <div className="space-y-4 desktop-notifications">
             <section className="bg-white/95 p-5 rounded-[2.5rem] border border-sky-200 shadow-sm space-y-3">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="text-sm font-black text-slate-800 flex items-center gap-2"><Bell size={17} className="text-sky-600" /> Comunicados y avisos</h2>
