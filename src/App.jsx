@@ -245,6 +245,9 @@ export default function App() {
 
   // Sitios, Autocompletado OpenStreetMap y GPS
   const [newSpotName, setNewSpotName] = useState('');
+  const [mapsShareUrl, setMapsShareUrl] = useState('');
+  const [mapsAddress, setMapsAddress] = useState('');
+  const [mapsLookupMessage, setMapsLookupMessage] = useState('');
   const [osmSuggestions, setOsmSuggestions] = useState([]);
   const [spotSearchError, setSpotSearchError] = useState('');
   const [isSearchingOsm, setIsSearchingOsm] = useState(false);
@@ -793,6 +796,11 @@ export default function App() {
       const allVisibleEvents = [...formattedEvents, ...previews.filter(ev => !confirmedIds.has(ev.id))];
       allVisibleEvents.sort((a, b) => new Date(b.date) - new Date(a.date));
       setEvents(allVisibleEvents);
+      const requestedId = /^#plan=([0-9a-f-]{36})$/i.exec(window.location.hash)?.[1];
+      if (requestedId && !activeEvent) {
+        const requestedEvent = formattedEvents.find(ev => ev.id === requestedId);
+        if (requestedEvent) setActiveEvent(requestedEvent);
+      }
 
       if (activeEvent) {
         const updatedActive = formattedEvents.find(e => e.id === activeEvent.id);
@@ -1444,11 +1452,14 @@ export default function App() {
         suggested_by: currentUser.name,
         suggested_by_id: currentUser.id,
         active_now: false,
-        stop_order: currentSelectedCount + 1
+        stop_order: currentSelectedCount + 1,
+        maps_url: mapsShareUrl.trim() || null,
+        address: mapsAddress.trim() || null
       }]).select('id, event_id, name').single();
       if (error) throw error;
       if (!savedSpot?.id) throw new Error('No se ha recibido confirmación de la propuesta guardada.');
       setNewSpotName('');
+      setMapsShareUrl(''); setMapsAddress(''); setMapsLookupMessage('');
       setOsmSuggestions([]);
       await refreshAllData();
     } catch (err) {
@@ -1524,6 +1535,41 @@ export default function App() {
     }, { enableHighAccuracy: true });
   };
 
+  // Compartir desde el menú nativo, con copia alternativa en escritorio.
+  const planPublicUrl = (event) => `${window.location.origin}${window.location.pathname}#plan=${encodeURIComponent(event.id)}`;
+  const handleSharePlan = async () => {
+    if (!activeEvent) return;
+    const url = planPublicUrl(activeEvent);
+    const message = `🍻 ¡Tenemos plan en NOSOTROS!\n📍 ${activeEvent.title}\n📅 ${formatPlanDateES(activeEvent.date)}${activeEvent.description ? `\n📝 ${activeEvent.description}` : ''}\n🔗 ${url}\n(El acceso requiere estar autorizado en NOSOTROS.)`;
+    try {
+      if (navigator.share) await navigator.share({ title: activeEvent.title, text: message });
+      else { await navigator.clipboard.writeText(message); alert('Mensaje del plan copiado. Pégalo en WhatsApp o en tu correo.'); }
+    } catch (error) { if (error?.name !== 'AbortError') alert('No se pudo compartir el plan.'); }
+  };
+  const handleAddPlanToCalendar = () => {
+    if (!activeEvent) return;
+    const date = String(activeEvent.date || '').slice(0, 10).replaceAll('-', '');
+    if (!/^\d{8}$/.test(date)) { alert('El plan no tiene una fecha válida.'); return; }
+    const next = new Date(Date.UTC(Number(date.slice(0,4)), Number(date.slice(4,6))-1, Number(date.slice(6,8))+1));
+    const end = next.toISOString().slice(0,10).replaceAll('-', '');
+    const esc = (v) => String(v || '').replaceAll('\\', '\\\\').replaceAll('\n', '\\n').replaceAll(',', '\\,').replaceAll(';', '\\;');
+    const ics = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//NOSOTROS//ES','BEGIN:VEVENT',`UID:${activeEvent.id}@nosotros`,`DTSTAMP:${new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'')}`,`DTSTART;VALUE=DATE:${date}`,`DTEND;VALUE=DATE:${end}`,`SUMMARY:${esc('🍻 NOSOTROS - '+activeEvent.title)}`,`DESCRIPTION:${esc([activeEvent.description,planPublicUrl(activeEvent)].filter(Boolean).join('\n'))}`,'END:VEVENT','END:VCALENDAR'].join('\r\n');
+    const url = URL.createObjectURL(new Blob([ics], {type:'text/calendar;charset=utf-8'}));
+    const a = document.createElement('a'); a.href = url; a.download = `NOSOTROS-${date}.ics`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 3000);
+  };
+  // Un enlace corto de Google Maps NO contiene necesariamente los datos del lugar.
+  // Sin API de Places en servidor, evitamos inventar nombre o dirección.
+  const handleMapsShareInput = (value) => {
+    setMapsShareUrl(value); setMapsLookupMessage('');
+    if (!value.trim()) return;
+    try {
+      const url = new URL(value.trim());
+      if (url.protocol !== 'https:' || !/(^|\.)(google\.[a-z.]+|googleusercontent\.com|goo\.gl)$/.test(url.hostname) && url.hostname !== 'maps.app.goo.gl') throw new Error('Enlace no reconocido');
+      const q = url.searchParams.get('q') || url.searchParams.get('query');
+      if (q && !/^[-+]?\d+(\.\d+)?,[-+]?\d+(\.\d+)?$/.test(q)) setNewSpotName(decodeURIComponent(q));
+      setMapsLookupMessage('Enlace válido. Comprueba el nombre y escribe la dirección; la extracción automática requiere un servicio Google Places configurado.');
+    } catch { setMapsLookupMessage('Introduce un enlace HTTPS de Google Maps válido.'); }
+  };
   const handleShareLiveLocation = () => {
     if (!activeEvent.live_lat || !activeEvent.live_lon) return;
     const currentSpot = (activeEvent.spots || []).find(s => s.is_current_here);
@@ -2332,6 +2378,10 @@ export default function App() {
                 </div>
               </div>
 
+              <div className="flex flex-wrap gap-2 mt-2">
+                <button type="button" onClick={handleSharePlan} className="inline-flex items-center gap-1 rounded-xl bg-sky-600 text-white px-3 py-2 text-xs font-bold"><Share2 size={14}/> Compartir plan</button>
+                <button type="button" onClick={handleAddPlanToCalendar} className="inline-flex items-center gap-1 rounded-xl bg-white border border-sky-200 text-sky-800 px-3 py-2 text-xs font-bold"><Calendar size={14}/> Añadir al calendario</button>
+              </div>
               {!isClosed && activeEvent.live_lat && (
                 <button onClick={handleShareLiveLocation} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-2xl shadow flex items-center space-x-1.5 transition shrink-0">
                   <Share2 size={14} />
@@ -2630,6 +2680,13 @@ export default function App() {
                         Búsqueda con Photon · Datos de OpenStreetMap. {searchLocation ? 'Resultados priorizados cerca de tu ubicación.' : 'Pulsa «Buscar cerca de mí» para priorizar los resultados según tu ubicación.'}
                       </p>
 
+                      <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 space-y-2">
+                        <label className="text-xs font-bold text-slate-800 flex gap-1 items-center"><Info size={14}/> Pegar enlace de Google Maps</label>
+                        <input type="url" value={mapsShareUrl} onChange={e => handleMapsShareInput(e.target.value)} placeholder="https://share.google/..." className="w-full rounded-lg border border-sky-200 p-2 text-xs" />
+                        <p className="text-[11px] text-slate-600">Abre el establecimiento en Google Maps → Compartir → Copiar enlace. Pégalo aquí. Si no se detecta el nombre, escríbelo arriba. Añade su dirección para identificarlo bien.</p>
+                        {mapsLookupMessage && <p className="text-[11px] text-amber-800" role="status">{mapsLookupMessage}</p>}
+                        <input type="text" value={mapsAddress} onChange={e => setMapsAddress(e.target.value)} placeholder="Dirección del establecimiento (opcional)" className="w-full rounded-lg border border-sky-200 p-2 text-xs" />
+                      </div>
                       <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow">
                         🔍 Añadir a la ruta
                       </button>
