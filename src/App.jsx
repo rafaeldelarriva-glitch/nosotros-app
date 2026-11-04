@@ -228,80 +228,108 @@ export default function App() {
     }
   }, [activeEvent?.id]);
 
-  // Autocompletado tolerante a búsquedas parciales. Photon no garantiza
-  // coincidencias por subcadenas: probamos también los términos individuales.
+  // Buscador de establecimientos con Photon. Una sola petición por consulta,
+  // caché local y debounce para evitar saturar el servicio público.
+  const spotSearchCache = useRef(new Map());
   useEffect(() => {
     const query = newSpotName.trim();
     if (query.length < 2) {
       setOsmSuggestions([]);
       setIsSearchingOsm(false);
       setSpotSearchError('');
-      return;
+      return undefined;
     }
 
     let cancelled = false;
     const controller = new AbortController();
+    const normalizedQuery = query.normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es');
+    const locationKey = searchLocation && Number.isFinite(searchLocation.lat) && Number.isFinite(searchLocation.lon)
+      ? `${searchLocation.lat.toFixed(3)},${searchLocation.lon.toFixed(3)}` : 'global';
+    const cacheKey = `${normalizedQuery}|${locationKey}`;
+
     const timer = setTimeout(async () => {
       setIsSearchingOsm(true);
       setSpotSearchError('');
       try {
+        const cached = spotSearchCache.current.get(cacheKey);
+        if (cached) {
+          if (!cancelled) setOsmSuggestions(cached);
+          return;
+        }
+
+        const params = new URLSearchParams({ q: query, limit: '12', lang: 'es' });
+        if (searchLocation && Number.isFinite(searchLocation.lat) && Number.isFinite(searchLocation.lon)) {
+          params.set('lat', String(searchLocation.lat));
+          params.set('lon', String(searchLocation.lon));
+          params.set('zoom', '14');
+          params.set('location_bias_scale', '0.2');
+        }
+
+        const response = await fetch(`https://photon.komoot.io/api/?${params.toString()}`, {
+          method: 'GET',
+          signal: controller.signal,
+          headers: { Accept: 'application/geo+json, application/json' }
+        });
+        if (!response.ok) {
+          if (response.status === 429) throw new Error('El buscador está recibiendo demasiadas consultas. Espera unos segundos y vuelve a intentarlo.');
+          throw new Error(`El servicio de mapas respondió con el código ${response.status}.`);
+        }
+
+        const payload = await response.json();
+        const features = Array.isArray(payload?.features) ? payload.features : [];
         const normalize = value => String(value || '').normalize('NFD')
-          .replace(/[\\u0300-\\u036f]/g, '').toLowerCase().trim();
-        const words = query.split(/\\s+/).filter(w => w.length >= 2);
-        const queries = [...new Set([query, ...(words.length > 1 ? words : [])])].slice(0, 4);
-        const requests = queries.map(async (term) => {
-          const params = new URLSearchParams({
-            q: term, limit: '30', lang: 'es'
-          });
-          if (searchLocation && Number.isFinite(searchLocation.lat) && Number.isFinite(searchLocation.lon)) {
-            params.set('lat', String(searchLocation.lat));
-            params.set('lon', String(searchLocation.lon));
-            params.set('zoom', '14');
-          }
-          const res = await fetch(`https://photon.komoot.io/api/?${params}`, {
-            signal: controller.signal,
-            headers: { Accept: 'application/json' }
-          });
-          if (!res.ok) throw new Error(`Photon respondió ${res.status}`);
-          const data = await res.json();
-          return Array.isArray(data.features) ? data.features : [];
-        });
-        const results = await Promise.allSettled(requests);
-        if (cancelled) return;
-        const successful = results.filter(r => r.status === 'fulfilled');
-        if (!successful.length) throw new Error('Servicio de búsqueda no disponible');
+          .replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').trim();
+        const queryWords = normalizedQuery.split(/\s+/).filter(Boolean);
         const unique = new Map();
-        successful.flatMap(r => r.value).forEach(feature => {
-          const props = feature.properties || {};
-          const mainName = props.name || props.street || props.city || '';
-          if (!mainName) return;
-          const locality = [props.street, props.district, props.city, props.state, props.country]
-            .filter((v, i, a) => v && v !== mainName && a.indexOf(v) === i).join(', ');
-          const display_name = locality ? `${mainName} · ${locality}` : mainName;
-          const haystack = normalize(display_name);
-          const matchCount = words.filter(w => haystack.includes(normalize(w))).length;
-          if (!matchCount && !haystack.includes(normalize(query))) return;
-          const coords = feature.geometry?.coordinates || [];
-          const id = `${props.osm_type || ''}-${props.osm_id || ''}-${coords.join(',')}-${mainName}`;
-          const inSpain = normalize(props.country) === 'espana' || normalize(props.country) === 'spain' || props.countrycode === 'ES';
-          const score = (haystack.includes(normalize(query)) ? 100 : 0) +
-            matchCount * 15 + (inSpain ? 10 : 0) +
-            (normalize(mainName).startsWith(normalize(query)) ? 30 : 0);
+
+        features.forEach(feature => {
+          const props = feature?.properties || {};
+          const coords = feature?.geometry?.coordinates || [];
+          const lon = Number(coords[0]);
+          const lat = Number(coords[1]);
+          const name = props.name || props.street || props.locality || props.city || '';
+          if (!name || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+          const locality = [props.street, props.housenumber, props.district, props.city, props.state, props.country]
+            .filter((value, index, values) => value && value !== name && values.indexOf(value) === index)
+            .join(', ');
+          const displayName = locality ? `${name} · ${locality}` : name;
+          const haystack = normalize(`${name} ${displayName} ${props.osm_value || ''}`);
+          const matches = queryWords.filter(word => haystack.includes(word)).length;
+          const id = `${props.osm_type || 'place'}-${props.osm_id || ''}-${lat.toFixed(6)}-${lon.toFixed(6)}`;
+          const score = (normalize(name) === normalizedQuery ? 100 : 0)
+            + (normalize(name).startsWith(normalizedQuery) ? 40 : 0)
+            + matches * 10
+            + (props.countrycode === 'ES' ? 5 : 0);
           if (!unique.has(id)) unique.set(id, {
-            id, name: mainName, display_name, lat: coords[1], lon: coords[0], score
+            id, name, display_name: displayName, lat, lon, score,
+            osm_type: props.osm_type || null, osm_id: props.osm_id || null
           });
         });
-        setOsmSuggestions([...unique.values()].sort((a, b) => b.score - a.score).slice(0, 12));
-      } catch (err) {
-        if (err.name !== 'AbortError' && !cancelled) {
-          console.error('Error buscando establecimientos:', err);
-          setSpotSearchError('No se ha podido consultar el buscador. Puedes escribir el nombre manualmente.');
+
+        const suggestions = [...unique.values()].sort((a, b) => b.score - a.score).slice(0, 12);
+        spotSearchCache.current.set(cacheKey, suggestions);
+        // Limitar la caché para que no crezca indefinidamente.
+        if (spotSearchCache.current.size > 60) {
+          const oldestKey = spotSearchCache.current.keys().next().value;
+          spotSearchCache.current.delete(oldestKey);
+        }
+        if (!cancelled) {
+          setOsmSuggestions(suggestions);
+          setSpotSearchError(suggestions.length ? '' : 'No hay coincidencias en OpenStreetMap para esta búsqueda. Puedes añadir el sitio manualmente o buscarlo en Google Maps.');
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError' && !cancelled) {
+          console.error('Error buscando establecimientos en Photon:', error);
           setOsmSuggestions([]);
+          setSpotSearchError(error.message || 'No se ha podido consultar el buscador. Inténtalo de nuevo.');
         }
       } finally {
         if (!cancelled) setIsSearchingOsm(false);
       }
-    }, 500);
+    }, 750);
+
     return () => {
       cancelled = true;
       clearTimeout(timer);
@@ -2153,6 +2181,7 @@ export default function App() {
                               onClick={() => {
                                 setNewSpotName(item.name || item.display_name);
                                 setOsmSuggestions([]);
+                                setSpotSearchError('');
                               }}
                               className="p-2.5 text-xs text-slate-700 hover:bg-sky-50 cursor-pointer transition flex items-start space-x-2"
                             >
@@ -2162,10 +2191,16 @@ export default function App() {
                           ))}
                         </div>
                       )}
-                      {newSpotName.trim().length >= 3 && !isSearchingOsm && osmSuggestions.length === 0 && (
-                        <p className="text-[10px] text-slate-500 px-1">
-                          {spotSearchError || 'No hay coincidencias en OpenStreetMap. Puedes añadir el nombre manualmente.'}
-                        </p>
+                      {newSpotName.trim().length >= 2 && !isSearchingOsm && osmSuggestions.length === 0 && (
+                        <div className="px-1 space-y-1">
+                          <p className="text-[10px] text-slate-500">{spotSearchError || 'No hay coincidencias. Puedes añadir el nombre manualmente.'}</p>
+                          <a
+                            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(newSpotName.trim())}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex text-[10px] font-bold text-sky-700 hover:underline"
+                          >Buscar este sitio en Google Maps ↗</a>
+                        </div>
                       )}
                       <p className="text-[10px] text-slate-400 px-1">
                         Búsqueda con Photon · Datos de OpenStreetMap. {searchLocation ? 'Resultados priorizados cerca de tu ubicación.' : 'Pulsa «Buscar cerca de mí» para priorizar los resultados según tu ubicación.'}
