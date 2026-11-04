@@ -304,18 +304,19 @@ export default function App() {
         if (searchLocation && Number.isFinite(searchLocation.lat) && Number.isFinite(searchLocation.lon)) {
           params.set('lat', String(searchLocation.lat));
           params.set('lon', String(searchLocation.lon));
-          params.set('zoom', '14');
-          params.set('location_bias_scale', '0.2');
         }
 
-        const response = await fetch(`https://photon.komoot.io/api/?${params.toString()}`, {
-          method: 'GET',
-          signal: controller.signal,
-          headers: { Accept: 'application/geo+json, application/json' }
-        });
+        // Photon puede rechazar parámetros opcionales según la instancia.
+        // Reintentar una única vez con una consulta mínima si responde 400.
+        const requestOptions = { method: 'GET', signal: controller.signal, headers: { Accept: 'application/json' } };
+        let response = await fetch(`https://photon.komoot.io/api/?${params.toString()}`, requestOptions);
+        if (response.status === 400) {
+          const basicParams = new URLSearchParams({ q: query, limit: '12' });
+          response = await fetch(`https://photon.komoot.io/api/?${basicParams.toString()}`, requestOptions);
+        }
         if (!response.ok) {
           if (response.status === 429) throw new Error('El buscador está recibiendo demasiadas consultas. Espera unos segundos y vuelve a intentarlo.');
-          throw new Error(`El servicio de mapas respondió con el código ${response.status}.`);
+          throw new Error(`El servicio de mapas no está disponible (código ${response.status}). Puedes añadir el sitio manualmente o buscarlo en Google Maps.`);
         }
 
         const payload = await response.json();
