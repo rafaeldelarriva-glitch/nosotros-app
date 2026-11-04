@@ -114,8 +114,26 @@ export default function App() {
     document.addEventListener('keydown', onEscape);
     return () => document.removeEventListener('keydown', onEscape);
   }, [openHelp]);
+  const dismissSharedPlanDenied = () => {
+    setDeniedSharedPlan(false);
+    if (/^#plan=[0-9a-f-]{36}$/i.test(window.location.hash)) {
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    }
+    setActiveEvent(null);
+    setActiveTab('my-events');
+  };
   const renderAppMessages = () => (
     <>
+      {deniedSharedPlan && currentUser && (
+        <div className="fixed inset-0 z-[180] flex items-center justify-center bg-slate-950/65 p-4" role="presentation">
+          <section role="alertdialog" aria-modal="true" aria-labelledby="denied-plan-title" aria-describedby="denied-plan-description" className="w-full max-w-md rounded-3xl bg-white p-7 shadow-2xl text-center space-y-4">
+            <Lock size={36} className="mx-auto text-amber-600" aria-hidden="true" />
+            <h2 id="denied-plan-title" className="text-xl font-black text-slate-900">No tienes acceso a este plan</h2>
+            <p id="denied-plan-description" className="text-sm leading-6 text-slate-700">El plan que intentas consultar es privado o no tienes autorización para acceder a él. Si deseas participar, pide al organizador que te envíe una invitación.</p>
+            <button type="button" autoFocus onClick={dismissSharedPlanDenied} className="w-full rounded-xl bg-sky-700 px-4 py-3 font-bold text-white">Volver a mis planes</button>
+          </section>
+        </div>
+      )}
       {openHelp && NOSOTROS_HELP[openHelp] && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/40 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpenHelp(null); }}>
           <section role="dialog" aria-modal="true" aria-labelledby="nosotros-help-title" aria-describedby="nosotros-help-description" className="w-full max-w-sm rounded-2xl border border-sky-100 bg-white p-5 shadow-2xl">
@@ -171,6 +189,7 @@ export default function App() {
   const [searchPlanPage, setSearchPlanPage] = useState(1);
   const [processingInvitationId, setProcessingInvitationId] = useState(null);
   const [activeEvent, setActiveEvent] = useState(null);
+  const [deniedSharedPlan, setDeniedSharedPlan] = useState(false);
   const [addingSpot, setAddingSpot] = useState(false);
   const [eventSubTab, setEventSubTab] = useState('spots');
 
@@ -182,6 +201,9 @@ export default function App() {
   const [invitingToPlan, setInvitingToPlan] = useState(false);
   const [newDate, setNewDate] = useState('');
   const [isEditingPlanDate, setIsEditingPlanDate] = useState(false);
+  const [isEditingPlanTitle, setIsEditingPlanTitle] = useState(false);
+  const [editingPlanTitle, setEditingPlanTitle] = useState('');
+  const [isSavingPlanTitle, setIsSavingPlanTitle] = useState(false);
   const [editingPlanDate, setEditingPlanDate] = useState('');
   const [isSavingPlanDate, setIsSavingPlanDate] = useState(false);
   const [newInvitees, setNewInvitees] = useState([]);
@@ -245,8 +267,10 @@ export default function App() {
 
   // Sitios, Autocompletado OpenStreetMap y GPS
   const [newSpotName, setNewSpotName] = useState('');
+  const [mapsShareUrl, setMapsShareUrl] = useState('');
+  const [mapsAddress, setMapsAddress] = useState('');
+  const [mapsLookupMessage, setMapsLookupMessage] = useState('');
   const [osmSuggestions, setOsmSuggestions] = useState([]);
-  const [hideSpotSuggestions, setHideSpotSuggestions] = useState(false);
   const [spotSearchError, setSpotSearchError] = useState('');
   const [isSearchingOsm, setIsSearchingOsm] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
@@ -513,6 +537,16 @@ export default function App() {
       fetchNotifications()
     ]);
   };
+
+  // También responde a enlaces recibidos mientras la sesión ya está abierta.
+  useEffect(() => {
+    if (!currentUser?.id) return undefined;
+    const onHashChange = () => {
+      if (/^#plan=[0-9a-f-]{36}$/i.test(window.location.hash)) fetchAppData();
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [currentUser?.id]);
 
   const unreadNotificationsCount = notifications.filter(item => !item.read_at).length;
 
@@ -795,13 +829,20 @@ export default function App() {
       allVisibleEvents.sort((a, b) => new Date(b.date) - new Date(a.date));
       setEvents(allVisibleEvents);
       const requestedId = /^#plan=([0-9a-f-]{36})$/i.exec(window.location.hash)?.[1];
-      if (requestedId && !activeEvent) {
-        const requestedEvent = formattedEvents.find(ev => ev.id === requestedId);
-        if (requestedEvent) setActiveEvent(requestedEvent);
+      if (requestedId) {
+        // Solo abrir planes confirmados o la vista limitada de una invitación propia.
+        const requestedEvent = allVisibleEvents.find(ev => ev.id === requestedId);
+        if (requestedEvent) {
+          setDeniedSharedPlan(false);
+          setActiveEvent(requestedEvent);
+        } else {
+          setActiveEvent(null);
+          setDeniedSharedPlan(true);
+        }
       }
 
       if (activeEvent) {
-        const updatedActive = formattedEvents.find(e => e.id === activeEvent.id);
+        const updatedActive = allVisibleEvents.find(e => e.id === activeEvent.id);
         if (updatedActive) setActiveEvent(updatedActive);
         else setActiveEvent(null);
       }
@@ -1450,12 +1491,14 @@ export default function App() {
         suggested_by: currentUser.name,
         suggested_by_id: currentUser.id,
         active_now: false,
-        stop_order: currentSelectedCount + 1
+        stop_order: currentSelectedCount + 1,
+        maps_url: mapsShareUrl.trim() || null,
+        address: mapsAddress.trim() || null
       }]).select('id, event_id, name').single();
       if (error) throw error;
       if (!savedSpot?.id) throw new Error('No se ha recibido confirmación de la propuesta guardada.');
       setNewSpotName('');
-      setHideSpotSuggestions(false);
+      setMapsShareUrl(''); setMapsAddress(''); setMapsLookupMessage('');
       setOsmSuggestions([]);
       await refreshAllData();
     } catch (err) {
@@ -1552,6 +1595,19 @@ export default function App() {
     const ics = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//NOSOTROS//ES','BEGIN:VEVENT',`UID:${activeEvent.id}@nosotros`,`DTSTAMP:${new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'')}`,`DTSTART;VALUE=DATE:${date}`,`DTEND;VALUE=DATE:${end}`,`SUMMARY:${esc('🍻 NOSOTROS - '+activeEvent.title)}`,`DESCRIPTION:${esc([activeEvent.description,planPublicUrl(activeEvent)].filter(Boolean).join('\n'))}`,'END:VEVENT','END:VCALENDAR'].join('\r\n');
     const url = URL.createObjectURL(new Blob([ics], {type:'text/calendar;charset=utf-8'}));
     const a = document.createElement('a'); a.href = url; a.download = `NOSOTROS-${date}.ics`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 3000);
+  };
+  // Un enlace corto de Google Maps NO contiene necesariamente los datos del lugar.
+  // Sin API de Places en servidor, evitamos inventar nombre o dirección.
+  const handleMapsShareInput = (value) => {
+    setMapsShareUrl(value); setMapsLookupMessage('');
+    if (!value.trim()) return;
+    try {
+      const url = new URL(value.trim());
+      if (url.protocol !== 'https:' || !/(^|\.)(google\.[a-z.]+|googleusercontent\.com|goo\.gl)$/.test(url.hostname) && url.hostname !== 'maps.app.goo.gl') throw new Error('Enlace no reconocido');
+      const q = url.searchParams.get('q') || url.searchParams.get('query');
+      if (q && !/^[-+]?\d+(\.\d+)?,[-+]?\d+(\.\d+)?$/.test(q)) setNewSpotName(decodeURIComponent(q));
+      setMapsLookupMessage('Enlace válido. Comprueba el nombre y escribe la dirección; la extracción automática requiere un servicio Google Places configurado.');
+    } catch { setMapsLookupMessage('Introduce un enlace HTTPS de Google Maps válido.'); }
   };
   const handleShareLiveLocation = () => {
     if (!activeEvent.live_lat || !activeEvent.live_lon) return;
@@ -1779,6 +1835,38 @@ export default function App() {
     await supabase.from('comments').insert([{ event_id: activeEvent.id, spot_id: spotId, user_name: currentUser.name, user_id: currentUser.id, content: text.trim() }]);
     setSpotCommentInputs({ ...spotCommentInputs, [spotId]: '' });
     await refreshAllData();
+  };
+
+  // Edición del título del plan sin alterar sus participantes ni su enlace.
+  const handleSavePlanTitle = async (e) => {
+    e.preventDefault();
+    if (!activeEvent?.id || !currentUser?.id || isSavingPlanTitle) return;
+    if (activeEvent.creator_id !== currentUser.id || activeEvent.status === 'closed') {
+      alert('Solo el creador puede cambiar el nombre de un plan abierto.');
+      return;
+    }
+    const title = editingPlanTitle.trim();
+    if (!title || title.length > 120) {
+      alert('Escribe un nombre de entre 1 y 120 caracteres.');
+      return;
+    }
+    if (title === activeEvent.title) { setIsEditingPlanTitle(false); return; }
+    try {
+      setIsSavingPlanTitle(true);
+      const { data, error } = await supabase.from('events')
+        .update({ title })
+        .eq('id', activeEvent.id)
+        .eq('creator_id', currentUser.id)
+        .neq('status', 'closed')
+        .select('id, title');
+      if (error) throw error;
+      if (!data?.length || data[0].title !== title) throw new Error('Supabase no confirmó el cambio.');
+      setActiveEvent(prev => prev?.id === activeEvent.id ? { ...prev, title } : prev);
+      setIsEditingPlanTitle(false);
+      await refreshAllData();
+    } catch (err) {
+      alert('No se pudo cambiar el nombre: ' + (err.message || 'Error desconocido'));
+    } finally { setIsSavingPlanTitle(false); }
   };
 
   // Solo el creador puede cambiar la fecha de un plan abierto.
@@ -2332,7 +2420,27 @@ export default function App() {
 
             <div className="flex justify-between items-start">
               <div>
-                <h1 className="text-xl font-black text-slate-900 tracking-tight">{activeEvent.title}</h1>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-xl font-black text-slate-900 tracking-tight">{activeEvent.title}</h1>
+                  {isCreator && !isClosed && !isEditingPlanTitle && (
+                    <button type="button" onClick={() => { setEditingPlanTitle(activeEvent.title || ''); setIsEditingPlanTitle(true); }}
+                      className="inline-flex items-center gap-1 text-xs text-sky-700 font-bold px-2 py-1 rounded-lg bg-white/80 border border-sky-200 hover:bg-sky-50">
+                      <Edit3 size={12} /> Editar nombre
+                    </button>
+                  )}
+                </div>
+                {isCreator && !isClosed && isEditingPlanTitle && (
+                  <form onSubmit={handleSavePlanTitle} className="mt-2 rounded-xl bg-white/95 border border-sky-200 p-3 flex flex-wrap items-end gap-2 max-w-md">
+                    <label className="text-xs font-bold text-slate-700 flex-1 min-w-[155px]">
+                      Nombre del plan
+                      <input type="text" required maxLength={120} autoFocus value={editingPlanTitle}
+                        onChange={e => setEditingPlanTitle(e.target.value)}
+                        className="block mt-1 w-full border border-sky-200 rounded-lg px-3 py-2 text-sm" />
+                    </label>
+                    <button type="submit" disabled={isSavingPlanTitle} className="bg-sky-600 text-white text-xs font-bold px-3 py-2.5 rounded-lg disabled:opacity-50">{isSavingPlanTitle ? 'Guardando…' : 'Guardar nombre'}</button>
+                    <button type="button" disabled={isSavingPlanTitle} onClick={() => setIsEditingPlanTitle(false)} className="text-xs font-bold px-3 py-2.5 rounded-lg border border-slate-200">Cancelar</button>
+                  </form>
+                )}
                 {activeEvent.description && <p className="text-xs text-slate-700 mt-2 whitespace-pre-wrap break-words">{activeEvent.description}</p>}
                 <div className="mt-1 space-y-2">
                   <p className="text-xs text-slate-600 font-medium flex items-center gap-1.5 flex-wrap">
@@ -2622,7 +2730,7 @@ export default function App() {
                           type="text" 
                           placeholder="Escribe un bar o sitio (ej. Bar Shiko)..." 
                           value={newSpotName} 
-                          onChange={(e) => { setNewSpotName(e.target.value); setHideSpotSuggestions(false); }} 
+                          onChange={(e) => setNewSpotName(e.target.value)} 
                           className="w-full bg-sky-50/50 border border-sky-200 rounded-2xl px-4 py-2.5 text-xs text-slate-800 focus:outline-none" 
                         />
                         {isSearchingOsm && (
@@ -2630,14 +2738,13 @@ export default function App() {
                         )}
                       </div>
 
-                      {osmSuggestions.length > 0 && !hideSpotSuggestions && (
-                        <div className="bg-white border border-sky-200 rounded-2xl shadow-sm max-h-36 overflow-y-auto divide-y divide-sky-100">
+                      {osmSuggestions.length > 0 && (
+                        <div className="absolute left-0 right-0 top-11 bg-white border border-sky-200 rounded-2xl shadow-xl z-50 max-h-48 overflow-y-auto divide-y divide-sky-100">
                           {osmSuggestions.map((item, idx) => (
                             <div 
                               key={idx} 
                               onClick={() => {
                                 setNewSpotName(item.name || item.display_name);
-                                setHideSpotSuggestions(true);
                                 setOsmSuggestions([]);
                                 setSpotSearchError('');
                               }}
@@ -2664,17 +2771,16 @@ export default function App() {
                         Búsqueda con Photon · Datos de OpenStreetMap. {searchLocation ? 'Resultados priorizados cerca de tu ubicación.' : 'Pulsa «Buscar cerca de mí» para priorizar los resultados según tu ubicación.'}
                       </p>
 
-                      {newSpotName.trim() && osmSuggestions.length > 0 && !hideSpotSuggestions && (
-                        <button type="button" onClick={() => { setHideSpotSuggestions(true); setOsmSuggestions([]); }}
-                          className="w-full rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
-                          No aparece mi sitio · Usar el nombre escrito
-                        </button>
-                      )}
-                      <button type="submit" disabled={addingSpot || !newSpotName.trim()}
-                        className="w-full bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white text-xs font-bold rounded-2xl py-2.5 shadow">
-                        {addingSpot ? 'Guardando...' : '➕ Guardar propuesta con este nombre'}
+                      <div className="rounded-xl border border-sky-200 bg-sky-50 p-3 space-y-2">
+                        <label className="text-xs font-bold text-slate-800 flex gap-1 items-center"><Info size={14}/> Pegar enlace de Google Maps</label>
+                        <input type="url" value={mapsShareUrl} onChange={e => handleMapsShareInput(e.target.value)} placeholder="https://share.google/..." className="w-full rounded-lg border border-sky-200 p-2 text-xs" />
+                        <p className="text-[11px] text-slate-600">Abre el establecimiento en Google Maps → Compartir → Copiar enlace. Pégalo aquí. Si no se detecta el nombre, escríbelo arriba. Añade su dirección para identificarlo bien.</p>
+                        {mapsLookupMessage && <p className="text-[11px] text-amber-800" role="status">{mapsLookupMessage}</p>}
+                        <input type="text" value={mapsAddress} onChange={e => setMapsAddress(e.target.value)} placeholder="Dirección del establecimiento (opcional)" className="w-full rounded-lg border border-sky-200 p-2 text-xs" />
+                      </div>
+                      <button type="submit" className="w-full bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-2xl py-2.5 shadow">
+                        🔍 Añadir a la ruta
                       </button>
-                      <p className="text-[10px] text-slate-500 px-1">No es obligatorio elegir un resultado del buscador. Puedes guardar cualquier establecimiento o evento escribiendo su nombre.</p>
                     </form>
                   </div>
 
