@@ -2981,6 +2981,20 @@ export default function App() {
 @media (min-width: 1440px) { .nosotros-desktop .desktop-search .desktop-plan-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media (min-width:768px) and (max-width:1050px) { .nosotros-desktop .desktop-search-filters { grid-template-columns:1fr 1fr; } .nosotros-desktop .desktop-search-filters > input { grid-column:1 / -1; } }
 @media (min-width:768px) { .nosotros-desktop .desktop-my-events, .nosotros-desktop .desktop-search { max-width:1080px; margin-left:auto; margin-right:auto; } .nosotros-desktop .desktop-my-events .desktop-plan-grid, .nosotros-desktop .desktop-search .desktop-plan-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+/* Tarjetas de planes: compactas en móvil y escritorio */
+.nosotros-desktop .nosotros-compact-plan { display:flex; flex-direction:row; align-items:center; justify-content:flex-start; gap:13px; min-height:88px; padding:0 14px 0 0; overflow:hidden; border-radius:18px; }
+.nosotros-desktop .nosotros-compact-plan-accent { align-self:stretch; width:5px; flex:none; }
+.nosotros-desktop .nosotros-compact-plan-content { display:flex; flex-direction:column; justify-content:center; gap:5px; padding:13px 0; }
+.nosotros-desktop .nosotros-compact-plan-meta { font-size:11px; line-height:1.25; font-weight:700; color:#0369a1; }
+.nosotros-desktop .nosotros-compact-plan-title { font-size:16px; line-height:1.35; font-weight:800; color:#1e293b; }
+.nosotros-desktop .nosotros-compact-plan-action { width:38px; height:38px; }
+@media (max-width:639px) {
+ .nosotros-desktop .desktop-plan-grid { gap:10px; }
+ .nosotros-desktop .nosotros-compact-plan { min-height:80px; gap:12px; }
+ .nosotros-desktop .nosotros-compact-plan-title { font-size:15px; }
+ .nosotros-desktop .nosotros-compact-plan-meta { font-size:11px; }
+}
 `}</style>
       <aside className="hidden md:flex fixed inset-y-0 left-0 z-50 w-64 flex-col bg-white/95 backdrop-blur-xl border-r border-sky-100 shadow-lg p-5">
         <div className="flex items-center gap-3 pb-7 border-b border-sky-100"><div className="w-10 h-10 bg-gradient-to-tr from-sky-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white font-black shadow-md">N</div><div><p className="font-extrabold text-slate-800">Nosotros</p><p className="text-xs text-slate-500">Planes y experiencias</p></div></div>
@@ -3098,9 +3112,13 @@ export default function App() {
               {visibleMyEvents.length === 0 && <p className="rounded-xl bg-slate-50 p-4 text-xs text-slate-600">No hay planes que coincidan con los filtros.</p>}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-4 desktop-plan-grid">
               {visibleMyEvents.map(event => (
-                <button key={event.id} type="button" onClick={() => setActiveEvent(event)} aria-label={`${event.status === 'closed' ? 'Ver historial de' : 'Abrir plan'} ${event.title}`} className={`desktop-plan-card group w-full text-left rounded-2xl border p-5 flex flex-col justify-between items-start gap-5 shadow-sm ${event.status === 'closed' ? 'bg-amber-50/60 border-amber-200' : 'bg-white/90 border-sky-100'}`}>
-                  <span className="min-w-0"><span className="block text-[10px] font-bold text-sky-700">{event.status === 'closed' ? '🔒 Cerrado' : isPlanPendingClosure(event) ? '🟠 Pendiente de cierre' : '📅 Activo'} · {formatPlanDateES(event.date)}</span><span className="block font-black text-slate-800 text-sm mt-1 break-words">{event.title}</span></span>
-                  <span className="shrink-0 inline-flex items-center justify-center self-end w-10 h-10 rounded-full bg-sky-50 text-sky-700 border border-sky-100 group-hover:bg-sky-100" aria-hidden="true">{event.status === 'closed' ? <Archive size={19} strokeWidth={2.2} /> : <ChevronRight size={22} strokeWidth={2.4} />}</span>
+                <button key={event.id} type="button" onClick={() => setActiveEvent(event)} aria-label={`${event.status === 'closed' ? 'Ver historial de' : 'Abrir plan'} ${event.title}`} className={`desktop-plan-card nosotros-compact-plan group w-full text-left rounded-2xl border shadow-sm ${event.status === 'closed' ? 'bg-amber-50/60 border-amber-200' : 'bg-white border-sky-100'}`}>
+                  <span className={`nosotros-compact-plan-accent ${event.status === 'closed' ? 'bg-amber-400' : isPlanPendingClosure(event) ? 'bg-orange-400' : 'bg-sky-500'}`} aria-hidden="true" />
+                  <span className="nosotros-compact-plan-content min-w-0 flex-1">
+                    <span className="nosotros-compact-plan-meta">{event.status === 'closed' ? 'Cerrado' : isPlanPendingClosure(event) ? 'Pendiente de cierre' : 'Activo'} <span className="mx-1 text-slate-300">·</span> {formatPlanDateES(event.date)}</span>
+                    <span className="nosotros-compact-plan-title block truncate">{event.title}</span>
+                  </span>
+                  <span className="nosotros-compact-plan-action shrink-0 inline-flex items-center justify-center rounded-full bg-sky-50 text-sky-700 border border-sky-100 group-hover:bg-sky-100" aria-hidden="true">{event.status === 'closed' ? <Archive size={18} strokeWidth={2.2} /> : <ChevronRight size={22} strokeWidth={2.4} />}</span>
                 </button>
               ))}
               </div>
