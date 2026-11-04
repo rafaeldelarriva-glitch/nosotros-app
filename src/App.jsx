@@ -3098,9 +3098,9 @@ export default function App() {
               {visibleMyEvents.length === 0 && <p className="rounded-xl bg-slate-50 p-4 text-xs text-slate-600">No hay planes que coincidan con los filtros.</p>}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-2 gap-4 desktop-plan-grid">
               {visibleMyEvents.map(event => (
-                <button key={event.id} type="button" onClick={() => setActiveEvent(event)} className={`desktop-plan-card w-full text-left rounded-2xl border p-5 flex flex-col justify-between items-start gap-5 shadow-sm ${event.status === 'closed' ? 'bg-amber-50/60 border-amber-200' : 'bg-white/90 border-sky-100'}`}>
+                <button key={event.id} type="button" onClick={() => setActiveEvent(event)} aria-label={`${event.status === 'closed' ? 'Ver historial de' : 'Abrir plan'} ${event.title}`} className={`desktop-plan-card group w-full text-left rounded-2xl border p-5 flex flex-col justify-between items-start gap-5 shadow-sm ${event.status === 'closed' ? 'bg-amber-50/60 border-amber-200' : 'bg-white/90 border-sky-100'}`}>
                   <span className="min-w-0"><span className="block text-[10px] font-bold text-sky-700">{event.status === 'closed' ? '🔒 Cerrado' : isPlanPendingClosure(event) ? '🟠 Pendiente de cierre' : '📅 Activo'} · {formatPlanDateES(event.date)}</span><span className="block font-black text-slate-800 text-sm mt-1 break-words">{event.title}</span></span>
-                  <span className="shrink-0 text-xs font-bold text-sky-700">{event.status === 'closed' ? 'Historial →' : 'Entrar →'}</span>
+                  <span className="shrink-0 inline-flex items-center justify-center self-end w-10 h-10 rounded-full bg-sky-50 text-sky-700 border border-sky-100 group-hover:bg-sky-100" aria-hidden="true">{event.status === 'closed' ? <Archive size={19} strokeWidth={2.2} /> : <ChevronRight size={22} strokeWidth={2.4} />}</span>
                 </button>
               ))}
               </div>
