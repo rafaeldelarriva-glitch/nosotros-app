@@ -138,6 +138,9 @@ export default function App() {
   const [additionalInviteSearch, setAdditionalInviteSearch] = useState('');
   const [invitingToPlan, setInvitingToPlan] = useState(false);
   const [newDate, setNewDate] = useState('');
+  const [isEditingPlanDate, setIsEditingPlanDate] = useState(false);
+  const [editingPlanDate, setEditingPlanDate] = useState('');
+  const [isSavingPlanDate, setIsSavingPlanDate] = useState(false);
   const [newInvitees, setNewInvitees] = useState([]);
   const [inviteSearch, setInviteSearch] = useState('');
   const [isCreatingEvent, setIsCreatingEvent] = useState(false);
@@ -215,6 +218,8 @@ export default function App() {
   const [expandedTimelineSpotId, setExpandedTimelineSpotId] = useState(null);
 
   const [events, setEvents] = useState([]);
+  const [spotVotes, setSpotVotes] = useState([]);
+  const [votingSpotId, setVotingSpotId] = useState(null);
   // Identidad de acceso: siempre UUID, nunca nombre visible.
   const isEventMember = (ev, status = 'member') => Boolean(currentUser?.id &&
     (ev?.rawEventMembers || ev?.event_members || []).some(m => m.user_id === currentUser.id && m.status === status));
@@ -602,6 +607,16 @@ export default function App() {
         `);
 
       if (error) throw error;
+
+      // Los votos nuevos se contabilizan por usuario, no mediante el contador heredado.
+      const visibleSpotIds = (Array.isArray(eventsData) ? eventsData : [])
+        .flatMap(ev => Array.isArray(ev.spots) ? ev.spots.map(spot => spot.id) : []);
+      if (visibleSpotIds.length) {
+        const { data: votesData, error: votesError } = await supabase
+          .from('spot_votes').select('spot_id, user_id').in('spot_id', visibleSpotIds);
+        if (votesError) console.error('No se pudieron cargar los votos:', votesError);
+        else setSpotVotes(Array.isArray(votesData) ? votesData : []);
+      } else setSpotVotes([]);
 
       // No incluir planes pendientes de aceptar en la carga completa.
       const formattedEvents = (Array.isArray(eventsData) ? eventsData : []).filter(ev =>
@@ -1301,9 +1316,23 @@ export default function App() {
     await refreshAllData();
   };
 
-  const handleVoteSpot = async (spotId, currentVotes) => {
-    await supabase.from('spots').update({ votes: currentVotes + 1 }).eq('id', spotId);
-    await refreshAllData();
+  const handleVoteSpot = async (spotId) => {
+    if (!currentUser?.id || !activeEvent || votingSpotId || activeEvent.status === 'closed') return;
+    const spot = (activeEvent.spots || []).find(s => s.id === spotId);
+    if (!spot) return;
+    const alreadyVoted = spotVotes.some(v => v.spot_id === spotId && v.user_id === currentUser.id);
+    setVotingSpotId(spotId);
+    try {
+      const result = alreadyVoted
+        ? await supabase.from('spot_votes').delete().eq('spot_id', spotId).eq('user_id', currentUser.id)
+        : await supabase.from('spot_votes').insert({ spot_id: spotId, user_id: currentUser.id });
+      if (result.error) throw result.error;
+      await refreshAllData();
+    } catch (err) {
+      alert('No se pudo ' + (alreadyVoted ? 'retirar' : 'registrar') + ' el voto: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setVotingSpotId(null);
+    }
   };
 
   const handleToggleSelectSpot = async (spotId, currentSelectedState) => {
@@ -1569,6 +1598,46 @@ export default function App() {
     await refreshAllData();
   };
 
+  // Solo el creador puede cambiar la fecha de un plan abierto.
+  const handleSavePlanDate = async (e) => {
+    e.preventDefault();
+    if (!activeEvent?.id || !currentUser?.id || isSavingPlanDate) return;
+    if (activeEvent.creator_id !== currentUser.id || activeEvent.status === 'closed') {
+      alert('Solo el creador puede modificar la fecha de un plan abierto.');
+      return;
+    }
+    const dateValue = editingPlanDate.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue) ||
+        Number.isNaN(Date.parse(`${dateValue}T12:00:00Z`))) {
+      alert('Selecciona una fecha válida.');
+      return;
+    }
+    if (dateValue === String(activeEvent.date).slice(0, 10)) {
+      setIsEditingPlanDate(false);
+      return;
+    }
+    try {
+      setIsSavingPlanDate(true);
+      const { data, error } = await supabase.from('events')
+        .update({ date: dateValue })
+        .eq('id', activeEvent.id)
+        .eq('creator_id', currentUser.id)
+        .neq('status', 'closed')
+        .select('id, date');
+      if (error) throw error;
+      if (!data?.length || String(data[0].date).slice(0, 10) !== dateValue) {
+        throw new Error('Supabase no confirmó el cambio de fecha.');
+      }
+      setActiveEvent(prev => prev?.id === activeEvent.id ? { ...prev, date: dateValue } : prev);
+      setIsEditingPlanDate(false);
+      await refreshAllData();
+    } catch (err) {
+      alert('No se pudo cambiar la fecha: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setIsSavingPlanDate(false);
+    }
+  };
+
   const handleCloseEvent = async () => {
     if (!(await confirm('¿Cerrar salida?'))) return;
     await supabase.from('events').update({ status: 'closed' }).eq('id', activeEvent.id);
@@ -1682,7 +1751,9 @@ export default function App() {
   });
 
   const renderSpotCard = (spot, isSelected, maxVotes, selectedSpotsList = []) => {
-    const isMajority = maxVotes > 0 && spot.votes === maxVotes;
+    const voteCount = spotVotes.filter(v => v.spot_id === spot.id).length;
+    const hasVoted = spotVotes.some(v => v.spot_id === spot.id && v.user_id === currentUser?.id);
+    const isMajority = maxVotes > 0 && voteCount === maxVotes;
     const spotComments = Array.isArray(activeEvent?.comments) ? activeEvent.comments.filter(c => c.spot_id === spot.id) : [];
     const spotPhotos = Array.isArray(activeEvent?.photos) ? activeEvent.photos.filter(p => p.spot_id === spot.id) : [];
     const qrLinks = Array.isArray(spot.qr_links) ? spot.qr_links : [];
@@ -1710,7 +1781,7 @@ export default function App() {
               )}
             </div>
             <p className="text-[11px] text-slate-500 font-medium">
-              Propuesto por <span className="font-bold text-sky-600">{spot.suggested_by}</span> • <span className="font-extrabold text-slate-800">{spot.votes} votos</span>
+              Propuesto por <span className="font-bold text-sky-600">{spot.suggested_by}</span> • <span className="font-extrabold text-slate-800">{voteCount} votos</span>
             </p>
           </div>
 
@@ -1801,9 +1872,9 @@ export default function App() {
         )}
 
         <div className="flex flex-wrap gap-2 pt-1 border-t border-sky-100">
-          <button onClick={() => handleVoteSpot(spot.id, spot.votes)} className="bg-sky-50 hover:bg-sky-100 text-slate-700 text-xs font-bold px-3 py-2 rounded-xl flex items-center space-x-1.5 border border-sky-200">
+          <button onClick={() => handleVoteSpot(spot.id)} disabled={Boolean(votingSpotId) || activeEvent?.status === 'closed'} className={`text-xs font-bold px-3 py-2 rounded-xl flex items-center space-x-1.5 border disabled:opacity-50 ${hasVoted ? 'bg-emerald-100 border-emerald-300 text-emerald-900' : 'bg-sky-50 hover:bg-sky-100 text-slate-700 border-sky-200'}`} title={hasVoted ? 'Retirar mi voto' : 'Emitir mi voto'}>
             <ThumbsUp size={14} className="text-sky-600" />
-            <span>Votar ({spot.votes})</span>
+            <span>{hasVoted ? `✓ Has votado (${voteCount})` : `Votar (${voteCount})`}</span>
           </button>
           <button onClick={() => handleToggleSelectSpot(spot.id, isSelected)} className={`flex-1 font-bold text-xs py-2 rounded-xl transition shadow-sm ${isSelected ? 'bg-slate-200 text-slate-700' : 'bg-sky-600 text-white'}`}>
             {isSelected ? 'Quitar de la Ruta' : '✓ Añadir a la Ruta'}
@@ -1956,7 +2027,11 @@ export default function App() {
     const calculatedDebts = calculateDebts(validMembers, validExpenses);
     const isCreator = activeEvent.creator_id === currentUser.id || (!activeEvent.creator_id && activeEvent.creator_name === currentUser.name);
     const isClosed = activeEvent.status === 'closed';
-    const maxVotes = Math.max(0, ...validSpots.map(s => s.votes || 0));
+    const maxVotes = Math.max(0, ...validSpots.map(s => spotVotes.filter(v => v.spot_id === s.id).length));
+
+    const rankingSpots = [...validSpots].map(spot => ({
+      ...spot, voteCount: spotVotes.filter(v => v.spot_id === spot.id).length
+    })).sort((a, b) => b.voteCount - a.voteCount || a.name.localeCompare(b.name, 'es'));
 
     const canDeleteEvent = isAdmin || isCreator;
 
@@ -1995,9 +2070,31 @@ export default function App() {
               <div>
                 <h1 className="text-xl font-black text-slate-900 tracking-tight">{activeEvent.title}</h1>
                 {activeEvent.description && <p className="text-xs text-slate-700 mt-2 whitespace-pre-wrap break-words">{activeEvent.description}</p>}
-                <p className="text-xs text-slate-600 font-medium flex items-center mt-0.5">
-                  <Calendar size={13} className="mr-1 text-sky-600" /> Fecha del plan: {formatPlanDateES(activeEvent.date)}
-                </p>
+                <div className="mt-1 space-y-2">
+                  <p className="text-xs text-slate-600 font-medium flex items-center gap-1.5 flex-wrap">
+                    <Calendar size={13} className="text-sky-600" />
+                    <span>Fecha del plan: {formatPlanDateES(activeEvent.date)}</span>
+                    {isCreator && !isClosed && !isEditingPlanDate && (
+                      <button type="button" onClick={() => {
+                        setEditingPlanDate(String(activeEvent.date || '').slice(0, 10));
+                        setIsEditingPlanDate(true);
+                      }} className="inline-flex items-center gap-1 text-sky-700 font-bold px-2 py-1 rounded-lg bg-white/80 border border-sky-200 hover:bg-sky-50">
+                        <Edit3 size={12} /> Cambiar fecha
+                      </button>
+                    )}
+                  </p>
+                  {isCreator && !isClosed && isEditingPlanDate && (
+                    <form onSubmit={handleSavePlanDate} className="rounded-xl bg-white/95 border border-sky-200 p-3 flex flex-wrap items-end gap-2 max-w-md">
+                      <label className="text-xs font-bold text-slate-700 flex-1 min-w-[155px]">
+                        Nueva fecha
+                        <input lang="es-ES" type="date" required value={editingPlanDate} onChange={e => setEditingPlanDate(e.target.value)}
+                          className="block mt-1 w-full border border-sky-200 rounded-lg px-3 py-2 text-sm" />
+                      </label>
+                      <button type="submit" disabled={isSavingPlanDate} className="bg-sky-600 text-white text-xs font-bold px-3 py-2.5 rounded-lg disabled:opacity-50">{isSavingPlanDate ? 'Guardando…' : 'Guardar fecha'}</button>
+                      <button type="button" disabled={isSavingPlanDate} onClick={() => setIsEditingPlanDate(false)} className="text-xs font-bold px-3 py-2.5 rounded-lg border border-slate-200">Cancelar</button>
+                    </form>
+                  )}
+                </div>
               </div>
 
               {!isClosed && activeEvent.live_lat && (
@@ -2266,6 +2363,19 @@ export default function App() {
                       </button>
                     </form>
                   </div>
+
+                  {rankingSpots.length > 0 && (
+                    <section className="rounded-2xl border border-amber-200 bg-amber-50 p-3 space-y-2" aria-label="Ranking de establecimientos">
+                      <h4 className="font-black text-sm text-amber-900 flex items-center gap-2"><Trophy size={16} /> Ranking de establecimientos</h4>
+                      {rankingSpots.slice(0, 3).map((spot, index) => (
+                        <div key={spot.id} className="flex items-center justify-between gap-3 text-xs text-slate-800">
+                          <span className="font-semibold truncate">{index + 1}. {spot.name}</span>
+                          <span className="shrink-0 font-black">{spot.voteCount} {spot.voteCount === 1 ? 'voto' : 'votos'}</span>
+                        </div>
+                      ))}
+                      <p className="text-[10px] text-amber-900/70">Un voto por participante y lugar. El recuento usa los votos registrados en el nuevo sistema.</p>
+                    </section>
+                  )}
 
                   <div className="space-y-3">
                     <h4 className="text-xs font-black uppercase text-sky-800 flex items-center justify-between">
