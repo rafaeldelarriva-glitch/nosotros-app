@@ -112,6 +112,20 @@ export default function App() {
   const [pendingRegistrations, setPendingRegistrations] = useState([]);
   const [processingRegistrationId, setProcessingRegistrationId] = useState(null);
 
+  // Módulo de notificaciones: cada destinatario tiene su propio estado de lectura.
+  const [notifications, setNotifications] = useState([]);
+  const [notificationTemplates, setNotificationTemplates] = useState([]);
+  const [adminNotificationHistory, setAdminNotificationHistory] = useState([]);
+  const [notificationTitle, setNotificationTitle] = useState('');
+  const [notificationMessage, setNotificationMessage] = useState('');
+  const [notificationCategory, setNotificationCategory] = useState('general');
+  const [notificationTargetMode, setNotificationTargetMode] = useState('all');
+  const [selectedNotificationUsers, setSelectedNotificationUsers] = useState([]);
+  const [selectedNotificationTemplate, setSelectedNotificationTemplate] = useState('');
+  const [isSendingNotification, setIsSendingNotification] = useState(false);
+  const [isSavingNotificationTemplate, setIsSavingNotificationTemplate] = useState(false);
+  const [isDeletingPhotoId, setIsDeletingPhotoId] = useState(null);
+
   // Modal Admin Cambio Contraseña Usuario
   const [adminTargetUser, setAdminTargetUser] = useState(null);
   const [adminNewPasswordInput, setAdminNewPasswordInput] = useState('');
@@ -147,6 +161,7 @@ export default function App() {
   const [expensePaidBy, setExpensePaidBy] = useState('');
   const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [editingExpensePayer, setEditingExpensePayer] = useState('');
+  const [editingExpenseAmount, setEditingExpenseAmount] = useState('');
   const [isUpdatingExpense, setIsUpdatingExpense] = useState(false);
   const [isSavingExpense, setIsSavingExpense] = useState(false);
   const [deletingExpenseId, setDeletingExpenseId] = useState(null);
@@ -289,13 +304,177 @@ export default function App() {
     };
   }, [newSpotName, searchLocation]);
 
+  const fetchNotifications = async () => {
+    if (!currentUser?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from('notification_recipients')
+        .select(`
+          id, notification_id, user_id, read_at, created_at,
+          notifications (id, title, message, category, event_id, created_at, created_by)
+        `)
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setNotifications((Array.isArray(data) ? data : []).filter(row => row.notifications));
+    } catch (err) {
+      console.error('Error cargando notificaciones:', err.message);
+      setNotifications([]);
+    }
+
+    if (currentUser.role === 'admin') {
+      try {
+        const [{ data: templates, error: templatesError }, { data: history, error: historyError }] = await Promise.all([
+          supabase.from('notification_templates').select('*').order('updated_at', { ascending: false }),
+          supabase.from('notifications').select('id, title, message, category, created_at, event_id').order('created_at', { ascending: false }).limit(50)
+        ]);
+        if (templatesError) throw templatesError;
+        if (historyError) throw historyError;
+        setNotificationTemplates(Array.isArray(templates) ? templates : []);
+        setAdminNotificationHistory(Array.isArray(history) ? history : []);
+      } catch (err) {
+        console.error('Error cargando administración de notificaciones:', err.message);
+        setNotificationTemplates([]);
+        setAdminNotificationHistory([]);
+      }
+    } else {
+      setNotificationTemplates([]);
+      setAdminNotificationHistory([]);
+    }
+  };
+
+  // Actualiza el punto rojo si llega un comunicado mientras la aplicación está abierta.
+  useEffect(() => {
+    if (!currentUser?.id) return undefined;
+    const channel = supabase
+      .channel(`notification-recipients-${currentUser.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'notification_recipients',
+        filter: `user_id=eq.${currentUser.id}`
+      }, () => { fetchNotifications(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUser?.id]);
+
   const refreshAllData = async () => {
     await Promise.all([
       fetchAppData(),
       fetchRegisteredUsers(),
       fetchPasswordRequests(),
-      fetchPendingRegistrations()
+      fetchPendingRegistrations(),
+      fetchNotifications()
     ]);
+  };
+
+  const unreadNotificationsCount = notifications.filter(item => !item.read_at).length;
+
+  const handleOpenNotification = async (item) => {
+    if (!item) return;
+    if (!item.read_at) {
+      const { error } = await supabase
+        .from('notification_recipients')
+        .update({ read_at: new Date().toISOString() })
+        .eq('id', item.id)
+        .eq('user_id', currentUser.id);
+      if (error) {
+        alert('No se pudo marcar la notificación como leída: ' + error.message);
+        return;
+      }
+      setNotifications(prev => prev.map(row => row.id === item.id
+        ? { ...row, read_at: new Date().toISOString() }
+        : row));
+    }
+    const eventId = item.notifications?.event_id;
+    if (eventId) {
+      const linkedEvent = events.find(event => event.id === eventId);
+      if (linkedEvent) setActiveEvent(linkedEvent);
+      else alert('El plan relacionado ya no está disponible o no tienes acceso.');
+    }
+  };
+
+  const handleSendNotification = async (e) => {
+    e.preventDefault();
+    if (!isAdmin || isSendingNotification || !notificationTitle.trim() || !notificationMessage.trim()) return;
+    const eligibleUsers = registeredUsers.filter(user => user.is_approved && !user.is_blocked);
+    const recipients = notificationTargetMode === 'all'
+      ? eligibleUsers
+      : eligibleUsers.filter(user => selectedNotificationUsers.includes(user.id));
+    if (!recipients.length) {
+      alert('Selecciona al menos un destinatario aprobado.');
+      return;
+    }
+    try {
+      setIsSendingNotification(true);
+      const { data: created, error: createError } = await supabase
+        .from('notifications')
+        .insert([{
+          title: notificationTitle.trim(),
+          message: notificationMessage.trim(),
+          category: notificationCategory,
+          created_by: currentUser.id
+        }])
+        .select('id')
+        .single();
+      if (createError) throw createError;
+
+      const { error: recipientsError } = await supabase
+        .from('notification_recipients')
+        .insert(recipients.map(user => ({
+          notification_id: created.id,
+          user_id: user.id
+        })));
+      if (recipientsError) {
+        await supabase.from('notifications').delete().eq('id', created.id);
+        throw recipientsError;
+      }
+
+      setNotificationTitle('');
+      setNotificationMessage('');
+      setNotificationCategory('general');
+      setSelectedNotificationUsers([]);
+      await refreshAllData();
+      alert(`Comunicado enviado a ${recipients.length} usuario(s).`);
+    } catch (err) {
+      console.error('Error enviando comunicado:', err);
+      alert('No se pudo enviar el comunicado: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setIsSendingNotification(false);
+    }
+  };
+
+  const handleSaveNotificationTemplate = async () => {
+    if (!isAdmin || isSavingNotificationTemplate || !notificationTitle.trim() || !notificationMessage.trim()) {
+      alert('Escribe un título y un mensaje antes de guardar la plantilla.');
+      return;
+    }
+    try {
+      setIsSavingNotificationTemplate(true);
+      const { error } = await supabase.from('notification_templates').insert([{
+        title: notificationTitle.trim(),
+        message: notificationMessage.trim(),
+        category: notificationCategory,
+        created_by: currentUser.id
+      }]);
+      if (error) throw error;
+      await fetchNotifications();
+      alert('Plantilla guardada correctamente.');
+    } catch (err) {
+      alert('No se pudo guardar la plantilla: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setIsSavingNotificationTemplate(false);
+    }
+  };
+
+  const handleSelectNotificationTemplate = (templateId) => {
+    setSelectedNotificationTemplate(templateId);
+    const template = notificationTemplates.find(item => item.id === templateId);
+    if (template) {
+      setNotificationTitle(template.title);
+      setNotificationMessage(template.message);
+      setNotificationCategory(template.category || 'general');
+    }
   };
 
   const fetchRegisteredUsers = async () => {
@@ -1123,18 +1302,24 @@ export default function App() {
     }
     const payerId = resolveExpensePayerId(editingExpensePayer);
     if (!payerId) { alert('El pagador tiene un nombre ambiguo o no está identificado. No se ha cambiado el gasto.'); return; }
+    const amount = Number(String(editingExpenseAmount).replace(',', '.'));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      alert('Introduce un importe válido mayor que cero.');
+      return;
+    }
     try {
       setIsUpdatingExpense(true);
       const { data, error } = await supabase.from('expenses')
-        .update({ paid_by: editingExpensePayer, paid_by_id: payerId })
+        .update({ paid_by: editingExpensePayer, paid_by_id: payerId, amount })
         .eq('id', expense.id).eq('event_id', activeEvent.id)
-        .select('id, paid_by');
+        .select('id, paid_by, amount');
       if (error) throw error;
-      if (!data?.length || data[0].paid_by !== editingExpensePayer) {
+      if (!data?.length || data[0].paid_by !== editingExpensePayer || Number(data[0].amount) !== amount) {
         throw new Error('Supabase no confirmó la actualización. Comprueba los permisos UPDATE (RLS).');
       }
       await refreshAllData();
       setEditingExpenseId(null);
+      setEditingExpenseAmount('');
     } catch (err) {
       alert('No se pudo corregir el pagador: ' + (err.message || 'Error desconocido'));
     } finally {
@@ -1210,12 +1395,43 @@ export default function App() {
     setIsUploadingPhoto(true);
     const reader = new FileReader();
     reader.onloadend = async () => {
-      await supabase.from('photos').insert([{ event_id: activeEvent.id, url: reader.result, user_name: currentUser.name, user_id: currentUser.id, spot_id: photoSpotId }]);
-      setIsUploadingPhoto(false);
-      setPhotoSpotId('');
-      await refreshAllData();
+      try {
+        const { error } = await supabase.from('photos').insert([{
+          event_id: activeEvent.id, url: reader.result,
+          user_name: currentUser.name, user_id: currentUser.id, spot_id: photoSpotId
+        }]);
+        if (error) throw error;
+        setPhotoSpotId('');
+        await refreshAllData();
+      } catch (err) {
+        alert('No se pudo guardar la fotografía: ' + (err.message || 'Error desconocido'));
+      } finally {
+        setIsUploadingPhoto(false);
+        e.target.value = '';
+      }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleDeletePhoto = async (photo) => {
+    if (!photo?.id || !activeEvent?.id || isDeletingPhotoId) return;
+    if (!(await confirm('¿Eliminar esta fotografía del plan? Esta acción no se puede deshacer.'))) return;
+    try {
+      setIsDeletingPhotoId(photo.id);
+      const { error, data } = await supabase.from('photos')
+        .delete()
+        .eq('id', photo.id)
+        .eq('event_id', activeEvent.id)
+        .select('id');
+      if (error) throw error;
+      if (!data?.length) throw new Error('Supabase no confirmó la eliminación. Comprueba la política DELETE de photos.');
+      if (viewingPhotoUrl === photo.url) setViewingPhotoUrl(null);
+      await refreshAllData();
+    } catch (err) {
+      alert('No se pudo eliminar la fotografía: ' + (err.message || 'Error desconocido'));
+    } finally {
+      setIsDeletingPhotoId(null);
+    }
   };
 
   const handleAddSpotComment = async (spotId) => {
@@ -1974,7 +2190,7 @@ export default function App() {
                               </button>
                             )}
                             <button type="button" title="Corregir quién pagó" aria-label={`Corregir pagador de ${exp.description}`}
-                              onClick={() => { setEditingExpenseId(editingExpenseId === exp.id ? null : exp.id); setEditingExpensePayer(exp.paid_by); }}
+                              onClick={() => { setEditingExpenseId(editingExpenseId === exp.id ? null : exp.id); setEditingExpensePayer(exp.paid_by); setEditingExpenseAmount(String(exp.amount ?? '')); }}
                               className="bg-sky-50 text-sky-700 p-2 rounded-xl border border-sky-200"><Edit3 size={14} /></button>
                             <button
                               type="button"
@@ -1988,16 +2204,23 @@ export default function App() {
                             </button>
                           </div>
                           {editingExpenseId === exp.id && (
-                            <div className="w-full mt-2 pt-2 border-t border-sky-100 flex flex-wrap gap-2 items-center">
+                            <div className="w-full mt-2 pt-2 border-t border-sky-100 grid grid-cols-1 gap-2">
+                              <label className="text-xs font-bold text-slate-700" htmlFor={`amount-${exp.id}`}>Importe (€)
+                                <input id={`amount-${exp.id}`} type="number" min="0.01" step="0.01" inputMode="decimal"
+                                  value={editingExpenseAmount} onChange={e => setEditingExpenseAmount(e.target.value)}
+                                  className="mt-1 w-full rounded-xl border border-sky-200 bg-white p-2 text-xs" />
+                              </label>
                               <label className="text-xs font-bold text-slate-700" htmlFor={`payer-${exp.id}`}>Pagador real:</label>
                               <select id={`payer-${exp.id}`} value={editingExpensePayer} onChange={e => setEditingExpensePayer(e.target.value)}
-                                className="flex-1 min-w-24 rounded-xl border border-sky-200 bg-white p-2 text-xs">
+                                className="w-full rounded-xl border border-sky-200 bg-white p-2 text-xs">
                                 {!validMembers.includes(editingExpensePayer) && <option value={editingExpensePayer}>{editingExpensePayer || 'Selecciona'}</option>}
                                 {validMembers.map(member => <option key={member} value={member}>{member}</option>)}
                               </select>
-                              <button type="button" disabled={isUpdatingExpense || !validMembers.includes(editingExpensePayer)}
-                                onClick={() => handleUpdateExpensePayer(exp)} className="rounded-xl bg-emerald-600 px-3 py-2 text-white text-xs font-bold disabled:opacity-50">Guardar</button>
-                              <button type="button" onClick={() => setEditingExpenseId(null)} className="text-xs text-slate-600">Cancelar</button>
+                              <div className="flex gap-2">
+                                <button type="button" disabled={isUpdatingExpense || !validMembers.includes(editingExpensePayer)}
+                                  onClick={() => handleUpdateExpensePayer(exp)} className="flex-1 rounded-xl bg-emerald-600 px-3 py-2 text-white text-xs font-bold disabled:opacity-50">{isUpdatingExpense ? 'Guardando...' : 'Guardar cambios'}</button>
+                                <button type="button" onClick={() => { setEditingExpenseId(null); setEditingExpenseAmount(''); }} className="text-xs text-slate-600 px-2">Cancelar</button>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -2087,9 +2310,16 @@ export default function App() {
                       <h4 className="text-xs font-black uppercase text-slate-700">Fotos del Plan ({validPhotos.length})</h4>
                       <div className="grid grid-cols-2 gap-3">
                         {validPhotos.map(p => (
-                          <div key={p.id} onClick={() => setViewingPhotoUrl(p.url)} className="bg-white/90 p-2 rounded-2xl border border-sky-100 shadow-sm cursor-pointer space-y-1">
-                            <div className="w-full h-32 rounded-xl overflow-hidden bg-sky-50">
-                              <img src={p.url} alt="Foto" className="w-full h-full object-cover" />
+                          <div key={p.id} className="bg-white/90 p-2 rounded-2xl border border-sky-100 shadow-sm space-y-1">
+                            <div className="relative w-full h-32 rounded-xl overflow-hidden bg-sky-50">
+                              <button type="button" onClick={() => setViewingPhotoUrl(p.url)} className="w-full h-full" aria-label="Ampliar fotografía">
+                                <img src={p.url} alt="Foto" className="w-full h-full object-cover" />
+                              </button>
+                              <button type="button" onClick={() => handleDeletePhoto(p)} disabled={isDeletingPhotoId === p.id}
+                                title="Eliminar fotografía" aria-label="Eliminar fotografía"
+                                className="absolute top-2 right-2 rounded-full bg-red-600 text-white p-2 shadow disabled:opacity-50">
+                                {isDeletingPhotoId === p.id ? <Clock size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                              </button>
                             </div>
                             <p className="text-[10px] font-bold text-sky-600 text-center">Por {p.user_name}</p>
                           </div>
@@ -2212,6 +2442,11 @@ export default function App() {
           <span className="font-extrabold text-slate-800 text-base">Nosotros</span>
         </div>
         <div className="flex items-center space-x-3">
+          <button type="button" onClick={() => setActiveTab('notifications')} aria-label={`Abrir notificaciones${unreadNotificationsCount ? `, ${unreadNotificationsCount} sin leer` : ''}`}
+            className="relative p-2 rounded-full bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100">
+            <Bell size={18} />
+            {unreadNotificationsCount > 0 && <span className="absolute top-0 right-0 w-2.5 h-2.5 rounded-full bg-red-600 ring-2 ring-white" />}
+          </button>
           <span className="text-xs font-bold text-slate-700">Hola, {currentUser?.name || 'Usuario'}</span>
           <button onClick={handleLogout} className="text-xs bg-sky-50 hover:bg-red-50 text-slate-600 px-3 py-1.5 rounded-full font-bold border border-sky-200">Salir</button>
         </div>
@@ -2410,6 +2645,105 @@ export default function App() {
         {/* PESTAÑA APROBACIONES / PANEL DE ADMINISTRADOR Y SOLICITUDES DE PLANES */}
         {activeTab === 'notifications' && (
           <div className="space-y-4">
+            <section className="bg-white/95 p-5 rounded-[2.5rem] border border-sky-200 shadow-sm space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-sm font-black text-slate-800 flex items-center gap-2"><Bell size={17} className="text-sky-600" /> Comunicados y avisos</h2>
+                {unreadNotificationsCount > 0 && <span className="text-[10px] font-black bg-red-100 text-red-700 px-2.5 py-1 rounded-full">{unreadNotificationsCount} sin leer</span>}
+              </div>
+              {notifications.length === 0 ? <p className="text-xs text-slate-500">No tienes comunicados nuevos.</p> : (
+                <div className="space-y-2">
+                  {notifications.map(item => {
+                    const notice = item.notifications;
+                    return (
+                      <button key={item.id} type="button" onClick={() => handleOpenNotification(item)}
+                        className={`w-full text-left p-3 rounded-2xl border transition ${item.read_at ? 'bg-white border-slate-200' : 'bg-sky-50 border-sky-300'}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="font-bold text-xs text-slate-800">{notice.title}</span>
+                          {!item.read_at && <span className="mt-1 w-2 h-2 rounded-full bg-red-600 shrink-0" aria-label="Sin leer" />}
+                        </div>
+                        <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap">{notice.message}</p>
+                        <div className="flex justify-between gap-2 mt-2 text-[10px] text-slate-500">
+                          <span className="capitalize">{notice.category || 'general'}</span>
+                          <span>{new Date(notice.created_at || item.created_at).toLocaleString('es-ES')}</span>
+                        </div>
+                        {notice.event_id && <span className="inline-flex items-center gap-1 mt-2 text-[10px] font-bold text-sky-700"><ArrowRight size={12} /> Abrir plan relacionado</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            {isAdmin && (
+              <section className="bg-white/95 p-5 rounded-[2.5rem] border border-emerald-200 shadow-sm space-y-3">
+                <h2 className="text-sm font-black text-slate-800 flex items-center gap-2"><Send size={16} className="text-emerald-600" /> Enviar comunicado</h2>
+                <form onSubmit={handleSendNotification} className="space-y-3">
+                  <label className="block text-[11px] font-bold text-slate-700">Usar plantilla guardada
+                    <select value={selectedNotificationTemplate} onChange={e => handleSelectNotificationTemplate(e.target.value)} className="mt-1 w-full rounded-xl border border-sky-200 bg-white p-2.5 text-xs">
+                      <option value="">Redactar desde cero...</option>
+                      {notificationTemplates.map(template => <option key={template.id} value={template.id}>{template.title}</option>)}
+                    </select>
+                  </label>
+                  <label className="block text-[11px] font-bold text-slate-700">Título
+                    <input value={notificationTitle} onChange={e => setNotificationTitle(e.target.value)} maxLength={120} required placeholder="Ej. Nueva versión disponible" className="mt-1 w-full rounded-xl border border-sky-200 p-2.5 text-xs" />
+                  </label>
+                  <label className="block text-[11px] font-bold text-slate-700">Mensaje
+                    <textarea value={notificationMessage} onChange={e => setNotificationMessage(e.target.value)} rows={4} maxLength={3000} required placeholder="Escribe el comunicado..." className="mt-1 w-full rounded-xl border border-sky-200 p-2.5 text-xs" />
+                  </label>
+                  <label className="block text-[11px] font-bold text-slate-700">Categoría
+                    <select value={notificationCategory} onChange={e => setNotificationCategory(e.target.value)} className="mt-1 w-full rounded-xl border border-sky-200 p-2.5 text-xs">
+                      <option value="general">Aviso general</option><option value="version">Nueva versión</option><option value="incidencia">Fallo en el sistema</option><option value="funcionalidad">Nueva funcionalidad</option><option value="mantenimiento">Mantenimiento</option>
+                    </select>
+                  </label>
+                  <fieldset className="space-y-2">
+                    <legend className="text-[11px] font-bold text-slate-700">Destinatarios</legend>
+                    <div className="flex gap-3 text-xs">
+                      <label className="flex items-center gap-1"><input type="radio" name="notification-target" checked={notificationTargetMode === 'all'} onChange={() => setNotificationTargetMode('all')} /> Todos los usuarios</label>
+                      <label className="flex items-center gap-1"><input type="radio" name="notification-target" checked={notificationTargetMode === 'selected'} onChange={() => setNotificationTargetMode('selected')} /> Seleccionar</label>
+                    </div>
+                    {notificationTargetMode === 'selected' && (
+                      <div className="max-h-40 overflow-y-auto rounded-xl border border-sky-100 p-2 space-y-1">
+                        {registeredUsers.filter(user => user.is_approved && !user.is_blocked).map(user => (
+                          <label key={user.id} className="flex items-center gap-2 text-xs text-slate-700 py-1">
+                            <input type="checkbox" checked={selectedNotificationUsers.includes(user.id)}
+                              onChange={e => setSelectedNotificationUsers(prev => e.target.checked ? [...new Set([...prev, user.id])] : prev.filter(id => id !== user.id))} />
+                            <span>{user.name} <span className="text-slate-400">({user.email})</span></span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </fieldset>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={handleSaveNotificationTemplate} disabled={isSavingNotificationTemplate || !notificationTitle.trim() || !notificationMessage.trim()}
+                      className="flex-1 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-xs font-bold text-sky-700 disabled:opacity-50">
+                      {isSavingNotificationTemplate ? 'Guardando...' : 'Guardar como plantilla'}
+                    </button>
+                    <button type="submit" disabled={isSendingNotification || !notificationTitle.trim() || !notificationMessage.trim() || (notificationTargetMode === 'selected' && selectedNotificationUsers.length === 0)}
+                      className="flex-1 rounded-xl bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white disabled:opacity-50">
+                      {isSendingNotification ? 'Enviando...' : 'Enviar comunicado'}
+                    </button>
+                  </div>
+                </form>
+                <div className="pt-3 border-t border-emerald-100 space-y-2">
+                  <h3 className="text-xs font-black text-slate-800">Últimos comunicados enviados</h3>
+                  {adminNotificationHistory.length === 0 ? <p className="text-[11px] text-slate-500">Todavía no hay comunicados enviados.</p> : (
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {adminNotificationHistory.map(item => (
+                        <article key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <div className="flex justify-between gap-2">
+                            <p className="text-xs font-bold text-slate-800">{item.title}</p>
+                            <span className="text-[9px] text-slate-500 shrink-0">{new Date(item.created_at).toLocaleDateString('es-ES')}</span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-1 whitespace-pre-wrap">{item.message}</p>
+                          <p className="text-[10px] text-sky-700 mt-1 capitalize">{item.category || 'general'}</p>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
             <div className="bg-white/90 p-5 rounded-[2.5rem] border border-amber-200 shadow-sm space-y-3">
               <h2 className="text-sm font-black text-slate-800 flex items-center"><Mail size={16} className="mr-1.5 text-amber-600" /> Invitaciones que he recibido ({myPendingInvitations.length})</h2>
               {myPendingInvitations.length === 0 ? <p className="text-xs text-slate-500">No tienes invitaciones pendientes.</p> : (
