@@ -3023,12 +3023,15 @@ export default function App() {
 .nosotros-desktop .nosotros-compact-plan-accent { align-self:stretch; width:5px; flex:none; }
 .nosotros-desktop .nosotros-compact-plan-content { display:flex; flex-direction:column; justify-content:center; gap:5px; padding:13px 0; }
 .nosotros-desktop .nosotros-compact-plan-meta { font-size:11px; line-height:1.25; font-weight:700; color:#0369a1; }
-.nosotros-desktop .nosotros-compact-plan-title { font-size:16px; line-height:1.35; font-weight:800; color:#1e293b; }
+.nosotros-desktop .nosotros-compact-plan-title { font-size:20px; line-height:1.28; font-weight:800; color:#14243b; }
+.nosotros-desktop .nosotros-compact-plan-organizer { display:block; font-size:13px; line-height:1.4; font-weight:800; color:#334155; }
+.nosotros-desktop .nosotros-compact-plan-description { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; font-size:12px; line-height:1.45; font-weight:400; color:#64748b; }
 .nosotros-desktop .nosotros-compact-plan-action { width:38px; height:38px; }
 @media (max-width:639px) {
  .nosotros-desktop .desktop-plan-grid { gap:10px; }
  .nosotros-desktop .nosotros-compact-plan { min-height:80px; gap:12px; }
- .nosotros-desktop .nosotros-compact-plan-title { font-size:15px; }
+ .nosotros-desktop .nosotros-compact-plan-title { font-size:18px; }
+ .nosotros-desktop .nosotros-compact-plan-organizer { font-size:12px; }
  .nosotros-desktop .nosotros-compact-plan-meta { font-size:11px; }
 }
 `}</style>
