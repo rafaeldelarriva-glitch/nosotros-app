@@ -2058,7 +2058,42 @@ export default function App() {
     const canDeleteEvent = isAdmin || isCreator;
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-24 md:pb-8 md:ml-64 relative overflow-hidden">
+      <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-24 md:pb-8 md:ml-64 relative overflow-hidden nosotros-desktop nosotros-detail">
+        <style>{`
+/* NOSOTROS Desktop 2.0 — reglas visuales, sin modificar lógica de datos */
+@media (min-width: 768px) {
+ .nosotros-desktop { background: #f5f7fb !important; color: #24324a; }
+ .nosotros-desktop > aside { background: #fff !important; border-right: 1px solid #e7edf5; box-shadow: none !important; }
+ .nosotros-desktop > header { background: rgba(255,255,255,.97) !important; border-bottom: 1px solid #e8eef5; box-shadow: none !important; min-height: 72px; }
+ .nosotros-desktop .desktop-header-logo { display: none; }
+ .nosotros-desktop > main { max-width: 1480px; padding: 30px clamp(22px,3vw,52px) 65px; }
+ .nosotros-desktop .desktop-page-heading { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom: 24px; }
+ .nosotros-desktop .desktop-page-heading h1 { font-size:clamp(24px,2vw,31px); font-weight:850; letter-spacing:-.04em; line-height:1.15; color:#15253e; }
+ .nosotros-desktop .desktop-page-heading p:not(.desktop-eyebrow) { font-size:13px; color:#718198; margin-top:8px; }
+ .nosotros-desktop .desktop-eyebrow { font-size:10px; font-weight:850; letter-spacing:.15em; color:#2e79bb; margin-bottom:7px; }
+ .nosotros-desktop .desktop-count { flex-shrink:0; padding:8px 13px; border-radius:999px; background:#e9f2ff; color:#2365a0; font-size:12px; font-weight:800; }
+ .nosotros-desktop .desktop-search-filters { display:grid; grid-template-columns:minmax(220px,1fr) minmax(300px,420px) auto; align-items:end; gap:15px; padding:19px 22px; border-radius:18px; border:1px solid #e5ebf4; background:white; box-shadow:0 5px 18px rgba(27,57,94,.035); }
+ .nosotros-desktop .desktop-search-filters > input { height:43px; background:#f9fbfe; border-radius:10px; }
+ .nosotros-desktop .desktop-date-range { min-width:0; }
+ .nosotros-desktop .desktop-date-range input { background:#f9fbfe; height:43px; font-size:12px; }
+ .nosotros-desktop .desktop-clear { padding:13px 7px; white-space:nowrap; }
+ .nosotros-desktop .desktop-plan-grid { gap:17px; }
+ .nosotros-desktop .desktop-plan-card { min-height:166px; padding:21px 23px; border-radius:17px; border:1px solid #e5ebf3; box-shadow:0 4px 15px rgba(33,63,98,.045); transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease; }
+ .nosotros-desktop .desktop-plan-card:hover { transform:translateY(-2px); box-shadow:0 12px 28px rgba(33,63,98,.095); border-color:#bdd7f4; }
+ .nosotros-desktop .desktop-plan-card h3 { font-size:16px; font-weight:800; margin-top:11px; letter-spacing:-.015em; }
+ .nosotros-desktop .desktop-plan-card p { font-size:12px; line-height:1.55; }
+ .nosotros-desktop .desktop-plan-card > button { align-self:flex-end; }
+ .nosotros-desktop .desktop-my-events > .grid:first-of-type { grid-template-columns:minmax(230px,300px) minmax(0,1fr); align-items:stretch; }
+ .nosotros-desktop .desktop-my-events > .grid:first-of-type > button { min-height:110px; border-radius:18px; }
+ .nosotros-desktop .desktop-my-events > .grid:first-of-type > section { border-radius:18px; }
+ .nosotros-desktop section > .bg-white, .nosotros-desktop section > .bg-white\/90 { box-shadow:0 5px 18px rgba(33,63,98,.035); }
+ .nosotros-desktop input:focus, .nosotros-desktop select:focus { outline:2px solid #94c9f7; outline-offset:1px; }
+ .nosotros-detail .max-w-md.md\:max-w-6xl { max-width:1260px; }
+ .nosotros-detail .rounded-\[2\.5rem\] { border-radius:22px; }
+}
+@media (min-width: 1440px) { .nosotros-desktop .desktop-search .desktop-plan-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media (min-width:768px) and (max-width:1050px) { .nosotros-desktop .desktop-search-filters { grid-template-columns:1fr 1fr; } .nosotros-desktop .desktop-search-filters > input { grid-column:1 / -1; } }
+`}</style>
         <aside className="hidden md:flex fixed inset-y-0 left-0 z-40 w-64 flex-col bg-white/95 backdrop-blur-xl border-r border-sky-100 shadow-lg p-5">
           <div className="flex items-center gap-3 pb-7 border-b border-sky-100"><div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 text-white grid place-items-center font-black">N</div><div><p className="font-black text-slate-800">Nosotros</p><p className="text-xs text-slate-500">Organiza tus planes</p></div></div>
           <nav className="mt-6 space-y-2" aria-label="Navegación principal">
@@ -2748,7 +2783,42 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-24 md:pb-8 md:pl-64 relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-blue-50 to-indigo-100 text-slate-800 pb-24 md:pb-8 md:pl-64 relative overflow-hidden nosotros-desktop">
+      <style>{`
+/* NOSOTROS Desktop 2.0 — reglas visuales, sin modificar lógica de datos */
+@media (min-width: 768px) {
+ .nosotros-desktop { background: #f5f7fb !important; color: #24324a; }
+ .nosotros-desktop > aside { background: #fff !important; border-right: 1px solid #e7edf5; box-shadow: none !important; }
+ .nosotros-desktop > header { background: rgba(255,255,255,.97) !important; border-bottom: 1px solid #e8eef5; box-shadow: none !important; min-height: 72px; }
+ .nosotros-desktop .desktop-header-logo { display: none; }
+ .nosotros-desktop > main { max-width: 1480px; padding: 30px clamp(22px,3vw,52px) 65px; }
+ .nosotros-desktop .desktop-page-heading { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-bottom: 24px; }
+ .nosotros-desktop .desktop-page-heading h1 { font-size:clamp(24px,2vw,31px); font-weight:850; letter-spacing:-.04em; line-height:1.15; color:#15253e; }
+ .nosotros-desktop .desktop-page-heading p:not(.desktop-eyebrow) { font-size:13px; color:#718198; margin-top:8px; }
+ .nosotros-desktop .desktop-eyebrow { font-size:10px; font-weight:850; letter-spacing:.15em; color:#2e79bb; margin-bottom:7px; }
+ .nosotros-desktop .desktop-count { flex-shrink:0; padding:8px 13px; border-radius:999px; background:#e9f2ff; color:#2365a0; font-size:12px; font-weight:800; }
+ .nosotros-desktop .desktop-search-filters { display:grid; grid-template-columns:minmax(220px,1fr) minmax(300px,420px) auto; align-items:end; gap:15px; padding:19px 22px; border-radius:18px; border:1px solid #e5ebf4; background:white; box-shadow:0 5px 18px rgba(27,57,94,.035); }
+ .nosotros-desktop .desktop-search-filters > input { height:43px; background:#f9fbfe; border-radius:10px; }
+ .nosotros-desktop .desktop-date-range { min-width:0; }
+ .nosotros-desktop .desktop-date-range input { background:#f9fbfe; height:43px; font-size:12px; }
+ .nosotros-desktop .desktop-clear { padding:13px 7px; white-space:nowrap; }
+ .nosotros-desktop .desktop-plan-grid { gap:17px; }
+ .nosotros-desktop .desktop-plan-card { min-height:166px; padding:21px 23px; border-radius:17px; border:1px solid #e5ebf3; box-shadow:0 4px 15px rgba(33,63,98,.045); transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease; }
+ .nosotros-desktop .desktop-plan-card:hover { transform:translateY(-2px); box-shadow:0 12px 28px rgba(33,63,98,.095); border-color:#bdd7f4; }
+ .nosotros-desktop .desktop-plan-card h3 { font-size:16px; font-weight:800; margin-top:11px; letter-spacing:-.015em; }
+ .nosotros-desktop .desktop-plan-card p { font-size:12px; line-height:1.55; }
+ .nosotros-desktop .desktop-plan-card > button { align-self:flex-end; }
+ .nosotros-desktop .desktop-my-events > .grid:first-of-type { grid-template-columns:minmax(230px,300px) minmax(0,1fr); align-items:stretch; }
+ .nosotros-desktop .desktop-my-events > .grid:first-of-type > button { min-height:110px; border-radius:18px; }
+ .nosotros-desktop .desktop-my-events > .grid:first-of-type > section { border-radius:18px; }
+ .nosotros-desktop section > .bg-white, .nosotros-desktop section > .bg-white\/90 { box-shadow:0 5px 18px rgba(33,63,98,.035); }
+ .nosotros-desktop input:focus, .nosotros-desktop select:focus { outline:2px solid #94c9f7; outline-offset:1px; }
+ .nosotros-detail .max-w-md.md\:max-w-6xl { max-width:1260px; }
+ .nosotros-detail .rounded-\[2\.5rem\] { border-radius:22px; }
+}
+@media (min-width: 1440px) { .nosotros-desktop .desktop-search .desktop-plan-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media (min-width:768px) and (max-width:1050px) { .nosotros-desktop .desktop-search-filters { grid-template-columns:1fr 1fr; } .nosotros-desktop .desktop-search-filters > input { grid-column:1 / -1; } }
+`}</style>
       <aside className="hidden md:flex fixed inset-y-0 left-0 z-50 w-64 flex-col bg-white/95 backdrop-blur-xl border-r border-sky-100 shadow-lg p-5">
         <div className="flex items-center gap-3 pb-7 border-b border-sky-100"><div className="w-10 h-10 bg-gradient-to-tr from-sky-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white font-black shadow-md">N</div><div><p className="font-extrabold text-slate-800">Nosotros</p><p className="text-xs text-slate-500">Planes y experiencias</p></div></div>
         <nav className="mt-6 space-y-2" aria-label="Navegación principal">
@@ -2761,8 +2831,8 @@ export default function App() {
       </aside>
       <header className="bg-white/90 backdrop-blur-2xl border-b border-sky-100 p-4 md:px-7 md:py-4 sticky top-0 z-40 flex justify-between items-center shadow-sm">
         <div className="flex items-center space-x-2">
-          <div className="w-9 h-9 bg-gradient-to-tr from-sky-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white font-black text-sm shadow-md">N</div>
-          <span className="font-extrabold text-slate-800 text-base md:text-lg">Nosotros <span className="hidden md:inline text-xs font-medium text-slate-400 ml-2">Tu espacio para organizar planes</span></span>
+          <div className="desktop-header-logo w-9 h-9 bg-gradient-to-tr from-sky-500 to-indigo-600 rounded-2xl flex items-center justify-center text-white font-black text-sm shadow-md">N</div>
+          <span className="font-extrabold text-slate-800 text-base md:text-lg"><span className="md:hidden">Nosotros</span><span className="hidden md:inline">{activeTab === 'my-events' ? 'Mis salidas' : activeTab === 'search' ? 'Buscar planes' : activeTab === 'profile' ? 'Mi perfil' : 'Centro de actividad'}</span></span>
         </div>
         <div className="flex items-center space-x-3">
           <button type="button" onClick={() => setActiveTab('notifications')} aria-label={`Abrir notificaciones${unreadNotificationsCount ? `, ${unreadNotificationsCount} sin leer` : ''}`}
@@ -2779,9 +2849,10 @@ export default function App() {
         </div>
       </header>
 
-      <main className="w-full max-w-md md:max-w-7xl mx-auto p-4 md:p-7 space-y-6">
+      <main className="w-full max-w-md md:max-w-[1480px] mx-auto p-4 md:p-7 space-y-6">
         {activeTab === 'my-events' && (
-          <div className="space-y-6">
+          <div className="space-y-6 desktop-my-events">
+            <div className="desktop-page-heading"><div><p className="desktop-eyebrow">TU AGENDA</p><h1>Mis salidas</h1><p>Organiza, consulta y disfruta tus próximos encuentros.</p></div><span className="desktop-count">{filteredMyEvents.length} planes</span></div>
             <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,320px)_minmax(0,680px)] gap-4 items-start">
             <button onClick={() => setShowCreateModal(true)} className="w-full bg-gradient-to-r from-sky-600 to-indigo-600 text-white font-bold py-3 px-4 rounded-2xl text-sm shadow-lg flex items-center justify-center space-x-2">
               <Plus size={18} /> <span>Crear Nueva Salida / Plan</span>
@@ -2862,9 +2933,9 @@ export default function App() {
                 <button type="button" onClick={() => { setMyPlanQuery(''); setMyPlanStatus('active'); setMyPlanFrom(''); setMyPlanTo(''); setMyPlanPage(1); }} className="text-xs font-bold text-sky-700">Limpiar filtros</button>
               </div>
               {visibleMyEvents.length === 0 && <p className="rounded-xl bg-slate-50 p-4 text-xs text-slate-600">No hay planes que coincidan con los filtros.</p>}
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 desktop-plan-grid">
               {visibleMyEvents.map(event => (
-                <button key={event.id} type="button" onClick={() => setActiveEvent(event)} className={`w-full text-left rounded-2xl border p-3.5 flex justify-between items-center gap-2 shadow-sm ${event.status === 'closed' ? 'bg-amber-50/60 border-amber-200' : 'bg-white/90 border-sky-100'}`}>
+                <button key={event.id} type="button" onClick={() => setActiveEvent(event)} className={`desktop-plan-card w-full text-left rounded-2xl border p-5 flex flex-col justify-between items-start gap-5 shadow-sm ${event.status === 'closed' ? 'bg-amber-50/60 border-amber-200' : 'bg-white/90 border-sky-100'}`}>
                   <span className="min-w-0"><span className="block text-[10px] font-bold text-sky-700">{event.status === 'closed' ? '🔒 Cerrado' : isPlanPendingClosure(event) ? '🟠 Pendiente de cierre' : '📅 Activo'} · {formatPlanDateES(event.date)}</span><span className="block font-black text-slate-800 text-sm mt-1 break-words">{event.title}</span></span>
                   <span className="shrink-0 text-xs font-bold text-sky-700">{event.status === 'closed' ? 'Historial →' : 'Entrar →'}</span>
                 </button>
@@ -2876,7 +2947,9 @@ export default function App() {
         )}
 
         {activeTab === 'search' && (
-          <div className="space-y-4">
+          <div className="space-y-5 desktop-search">
+            <div className="desktop-page-heading"><div><p className="desktop-eyebrow">EXPLORAR</p><h1>Buscar planes</h1><p>Encuentra tus encuentros, invitaciones y próximos planes.</p></div><span className="desktop-count">{filteredSearchEvents.length} planes</span></div>
+            <div className="desktop-search-filters">
             <input 
               type="text" 
               placeholder="Buscar por título, descripción o creador..." 
@@ -2884,23 +2957,24 @@ export default function App() {
               onChange={(e) => { setSearchQuery(e.target.value); setSearchPlanPage(1); }} 
               className="w-full bg-white/90 border border-sky-200 rounded-2xl px-4 py-3 text-sm text-slate-800" 
             />
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-3 desktop-date-range">
               <label className="text-xs font-bold text-slate-700">Desde<input lang="es-ES" type="date" value={searchPlanFrom} onChange={e => { setSearchPlanFrom(e.target.value); setSearchPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
               <label className="text-xs font-bold text-slate-700">Hasta<input lang="es-ES" type="date" value={searchPlanTo} onChange={e => { setSearchPlanTo(e.target.value); setSearchPlanPage(1); }} className="mt-1 w-full min-w-0 rounded-xl border border-sky-200 p-2 text-xs" /></label>
             </div>
-            <button type="button" onClick={() => { setSearchQuery(''); setSearchPlanFrom(''); setSearchPlanTo(''); setSearchPlanPage(1); }} className="text-xs font-bold text-sky-700">Limpiar filtros</button>
+            <button type="button" onClick={() => { setSearchQuery(''); setSearchPlanFrom(''); setSearchPlanTo(''); setSearchPlanPage(1); }} className="text-xs font-bold text-sky-700 desktop-clear">Limpiar filtros</button>
+            </div>
             <div className="space-y-3">
               <h2 className="text-sm font-black text-slate-800 px-1">Planes en los que participas o estás invitado ({filteredSearchEvents.length})</h2>
               {filteredSearchEvents.length === 0 && <p className="text-xs text-slate-600">No tienes planes ni invitaciones que coincidan con los filtros.</p>}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4 desktop-plan-grid">
               {visibleSearchEvents.map((event) => {
                 const membersList = Array.isArray(event.members) ? event.members : [];
                 const isMember = isEventMember(event) || event.creator_id === currentUser?.id;
                 const isInvited = isEventInvited(event);
 
                 return (
-                  <article key={event.id} className="bg-white/90 rounded-2xl border border-sky-100 p-4 shadow-sm flex justify-between items-center">
-                    <div>
+                  <article key={event.id} className="desktop-plan-card bg-white/90 rounded-2xl border border-sky-100 p-4 shadow-sm flex flex-col justify-between gap-4">
+                    <div className="min-w-0">
                       <span className="text-[10px] font-bold text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full">📅 {formatPlanDateES(event.date)} • Organiza: {event.creator_name}</span>
                       <h3 className="font-bold text-sm text-slate-800 mt-1">{event.title}</h3>
                       {event.description && <p className="text-xs text-slate-600 mt-1 whitespace-pre-wrap break-words">{event.description}</p>}
